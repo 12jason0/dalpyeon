@@ -1,8 +1,26 @@
+"use client";
 import { CalendarDays, Heart, Home, MessageCircle, User } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import type { Role } from "@/lib/db/schema";
 
-export function Nav({ role, active }: { role: Role; active: "home" | "records" | "calendar" | "community" | "connect" | "me" }) {
+type Active = "home" | "records" | "calendar" | "community" | "connect" | "me";
+
+// loading.tsx는 미리 만들어 두는 화면이라 역할을 모른다. 마지막으로 그린 메뉴의 역할을 기억해 쓴다.
+let lastRole: Role | null = null;
+
+/** 로딩 중 메뉴. 첫 진입과 로그인 전 화면에서는 그리지 않는다. */
+export function LoadingNav({ active }: { active: Active }) {
+  const pathname = usePathname();
+  if (!lastRole || (active === "home" && pathname !== "/")) return null;
+  return <Nav role={lastRole} active={active} />;
+}
+
+export function Nav({ role, active }: { role: Role; active: Active }) {
+  useEffect(() => {
+    lastRole = role;
+  }, [role]);
   const items = [
     { key: "home", href: "/", label: "오늘", icon: Home },
     ...(role === "recorder"
