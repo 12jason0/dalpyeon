@@ -61,13 +61,12 @@ const shots = require("node:os").tmpdir();
 
   await step("파트너 가입 + 코드 입력", async () => {
     await you.goto(BASE + "/signup");
-    await you.click('button:has-text("파트너 편이 되어줄게요")');
     await you.fill('input[name=nickname]', "도윤");
     await you.fill('input[name=email]', "doyun@example.com");
     await you.fill('input[name=password]', "password-2");
     await you.click('button[type=submit]');
     await you.waitForURL(BASE + "/");
-    await you.getByText("연결이 필요해요").waitFor();
+    await you.getByText("기록 모으는 중").waitFor();
     await you.goto(BASE + "/connect");
     await you.fill('input[name=code]', code.toLowerCase());
     await you.click('button:has-text("연결 요청")');
@@ -136,13 +135,13 @@ const shots = require("node:os").tmpdir();
     if (body.includes("따뜻한 거")) throw new Error("일시정지인데 배려 요청이 보임");
   });
 
-  await step("연결 끊기 → 파트너 연결 필요 화면", async () => {
+  await step("연결 끊기 → 파트너가 기록자 화면으로 돌아옴", async () => {
     await you.goto(BASE + "/connect");
     await you.click("summary");
     await you.click('button:has-text("끊을게요")');
     await you.getByText("상대에게 받은 8자리 코드를 입력해 주세요").waitFor();
     await you.goto(BASE + "/");
-    await you.getByText("연결이 필요해요").waitFor();
+    await you.getByText("기록 모으는 중").waitFor();
   });
 
   await step("로그아웃 → 로그인", async () => {

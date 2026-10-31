@@ -61,13 +61,10 @@ async function RecorderConnect({ user }: { user: User }) {
       </>
     );
   }
-  const requests = await pendingRequests(db, user);
+  const [requests, waiting] = await Promise.all([pendingRequests(db, user), waitingClaim(db, user)]);
   return (
     <>
-      <p className="mt-10 text-[17px] leading-relaxed text-muted">
-        코드를 만들어 파트너에게 보내 주세요. 15분 동안 쓸 수 있어요.
-        연결해도 처음엔 아무것도 보이지 않고, 보여줄 항목은 직접 고를 수 있어요.
-      </p>
+      {waiting && <Waiting name={waiting.nickname} />}
       {requests.length > 0 && (
         <Section title="연결 요청">
           {requests.map((r) => (
@@ -88,14 +85,39 @@ async function RecorderConnect({ user }: { user: User }) {
           ))}
         </Section>
       )}
-      <div className="mt-10">
-        <InviteBox />
-      </div>
-      {requests.length === 0 && (
-        <p className="mt-6 text-center text-sm">
-          <Link href="/connect" className="link">파트너가 코드를 입력했다면 새로고침</Link>
-        </p>
+      {!waiting && (
+        <>
+          <Section title="내 주기를 기록하는 사람">
+            <p className="mb-8 text-[17px] leading-relaxed text-muted">
+              코드를 만들어 파트너에게 보내 주세요. 15분 동안 쓸 수 있어요.
+              연결해도 처음엔 아무것도 보이지 않고, 보여줄 항목은 직접 고를 수 있어요.
+            </p>
+            <InviteBox />
+            {requests.length === 0 && (
+              <p className="mt-6 text-center text-sm">
+                <Link href="/connect" className="link">파트너가 코드를 입력했다면 새로고침</Link>
+              </p>
+            )}
+          </Section>
+          <Section title="상대 편이 되어줄 사람">
+            <p className="mb-8 text-[17px] leading-relaxed text-muted">
+              상대에게 받은 8자리 코드를 입력해 주세요. 상대가 승인하면 파트너 화면으로 바뀌어요.
+              내 기록은 지워지지 않고, 연결을 끊으면 다시 보여요.
+            </p>
+            <ClaimForm />
+          </Section>
+        </>
       )}
+    </>
+  );
+}
+
+function Waiting({ name }: { name: string }) {
+  return (
+    <>
+      <p className="mt-10 text-2xl font-medium leading-snug">{name}님이 승인하면 연결돼요</p>
+      <p className="mt-4 text-[15px] text-muted">승인을 기다리고 있어요.</p>
+      <p className="mt-8 text-sm"><Link href="/connect" className="link">새로고침</Link></p>
     </>
   );
 }
@@ -119,15 +141,7 @@ async function PartnerConnect({ user }: { user: User }) {
     );
   }
   const waiting = await waitingClaim(db, user);
-  if (waiting) {
-    return (
-      <>
-        <p className="mt-10 text-2xl font-medium leading-snug">{waiting.nickname}님이 승인하면 연결돼요</p>
-        <p className="mt-4 text-[15px] text-muted">승인을 기다리고 있어요.</p>
-        <p className="mt-8 text-sm"><Link href="/connect" className="link">새로고침</Link></p>
-      </>
-    );
-  }
+  if (waiting) return <Waiting name={waiting.nickname} />;
   return (
     <>
       <p className="mt-10 mb-10 text-[17px] leading-relaxed text-muted">상대에게 받은 8자리 코드를 입력해 주세요.</p>

@@ -40,10 +40,10 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
     const db = await getDb();
     await limit(db, "signup", await clientIp(), 10, 3600);
     const user = await signup(db, {
-      email: form.get("email"), password: form.get("password"), role: form.get("role"), nickname: form.get("nickname"),
+      email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"),
     });
     await startSession(user.id);
-  }, form, ["email", "nickname", "role"]);
+  }, form, ["email", "nickname"]);
   if (result?.error) return result;
   redirect("/");
 }
@@ -123,7 +123,7 @@ export async function createInviteAction(_: FormState): Promise<FormState> {
 
 export async function claimAction(_: FormState, form: FormData): Promise<FormState> {
   return attempt(async () => {
-    const user = await requireUser("partner");
+    const user = await requireUser();
     const db = await getDb();
     await limit(db, "claim", user.id, 10, 900);
     await limit(db, "claim-ip", await clientIp(), 30, 900);

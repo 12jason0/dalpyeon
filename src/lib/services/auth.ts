@@ -69,12 +69,12 @@ export async function limit(db: DB, bucket: string, identity: string, max: numbe
   if (row.hits > max) fail("시도가 너무 많아요. 잠시 후 다시 해 주세요", 429);
 }
 
-export async function signup(db: DB, input: { email: unknown; password: unknown; role: unknown; nickname: unknown }): Promise<User> {
+export async function signup(db: DB, input: { email: unknown; password: unknown; nickname: unknown }): Promise<User> {
   const email = cleanEmail(input.email);
   const password = cleanPassword(input.password);
   const nickname = cleanNickname(input.nickname);
-  if (input.role !== "recorder" && input.role !== "partner") fail("어떤 역할로 쓸지 골라 주세요");
-  const role = input.role as Role;
+  // 누구나 기록자로 시작한다. 파트너는 연결이 승인될 때만 된다.
+  const role: Role = "recorder";
   const passwordHash = await hashPassword(password);
   const id = randomUUID();
   const inserted = await db.insert(users).values({ id, email, passwordHash, role, nickname })
