@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { exampleHome, EXAMPLE_DAYS_UNTIL } from "@/lib/content/example";
 import { PHASES } from "@/lib/content/phases";
-import { diffDays } from "@/lib/dates";
+import { diffDays, monthGrid } from "@/lib/dates";
 import { phaseOn, type Phase } from "@/lib/phase";
-import { estimate } from "@/lib/prediction";
+import { calendarMarks, estimate } from "@/lib/prediction";
 
 // 28일 간격 → 다음 예정 10.28, 가임기(추정) 10.09~10.15
 const regular = ["2026-07-08", "2026-08-05", "2026-09-02", "2026-09-30"].map((startDate, i) => ({
@@ -47,8 +47,10 @@ describe("주기 시기", () => {
 
 describe("랜딩 예시 기록", () => {
   it.each(["2026-10-31", "2026-12-30", "2027-01-01", "2028-02-29", "2026-03-01"])("%s 기준으로 항상 예정일 5일 전", (today) => {
-    const { periods, care } = exampleHome(today);
+    const { periods, care, month } = exampleHome(today);
     const prediction = estimate(periods, [], today);
+    const { first, last } = monthGrid(month);
+    expect(calendarMarks(periods, prediction, first, last, today).some((m) => m.type === "predicted_period")).toBe(true); // 월말에도 점선이 보인다
     expect(prediction.status).toBe("estimated");
     expect(diffDays(prediction.period!.startDate, today)).toBe(EXAMPLE_DAYS_UNTIL);
     expect(phaseOn(periods, today)).toBe("luteal");

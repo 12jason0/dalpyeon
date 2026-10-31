@@ -22,8 +22,7 @@ const SHARING = [
 
 /** 미리보기는 DB를 읽지 않고, 예시 기록을 실제 홈과 같은 계산·컴포넌트로 그린다. */
 function HomePreview({ today }: { today: string }) {
-  const { periods } = exampleHome(today);
-  const month = today.slice(0, 7);
+  const { periods, month } = exampleHome(today);
   const prediction = estimate(periods, [], today);
   const { first, last } = monthGrid(month);
   return (

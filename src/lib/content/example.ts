@@ -14,5 +14,5 @@ export function exampleHome(today: string) {
   const care: CareView = {
     id: "example", day: today, presets: ["warm_food", "empathy"], message: "오늘 배가 좀 아파", shareWithPartner: true, response: "will_help",
   };
-  return { periods, care };
+  return { periods, care, month: expected.slice(0, 7) }; // 달력은 예상일이 있는 달을 보여준다
 }
