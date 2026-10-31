@@ -6,8 +6,6 @@ import { getDb } from "@/lib/db";
 import { deletePostAction } from "../actions";
 import { Nav } from "../_components/Nav";
 
-export const RULES = ["상대를 깎아내리는 글", "성적인 글", "개인정보"];
-
 export function Confirm({ label, confirm, action, fields }: {
   label: string; confirm: string; action: (form: FormData) => Promise<void>; fields: Record<string, string>;
 }) {
@@ -16,7 +14,7 @@ export function Confirm({ label, confirm, action, fields }: {
       <summary className="link cursor-pointer list-none text-sm leading-11">{label}</summary>
       <form action={action}>
         {Object.entries(fields).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
-        <button type="submit" className="h-11 text-sm text-period underline underline-offset-4">{confirm}</button>
+        <button type="submit" className="h-11 text-sm text-period-ink underline underline-offset-4">{confirm}</button>
       </form>
     </details>
   );

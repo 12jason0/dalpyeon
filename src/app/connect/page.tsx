@@ -2,10 +2,9 @@ import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { todaySeoul } from "@/lib/dates";
 import type { User } from "@/lib/services/auth";
-import { myPosts } from "@/lib/services/community";
 import { activeCouple, otherNickname, pendingRequests, waitingClaim } from "@/lib/services/couples";
 import { requireUser } from "@/lib/session";
-import { approveAction, disconnectAction, logoutAction, rejectAction } from "../actions";
+import { approveAction, disconnectAction, rejectAction } from "../actions";
 import { ClaimForm, InviteBox, SharingForm } from "../_components/ConnectForms";
 import { Nav } from "../_components/Nav";
 import { Row, Section } from "../_components/Section";
@@ -16,19 +15,10 @@ const LABELS = { periods: "생리 기록", predictions: "다음 생리 예상", 
 
 export default async function ConnectPage() {
   const user = await requireUser();
-  const hasPosts = user.role === "recorder" && (await myPosts(await getDb(), user)).length > 0;
   return (
     <>
       <h1 className="text-4xl font-semibold tracking-tight">연결</h1>
       {user.role === "recorder" ? <RecorderConnect user={user} /> : <PartnerConnect user={user} />}
-
-      <Section title="계정">
-        <Row label={user.nickname} value={<span className="text-[15px] font-normal text-muted">{user.email}</span>} />
-        {hasPosts && <p className="pt-6 text-sm"><Link href="/community" className="link">이야기에 쓴 내 글</Link></p>}
-        <form action={logoutAction} className="pt-6">
-          <button type="submit" className="text-sm link">로그아웃</button>
-        </form>
-      </Section>
       <Nav role={user.role} active="connect" />
     </>
   );
@@ -43,7 +33,7 @@ function Disconnect({ name }: { name: string }) {
         이미 본 내용까지 지울 수는 없어요.
       </p>
       <form action={disconnectAction} className="mt-4">
-        <button type="submit" className="h-11 rounded-full border border-period px-6 text-[15px] text-period">끊을게요</button>
+        <button type="submit" className="h-11 rounded-full border border-period-ink px-6 text-[15px] text-period-ink">끊을게요</button>
       </form>
     </details>
   );

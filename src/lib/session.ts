@@ -8,6 +8,7 @@ const COOKIE = "dp_session";
 
 export async function currentUser(): Promise<User | null> {
   const token = (await cookies()).get(COOKIE)?.value;
+  if (!token) return null; // 로그인 전 화면은 DB를 건드리지 않는다
   return userFromToken(await getDb(), token);
 }
 

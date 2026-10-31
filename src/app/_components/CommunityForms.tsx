@@ -64,7 +64,7 @@ export function TargetButton({ action, kind, id, label, done }: { action: Action
       <input type="hidden" name="kind" value={kind} />
       <input type="hidden" name="id" value={id} />
       <button type="submit" disabled={pending} className="link h-11 text-sm">{label}</button>
-      {state?.error && <p className="text-[13px] text-period">{state.error}</p>}
+      {state?.error && <p className="text-[13px] text-period-ink">{state.error}</p>}
     </form>
   );
 }

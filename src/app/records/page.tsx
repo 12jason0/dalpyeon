@@ -47,7 +47,7 @@ function DayPanel({ day, month, today, periods, marks }: { day: string; month: s
           <form action={deletePeriodAction}>
             <input type="hidden" name="id" value={record.id} />
             <input type="hidden" name="month" value={month} />
-            <button type="submit" className="h-11 text-period underline underline-offset-4">정말 지울게요</button>
+            <button type="submit" className="h-11 text-period-ink underline underline-offset-4">정말 지울게요</button>
           </form>
         </details>
       </div>
@@ -109,7 +109,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
           {editing && (
             <form action={deletePeriodAction} className="mt-6 text-center">
               <input type="hidden" name="id" value={editing.id} />
-              <button type="submit" className="text-sm text-period underline underline-offset-4">이 기록 삭제</button>
+              <button type="submit" className="text-sm text-period-ink underline underline-offset-4">이 기록 삭제</button>
             </form>
           )}
         </section>

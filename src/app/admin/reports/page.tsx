@@ -27,7 +27,7 @@ export default async function ReportsPage() {
             <form action={decideReportAction} className="mt-3 flex gap-6">
               <input type="hidden" name="kind" value={r.kind} />
               <input type="hidden" name="id" value={r.id} />
-              <button type="submit" name="decision" value="hidden" className="h-11 text-sm text-period underline underline-offset-4">숨김</button>
+              <button type="submit" name="decision" value="hidden" className="h-11 text-sm text-period-ink underline underline-offset-4">숨김</button>
               <button type="submit" name="decision" value="dismissed" className="link h-11 text-sm">기각</button>
             </form>
           </li>

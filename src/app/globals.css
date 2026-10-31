@@ -1,12 +1,17 @@
 @import "tailwindcss";
 
 @theme {
-  --color-paper: #f7f5f2;
-  --color-ink: #1c1b1a;
-  --color-muted: #8a857f;
-  --color-line: #e6e1da;
-  --color-period: #c2554f;
-  --color-fertile: #5b6b8c;
+  --color-paper: #FFFDFC;
+  --color-ink: #3F3A3D;
+  --color-muted: #9C9396;
+  --color-line: #F1E8E6;
+  --color-card: #FFFFFF;
+  --color-period: #FFDDE4;
+  --color-period-ink: #A23B5C;
+  --color-period-dash: #F4A3B6;
+  --color-accent: #E07592;
+  --color-fertile: #EFEEFA;
+  --color-fertile-ink: #5E5A8C;
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }
 
@@ -47,14 +52,21 @@ body {
   height: 3.25rem;
   width: 100%;
   border-radius: 999px;
-  background: var(--color-ink);
-  color: var(--color-paper);
+  background: var(--color-accent);
+  color: #fff;
   font-weight: 600;
   font-size: 1rem;
   transition: opacity 0.15s;
 }
 .btn:disabled { opacity: 0.4; }
 .btn:active { opacity: 0.8; }
+
+.card {
+  background: var(--color-card);
+  border: 0.5px solid var(--color-line);
+  border-radius: 18px;
+  padding: 12px 14px;
+}
 
 .link {
   color: var(--color-muted);
@@ -86,6 +98,6 @@ body {
   transition: transform 0.15s;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
 }
-.switch:checked { background: var(--color-ink); }
+.switch:checked { background: var(--color-accent); }
 .switch:checked::after { transform: translateX(1.15rem); }
 .switch:disabled { opacity: 0.4; }

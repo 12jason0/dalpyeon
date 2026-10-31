@@ -46,7 +46,7 @@ const shots = require("node:os").tmpdir();
 
   await step("홈에 예측 표시", async () => {
     await me.goto(BASE + "/");
-    await me.getByText("다음 생리까지").waitFor();
+    await me.getByText("생리 예정일까지").waitFor();
     await me.screenshot({ path: `${shots}/04-home-prediction.png`, fullPage: true });
   });
 
@@ -92,6 +92,7 @@ const shots = require("node:os").tmpdir();
 
   await step("배려 요청 보내기", async () => {
     await me.goto(BASE + "/");
+    await me.click('summary:has-text("오늘 필요한 배려")');
     await me.locator("label", { hasText: "따뜻한 거 같이 먹고 싶어" }).click();
     await me.locator("label", { hasText: "해결책보다 공감해 줘" }).click();
     await me.fill('input[name=message]', "오늘 배가 좀 아파");
@@ -106,7 +107,7 @@ const shots = require("node:os").tmpdir();
     const body = await you.textContent("body");
     if (body.includes("최근 기록")) throw new Error("기록 공유를 안 켰는데 최근 기록이 보임");
     await you.click('button:has-text("도와줄게요")');
-    await you.locator('button.bg-ink:has-text("도와줄게요")').waitFor();
+    await you.locator('button.bg-accent:has-text("도와줄게요")').waitFor();
     await you.screenshot({ path: `${shots}/07-partner-home.png`, fullPage: true });
   });
 
@@ -146,7 +147,7 @@ const shots = require("node:os").tmpdir();
   });
 
   await step("로그아웃 → 로그인", async () => {
-    await me.goto(BASE + "/connect");
+    await me.goto(BASE + "/me");
     await me.click('button:has-text("로그아웃")');
     await me.getByText("처음이에요").waitFor();
     if (!me.url().endsWith("/login")) throw new Error("로그인 화면으로 안 감: " + me.url());

@@ -12,5 +12,5 @@ export function Submit({ children, pendingText, className = "btn" }: { children:
 
 export function ErrorText({ message }: { message?: string }) {
   if (!message) return null;
-  return <p role="alert" className="mt-3 text-sm text-period">{message}</p>;
+  return <p role="alert" className="mt-3 text-sm text-period-ink">{message}</p>;
 }

@@ -16,17 +16,16 @@ export function kindOf(marks: CalendarMark[], day: string): Kind | null {
 }
 
 function Day({ day, kind, today, selected }: { day: string; kind: Kind | null; today: string; selected: boolean }) {
-  const shape = kind === "period" ? "bg-period text-white"
-    : kind === "predicted" ? "border-2 border-dotted border-period"
-    : kind === "fertile" ? "text-fertile"
+  const shape = kind === "period" ? "bg-period text-period-ink"
+    : kind === "predicted" ? "border-2 border-dotted border-period-dash"
+    : kind === "fertile" ? "bg-fertile text-fertile-ink"
     : "";
   return (
-    <span className={`relative flex h-10 w-10 items-center justify-center rounded-full text-[17px] ${shape} ${
-      selected ? "ring-2 ring-ink ring-offset-1 ring-offset-paper" : ""
+    <span className={`flex h-10 w-10 items-center justify-center rounded-full text-[17px] ${shape} ${
+      selected ? "ring-2 ring-accent ring-offset-1 ring-offset-paper" : ""
     } ${day === today ? "font-bold underline underline-offset-4" : ""}`}>
       <span aria-hidden>{Number(day.slice(8))}</span>
       <span className="sr-only">{monthDay(day)}{kind && `, ${LABELS[kind]}`}{day === today && ", 오늘"}</span>
-      {kind === "fertile" && <span className="absolute bottom-0.5 h-1 w-1 rounded-full bg-fertile" />}
     </span>
   );
 }
@@ -68,8 +67,8 @@ export function MonthCalendar({ month, marks, today, basePath, selected, dayHref
       </div>
       <p className="mt-4 flex items-center justify-center gap-5 text-[13px] text-muted">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-period" />생리</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border border-dotted border-period" />예상</span>
-        <span className="flex items-center gap-1.5"><span className="h-1 w-1 rounded-full bg-fertile" />가임기(추정)</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border border-dotted border-period-dash" />예상</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-fertile" />가임기(추정)</span>
       </p>
     </div>
   );

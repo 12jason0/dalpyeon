@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { RULES } from "@/lib/content/rules";
 import { getDb } from "@/lib/db";
 import { BOARDS, communityAccess } from "@/lib/services/community";
 import { requireUser } from "@/lib/session";
 import { ConsentForm, PostForm } from "../../_components/CommunityForms";
 import { Nav } from "../../_components/Nav";
-import { Gate, RULES } from "../_shared";
+import { Gate } from "../_shared";
 
 export const dynamic = "force-dynamic";
 
