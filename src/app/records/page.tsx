@@ -5,10 +5,11 @@ import { calendarMarks, estimate, type CalendarMark } from "@/lib/prediction";
 import { currentPeriod, listPeriods, type Period } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { deletePeriodAction } from "../actions";
-import { kindOf, MonthCalendar } from "../_components/MonthCalendar";
+import { kindOf } from "../_components/MonthCalendar";
 import { Nav } from "../_components/Nav";
-import { EndTodayButton, StartTodayButton } from "../_components/PeriodButtons";
+import { EndTodayButton } from "../_components/PeriodButtons";
 import { PeriodForm } from "../_components/PeriodForm";
+import { RecordsCalendar } from "../_components/RecordsCalendar";
 import { Row, Section } from "../_components/Section";
 
 export const dynamic = "force-dynamic";
@@ -26,11 +27,7 @@ function DayPanel({ day, month, today, periods, marks }: { day: string; month: s
   if (!record) {
     // 종료일 없는 기록이 아직 진행 중이면 새 시작 대신 끝난 날만 정할 수 있다
     const ongoing = currentPeriod(periods, day);
-    return (
-      <div className="mt-5">
-        {ongoing?.open ? <EndTodayButton id={ongoing.id} day={day} /> : <StartTodayButton day={day} />}
-      </div>
-    );
+    return ongoing?.open ? <div className="mt-5"><EndTodayButton id={ongoing.id} day={day} /></div> : null;
   }
   return (
     <>
@@ -65,19 +62,18 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
 
   const periods = await listPeriods(await getDb(), user.id);
   const prediction = estimate(periods, [], today);
-  const { first, last } = monthGrid(month);
+  const { first, last, cells } = monthGrid(month);
   const marks = calendarMarks(periods, prediction, first, last, today);
   const editing = periods.find((p) => p.id === params.edit) ?? null;
 
   return (
     <>
       <h1 className="sr-only">기록</h1>
-      <MonthCalendar
-        month={month} marks={marks} today={today} basePath="/records" selected={day}
-        dayHref={(d) => `/records?month=${month}&day=${d}`}
-      />
-
-      <section className="mt-10 min-h-16">
+      <RecordsCalendar
+        month={month} marks={marks} today={today} selected={day}
+        periods={periods.map(({ id, startDate, endDate }) => ({ id, startDate, endDate }))}
+        ongoing={cells.filter((d): d is string => Boolean(d && d <= today && currentPeriod(periods, d)?.open))}
+      >
         {day ? (
           <div key={day}>
             <h2 className="text-xl font-medium">{formatDay(day)}</h2>
@@ -86,7 +82,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         ) : (
           <p className="text-[17px] text-muted">날짜를 누르면 기록할 수 있어요.</p>
         )}
-      </section>
+      </RecordsCalendar>
 
       {prediction.typicalCycleDays && (
         <Section title="내 주기">

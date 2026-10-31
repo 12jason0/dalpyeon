@@ -48,6 +48,16 @@ function HomePreview() {
   );
 }
 
+function StartLinks() {
+  return (
+    <div className="space-y-3">
+      <Link href="/signup" className="btn">처음 시작하기</Link>
+      <Link href="/join" className="btn-line">받은 코드로 시작하기</Link>
+      <p className="pt-1 text-center text-sm"><Link href="/login" className="link">이미 계정이 있어요</Link></p>
+    </div>
+  );
+}
+
 export function Landing() {
   return (
     <>
@@ -59,7 +69,7 @@ export function Landing() {
       <section className="mt-14">
         <h1 className="text-[2.25rem] font-semibold leading-tight tracking-tight">말하기 어려운 날에도, 서로의 편.</h1>
         <p className="mt-4 text-[17px] leading-relaxed text-muted">생리 주기를 기록하고, 필요한 배려를 연인과 주고받아요</p>
-        <div className="mt-8"><Link href="/signup" className="btn">시작하기</Link></div>
+        <div className="mt-8"><StartLinks /></div>
       </section>
 
       <section className="mt-14"><HomePreview /></section>
@@ -94,7 +104,7 @@ export function Landing() {
         </ul>
       </section>
 
-      <div className="mt-16"><Link href="/signup" className="btn">시작하기</Link></div>
+      <div className="mt-16"><StartLinks /></div>
       <p className="mt-8 text-xs leading-relaxed text-muted">{DISCLAIMER}</p>
     </>
   );

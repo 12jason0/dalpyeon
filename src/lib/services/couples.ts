@@ -3,8 +3,8 @@ import { and, eq, gt, inArray, or } from "drizzle-orm";
 import type { DB } from "../db";
 import { couples, invitations, NO_PERMISSIONS, users, type Permissions } from "../db/schema";
 import { isDay, todaySeoul } from "../dates";
-import { fail } from "../errors";
-import { sha256, type User } from "./auth";
+import { AppError, fail } from "../errors";
+import { limit, sha256, type User } from "./auth";
 
 export type Couple = typeof couples.$inferSelect;
 export const INVITE_MINUTES = 15;
@@ -59,6 +59,26 @@ export async function claimInvite(db: DB, user: User, rawCode: unknown) {
     .returning({ id: invitations.id });
   if (!updated.length) fail("사용할 수 없는 코드예요. 만료됐을 수 있어요", 404);
   return updated[0];
+}
+
+/** 사용자가 보낸 코드 입력은 모두 이 제한을 거친다. */
+export async function claimWithLimit(db: DB, user: User, rawCode: unknown, ip: string) {
+  await limit(db, "claim", user.id, 10, 900);
+  await limit(db, "claim-ip", ip, 30, 900);
+  return claimInvite(db, user, rawCode);
+}
+
+export type ClaimProblem = "code" | "connected" | "limit";
+
+/** 링크·/join 경로용. 코드가 틀려도 가입은 유지해야 하므로 실패를 던지지 않고 이유만 돌려준다. */
+export async function tryClaim(db: DB, user: User, rawCode: unknown, ip: string): Promise<ClaimProblem | null> {
+  try {
+    await claimWithLimit(db, user, rawCode, ip);
+    return null;
+  } catch (e) {
+    if (!(e instanceof AppError)) throw e;
+    return e.status === 409 ? "connected" : e.status === 429 ? "limit" : "code";
+  }
 }
 
 /** 코드를 입력한 쪽: 내가 입력하고 승인을 기다리는 요청 */

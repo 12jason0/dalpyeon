@@ -3,13 +3,13 @@
 @theme {
   --color-paper: #FFFDFC;
   --color-ink: #3F3A3D;
-  --color-muted: #9C9396;
+  --color-muted: #7D7376;
   --color-line: #F1E8E6;
   --color-card: #FFFFFF;
   --color-period: #FFDDE4;
   --color-period-ink: #A23B5C;
   --color-period-dash: #F4A3B6;
-  --color-accent: #E07592;
+  --color-accent: #C6486E;
   --color-fertile: #EFEEFA;
   --color-fertile-ink: #5E5A8C;
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
@@ -57,6 +57,18 @@ body {
   font-weight: 600;
   font-size: 1rem;
   transition: opacity 0.15s;
+}
+.btn-line {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 3.25rem;
+  width: 100%;
+  border-radius: 999px;
+  border: 1px solid var(--color-accent);
+  color: var(--color-accent);
+  font-weight: 600;
+  font-size: 1rem;
 }
 .btn:disabled { opacity: 0.4; }
 .btn:active { opacity: 0.8; }

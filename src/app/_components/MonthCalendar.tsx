@@ -15,8 +15,8 @@ export function kindOf(marks: CalendarMark[], day: string): Kind | null {
   return null;
 }
 
-function Day({ day, kind, today, selected }: { day: string; kind: Kind | null; today: string; selected: boolean }) {
-  const shape = kind === "period" ? "bg-period text-period-ink"
+function Day({ day, kind, today, selected, painted }: { day: string; kind: Kind | null; today: string; selected: boolean; painted: boolean }) {
+  const shape = painted || kind === "period" ? "bg-period text-period-ink"
     : kind === "predicted" ? "border-2 border-dotted border-period-dash"
     : kind === "fertile" ? "bg-fertile text-fertile-ink"
     : "";
@@ -25,19 +25,21 @@ function Day({ day, kind, today, selected }: { day: string; kind: Kind | null; t
       selected ? "ring-2 ring-accent ring-offset-1 ring-offset-paper" : ""
     } ${day === today ? "font-bold underline underline-offset-4" : ""}`}>
       <span aria-hidden>{Number(day.slice(8))}</span>
-      <span className="sr-only">{monthDay(day)}{kind && `, ${LABELS[kind]}`}{day === today && ", 오늘"}</span>
+      <span className="sr-only">{monthDay(day)}{kind && `, ${LABELS[kind]}`}{painted && ", 선택됨"}{day === today && ", 오늘"}</span>
     </span>
   );
 }
 
-/** basePath 화면의 ?month=로 달을 옮긴다. dayHref를 주면 날짜를 누를 수 있고, 없으면 읽기 전용이다. */
-export function MonthCalendar({ month, marks, today, basePath, selected, dayHref }: {
+/** basePath 화면의 ?month=로 달을 옮긴다. dayHref나 onPick을 주면 날짜를 누를 수 있고, 없으면 읽기 전용이다. */
+export function MonthCalendar({ month, marks, today, basePath, selected, dayHref, onPick, isPainted }: {
   month: string;
   marks: CalendarMark[];
   today: string;
   basePath: string;
   selected?: string | null;
   dayHref?: (day: string) => string;
+  onPick?: (day: string) => void;
+  isPainted?: (day: string) => boolean;
 }) {
   const { cells } = monthGrid(month);
   const arrow = (to: string, label: string, text: string) => (
@@ -58,8 +60,10 @@ export function MonthCalendar({ month, marks, today, basePath, selected, dayHref
       <div className="grid grid-cols-7">
         {cells.map((day, i) => {
           if (!day) return <span key={i} className="min-h-12" />;
-          const inner = <Day day={day} kind={kindOf(marks, day)} today={today} selected={day === selected} />;
+          const painted = isPainted?.(day) ?? false;
+          const inner = <Day day={day} kind={kindOf(marks, day)} today={today} selected={day === selected} painted={painted} />;
           const cell = "flex min-h-12 items-center justify-center";
+          if (onPick) return <button key={day} type="button" data-day={day} onClick={() => onPick(day)} aria-pressed={painted} className={`${cell} w-full`}>{inner}</button>;
           return dayHref
             ? <Link key={day} href={dayHref(day)} scroll={false} className={cell} aria-current={day === selected ? "date" : undefined}>{inner}</Link>
             : <div key={day} className={cell}>{inner}</div>;

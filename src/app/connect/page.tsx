@@ -1,3 +1,4 @@
+import { headers } from "next/headers";
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { todaySeoul } from "@/lib/dates";
@@ -13,12 +14,29 @@ export const dynamic = "force-dynamic";
 
 const LABELS = { periods: "생리 기록", predictions: "다음 생리 예상", fertility: "가임기 (추정)", care: "배려 요청" } as const;
 
-export default async function ConnectPage() {
+const CLAIM_NOTICES: Record<string, string> = {
+  code: "코드를 다시 확인해 주세요",
+  connected: "이미 연결된 상대가 있어요",
+  limit: "시도가 너무 많아요. 잠시 후 다시 해 주세요",
+};
+
+type Claim = { code?: string; notice?: string };
+
+/** 링크를 보낼 주소. 요청 헤더에서 읽는다. */
+async function siteOrigin() {
+  const h = await headers();
+  return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+}
+
+export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string }> }) {
   const user = await requireUser();
+  const { claim, code } = await searchParams;
+  const notice = claim ? CLAIM_NOTICES[claim] : undefined;
+  const sent: Claim = { code: typeof code === "string" ? code.slice(0, 12) : undefined, notice };
   return (
     <>
       <h1 className="text-4xl font-semibold tracking-tight">연결</h1>
-      {user.role === "recorder" ? <RecorderConnect user={user} /> : <PartnerConnect user={user} />}
+      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} /> : <PartnerConnect user={user} claim={sent} />}
       <Nav role={user.role} active="connect" />
     </>
   );
@@ -39,7 +57,7 @@ function Disconnect({ name }: { name: string }) {
   );
 }
 
-async function RecorderConnect({ user }: { user: User }) {
+async function RecorderConnect({ user, claim }: { user: User; claim: Claim }) {
   const db = await getDb();
   const couple = await activeCouple(db, user.id);
   if (couple) {
@@ -85,7 +103,7 @@ async function RecorderConnect({ user }: { user: User }) {
               코드를 만들어 파트너에게 보내 주세요. 15분 동안 쓸 수 있어요.
               연결해도 처음엔 아무것도 보이지 않고, 보여줄 항목은 직접 고를 수 있어요.
             </p>
-            <InviteBox />
+            <InviteBox origin={await siteOrigin()} />
             {requests.length === 0 && (
               <p className="mt-6 text-center text-sm">
                 <Link href="/connect" className="link">파트너가 코드를 입력했다면 새로고침</Link>
@@ -97,7 +115,7 @@ async function RecorderConnect({ user }: { user: User }) {
               상대에게 받은 8자리 코드를 입력해 주세요. 상대가 승인하면 파트너 화면으로 바뀌어요.
               내 기록은 지워지지 않고, 연결을 끊으면 다시 보여요.
             </p>
-            <ClaimForm />
+            <ClaimForm code={claim.code} notice={claim.notice} />
           </Section>
         </>
       )}
@@ -115,7 +133,7 @@ function Waiting({ name }: { name: string }) {
   );
 }
 
-async function PartnerConnect({ user }: { user: User }) {
+async function PartnerConnect({ user, claim }: { user: User; claim: Claim }) {
   const db = await getDb();
   const couple = await activeCouple(db, user.id);
   if (couple) {
@@ -138,7 +156,7 @@ async function PartnerConnect({ user }: { user: User }) {
   return (
     <>
       <p className="mt-10 mb-10 text-[17px] leading-relaxed text-muted">상대에게 받은 8자리 코드를 입력해 주세요.</p>
-      <ClaimForm />
+      <ClaimForm code={claim.code} notice={claim.notice} />
     </>
   );
 }

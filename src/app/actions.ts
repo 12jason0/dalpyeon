@@ -12,7 +12,8 @@ import {
   type Target,
 } from "@/lib/services/community";
 import {
-  approveRequest, claimInvite, createInvite, disconnect, rejectRequest, updateSharing, PERMISSION_KEYS,
+  approveRequest, claimWithLimit, createInvite, disconnect, rejectRequest, tryClaim, updateSharing, PERMISSION_KEYS,
+  type ClaimProblem,
 } from "@/lib/services/couples";
 import { deletePeriod, listPeriods, savePeriod } from "@/lib/services/periods";
 import { clientIp, endSession, requireUser, startSession } from "@/lib/session";
@@ -50,6 +51,34 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
   }, form, ["email", "nickname"]);
   if (result?.error) return result;
   redirect("/");
+}
+
+const connectAfterClaim = (problem: ClaimProblem | null, code: string) =>
+  problem ? `/connect?claim=${problem}&code=${encodeURIComponent(code.slice(0, 12))}` : "/connect";
+
+/** /join: 가입 → 세션 → 코드 연결. 코드가 틀려도 가입은 유지하고 연결 화면에서 다시 입력하게 한다. */
+export async function joinAction(_: FormState, form: FormData): Promise<FormState> {
+  const code = String(form.get("code") ?? "");
+  let problem: ClaimProblem | null = null;
+  const result = await attempt(async () => {
+    const db = await getDb();
+    const ip = await clientIp();
+    await limit(db, "signup", ip, 10, 3600);
+    const user = await signup(db, { email: form.get("email"), password: form.get("password"), nickname: form.get("nickname") });
+    await startSession(user.id);
+    problem = await tryClaim(db, user, code, ip);
+  }, form, ["email", "nickname", "code"]);
+  if (result?.error) return result;
+  redirect(connectAfterClaim(problem, code));
+}
+
+/** 이미 로그인한 사람이 확인 화면에서 [연결 요청 보내기]를 눌렀을 때만 연결을 요청한다. */
+export async function joinWithLinkAction(form: FormData) {
+  const code = String(form.get("code") ?? "");
+  const user = await requireUser();
+  const problem = await tryClaim(await getDb(), user, code, await clientIp());
+  refresh();
+  redirect(connectAfterClaim(problem, code));
 }
 
 export async function loginAction(_: FormState, form: FormData): Promise<FormState> {
@@ -132,10 +161,7 @@ export async function createInviteAction(_: FormState): Promise<FormState> {
 export async function claimAction(_: FormState, form: FormData): Promise<FormState> {
   return attempt(async () => {
     const user = await requireUser();
-    const db = await getDb();
-    await limit(db, "claim", user.id, 10, 900);
-    await limit(db, "claim-ip", await clientIp(), 30, 900);
-    await claimInvite(db, user, form.get("code"));
+    await claimWithLimit(await getDb(), user, form.get("code"), await clientIp());
     refresh();
   }, form, ["code"]);
 }

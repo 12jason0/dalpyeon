@@ -36,6 +36,9 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           <Link href="/login" className="link">이미 계정이 있어요</Link>
         )}
       </p>
+      <p className="text-center text-sm text-muted">
+        연인에게 코드를 받았나요? <Link href="/join" className="link">코드로 시작하기</Link>
+      </p>
     </form>
   );
 }

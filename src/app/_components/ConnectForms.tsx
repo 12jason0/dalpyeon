@@ -3,9 +3,22 @@ import { useActionState, useState } from "react";
 import { claimAction, createInviteAction, sharingAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
-export function InviteBox() {
+export function InviteBox({ origin }: { origin: string }) {
   const [state, action] = useActionState<FormState, FormData>(createInviteAction, null);
   const [copied, setCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const sendLink = async () => {
+    const text = `우리주기에서 연결해 줘 💗 ${origin}/join?code=${state?.code}`;
+    try {
+      if (navigator.share) await navigator.share({ text });
+      else {
+        await navigator.clipboard.writeText(text);
+        setLinkCopied(true);
+      }
+    } catch {
+      setLinkCopied(false); // 공유 창을 닫은 경우 포함
+    }
+  };
   const until = state?.expiresAt
     ? new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "numeric", minute: "2-digit" }).format(new Date(state.expiresAt))
     : null;
@@ -29,6 +42,9 @@ export function InviteBox() {
           >
             {copied ? "복사했어요" : "코드 복사"}
           </button>
+          <button type="button" className="mt-4 ml-5 text-sm link" onClick={sendLink}>
+            {linkCopied ? "링크를 복사했어요" : "링크로 보내기"}
+          </button>
         </div>
       )}
       <Submit>{state?.code ? "새 코드 만들기" : "연결 코드 만들기"}</Submit>
@@ -37,7 +53,7 @@ export function InviteBox() {
   );
 }
 
-export function ClaimForm() {
+export function ClaimForm({ code, notice }: { code?: string; notice?: string }) {
   const [state, action] = useActionState<FormState, FormData>(claimAction, null);
   return (
     <form action={action} className="space-y-6">
@@ -49,9 +65,9 @@ export function ClaimForm() {
         autoCapitalize="characters"
         maxLength={12}
         required
-        defaultValue={state?.values?.code}
+        defaultValue={state?.values?.code ?? code}
       />
-      <ErrorText message={state?.error} />
+      <ErrorText message={state?.error ?? notice} />
       <Submit>연결 요청</Submit>
     </form>
   );

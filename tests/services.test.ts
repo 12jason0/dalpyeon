@@ -1,13 +1,14 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createLocalDb, type DB } from "@/lib/db";
-import { comments, posts, reports, users } from "@/lib/db/schema";
+import { comments, invitations, posts, reports, users } from "@/lib/db/schema";
 import { addDays } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { createSession, deleteSession, limit, login, signup, userFromToken, type User } from "@/lib/services/auth";
 import { clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
-  activeCouple, approveRequest, claimInvite, createInvite, disconnect, pendingRequests, rejectRequest, updateSharing, waitingClaim,
+  activeCouple, approveRequest, claimInvite, claimWithLimit, createInvite, disconnect, pendingRequests, rejectRequest, tryClaim, updateSharing,
+  waitingClaim,
 } from "@/lib/services/couples";
 import {
   agreeToRules, blockAuthor, communityAccess, createComment, createPost, decideReport, deleteComment, deletePost, getPost, listPosts,
@@ -235,6 +236,58 @@ describe("커플 연결", () => {
     const req = await claimInvite(db, you, second.code);
     await rejectRequest(db, me, req.id);
     expect(await activeCouple(db, me.id)).toBeNull();
+  });
+});
+
+describe("코드로 시작하기", () => {
+  const newcomer = () => signup(db, { email: "new@example.com", password: "password-9", nickname: "새" });
+  const count = async () => (await db.select({ id: users.id }).from(users)).length;
+
+  it("맞는 코드: 가입하면 승인 대기 상태, 역할은 그대로", async () => {
+    const { me } = await pair();
+    const { code } = await createInvite(db, me);
+    const user = await newcomer();
+    expect(await tryClaim(db, user, code, "1.1.1.1")).toBeNull();
+    expect(await waitingClaim(db, user)).toMatchObject({ nickname: "나" });
+    expect((await reload(user)).role).toBe("recorder");
+    expect(await pendingRequests(db, me)).toHaveLength(1);
+  });
+
+  it("틀린 코드·만료된 코드: 가입은 유지되고 대기 상태가 아니다", async () => {
+    const { me } = await pair();
+    const before = await count();
+    const user = await newcomer();
+    expect(await tryClaim(db, user, "AAAA-AAAA", "1.1.1.1")).toBe("code");
+    expect(await tryClaim(db, user, "", "1.1.1.1")).toBe("code");
+
+    const { code } = await createInvite(db, me);
+    await db.update(invitations).set({ expiresAt: new Date(Date.now() - 1000) });
+    expect(await tryClaim(db, user, code, "1.1.1.1")).toBe("code");
+
+    expect(await count()).toBe(before + 1);
+    expect(await waitingClaim(db, user)).toBeNull();
+    expect(await pendingRequests(db, me)).toEqual([]);
+  });
+
+  it("로그인 상태에서 [연결 요청 보내기]: 연결 안 됨이면 요청, 연결 중이면 안내, 자기 코드는 거부", async () => {
+    const { me, you } = await pair();
+    const { code } = await createInvite(db, me);
+    expect(await tryClaim(db, you, code.toLowerCase(), "1.1.1.1")).toBeNull();
+    expect(await waitingClaim(db, you)).toMatchObject({ nickname: "나" });
+    expect(await tryClaim(db, me, code, "1.1.1.1")).toBe("code");
+
+    await approveRequest(db, me, (await pendingRequests(db, me))[0].id, TODAY);
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋" });
+    const other = await createInvite(db, third);
+    expect(await tryClaim(db, await reload(you), other.code, "1.1.1.1")).toBe("connected");
+  });
+
+  it("기존 claim 제한을 그대로 쓴다: 계정당 15분에 10번", async () => {
+    await pair();
+    const user = await newcomer();
+    for (let i = 0; i < 10; i++) expect(await tryClaim(db, user, "AAAA-AAAA", "1.1.1.1")).toBe("code");
+    expect(await tryClaim(db, user, "AAAA-AAAA", "1.1.1.1")).toBe("limit");
+    await expectFail(claimWithLimit(db, user, "AAAA-AAAA", "1.1.1.1"), 429);
   });
 });
 
