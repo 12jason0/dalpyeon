@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "달편",
+  title: "우리주기",
   description: "말하기 어려운 날에도, 서로의 편.",
-  appleWebApp: { capable: true, title: "달편", statusBarStyle: "default" },
+  appleWebApp: { capable: true, title: "우리주기", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {
