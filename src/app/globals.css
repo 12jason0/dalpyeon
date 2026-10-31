@@ -20,6 +20,8 @@ html {
   color: var(--color-ink);
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
+  /* 끝까지 스크롤했을 때 화면이 튕기면서 하단 메뉴까지 끌려 올라가지 않게 한다 */
+  overscroll-behavior-y: none;
 }
 
 body {
