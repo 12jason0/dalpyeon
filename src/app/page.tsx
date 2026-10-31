@@ -80,9 +80,14 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
     <>
       <div className="flex items-center justify-between">
         <Logo />
-        <NewsDot show={news.requests + news.replies > 0} />
+        <NewsDot show={news.replies > 0} />
       </div>
       <StatusLine {...recorderStatus(prediction, current, today, periods.length)} />
+      {partnerName && (
+        <p className="mt-3 text-sm text-muted">
+          {partnerName}님과 연결됨 · <Link href="/connect?disconnect=1" className="link">연결 끊기</Link>
+        </p>
+      )}
 
       <div className="mt-6">
         {current?.open ? <EndTodayButton id={current.id} /> : !current && <StartTodayButton />}

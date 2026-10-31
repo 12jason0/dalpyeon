@@ -1,6 +1,6 @@
 "use client";
 import { useActionState, useState } from "react";
-import { claimAction, createInviteAction, sharingAction, type FormState } from "../actions";
+import { createInviteAction, sharingAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
 export function InviteBox({ origin }: { origin: string }) {
@@ -53,10 +53,10 @@ export function InviteBox({ origin }: { origin: string }) {
   );
 }
 
+/** 코드를 넣으면 확인 화면(/join)으로 간다. 연결은 거기서 [연결하기]를 눌러야 된다. */
 export function ClaimForm({ code, notice }: { code?: string; notice?: string }) {
-  const [state, action] = useActionState<FormState, FormData>(claimAction, null);
   return (
-    <form action={action} className="space-y-6">
+    <form action="/join" className="space-y-6">
       <input
         name="code"
         className="field font-mono text-3xl tracking-wider uppercase"
@@ -65,10 +65,10 @@ export function ClaimForm({ code, notice }: { code?: string; notice?: string }) 
         autoCapitalize="characters"
         maxLength={12}
         required
-        defaultValue={state?.values?.code ?? code}
+        defaultValue={code}
       />
-      <ErrorText message={state?.error ?? notice} />
-      <Submit>연결 요청</Submit>
+      <ErrorText message={notice} />
+      <button type="submit" className="btn">다음</button>
     </form>
   );
 }

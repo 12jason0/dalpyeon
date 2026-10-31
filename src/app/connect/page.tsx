@@ -3,9 +3,9 @@ import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { todaySeoul } from "@/lib/dates";
 import type { User } from "@/lib/services/auth";
-import { activeCouple, otherNickname, pendingRequests, waitingClaim } from "@/lib/services/couples";
+import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser } from "@/lib/session";
-import { approveAction, disconnectAction, rejectAction } from "../actions";
+import { disconnectAction } from "../actions";
 import { ClaimForm, InviteBox, SharingForm } from "../_components/ConnectForms";
 import { Nav } from "../_components/Nav";
 import { Row, Section } from "../_components/Section";
@@ -28,23 +28,23 @@ async function siteOrigin() {
   return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
 }
 
-export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string; sharing?: string }> }) {
+export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string; sharing?: string; disconnect?: string }> }) {
   const user = await requireUser();
-  const { claim, code, sharing } = await searchParams;
+  const { claim, code, sharing, disconnect } = await searchParams;
   const notice = claim ? CLAIM_NOTICES[claim] : undefined;
   const sent: Claim = { code: typeof code === "string" ? code.slice(0, 12) : undefined, notice };
   return (
     <>
       <h1 className="text-4xl font-semibold tracking-tight">연결</h1>
-      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} justConnected={sharing === "new"} /> : <PartnerConnect user={user} claim={sent} />}
+      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} justConnected={sharing === "new"} askDisconnect={disconnect === "1"} /> : <PartnerConnect user={user} claim={sent} />}
       <Nav role={user.role} active="connect" />
     </>
   );
 }
 
-function Disconnect({ name }: { name: string }) {
+function Disconnect({ name, open, className = "mt-12" }: { name: string; open?: boolean; className?: string }) {
   return (
-    <details className="mt-12">
+    <details open={open} className={className}>
       <summary className="cursor-pointer list-none text-sm text-muted underline underline-offset-4">연결 끊기</summary>
       <p className="mt-4 text-[15px] leading-relaxed text-muted">
         끊으면 {name}님은 바로 아무것도 볼 수 없어요. 다시 연결하면 공유 설정은 처음부터 다시 정해요.
@@ -57,7 +57,7 @@ function Disconnect({ name }: { name: string }) {
   );
 }
 
-async function RecorderConnect({ user, claim, justConnected }: { user: User; claim: Claim; justConnected: boolean }) {
+async function RecorderConnect({ user, claim, justConnected, askDisconnect }: { user: User; claim: Claim; justConnected: boolean; askDisconnect: boolean }) {
   const db = await getDb();
   const couple = await activeCouple(db, user.id);
   if (couple) {
@@ -70,71 +70,33 @@ async function RecorderConnect({ user, claim, justConnected }: { user: User; cla
             {name}님에게 보여줄 것을 골라 주세요. 지금은 아무것도 안 보여요
           </p>
         )}
-        <p className="mt-10 text-2xl font-medium">{name}님과 연결돼 있어요</p>
+        <p className="mt-10 text-2xl font-medium">{name}님과 연결됨</p>
+        <Disconnect name={name} open={askDisconnect} className="mt-3" />
         <Section title={`${name}님에게 보여줄 것`}>
           <SharingForm today={todaySeoul()} initial={{ permissions: couple.permissions, shareFrom: couple.shareFrom, paused: couple.paused }} />
         </Section>
-        <Disconnect name={name} />
       </>
     );
   }
-  const [requests, waiting] = await Promise.all([pendingRequests(db, user), waitingClaim(db, user)]);
   return (
     <>
-      {waiting && <Waiting name={waiting.nickname} />}
-      {requests.length > 0 && (
-        <Section title="연결 요청">
-          {requests.map((r) => (
-            <div key={r.id} className="border-b border-line py-5">
-              <p className="text-xl font-medium">{r.nickname}</p>
-              <p className="mt-1 text-[15px] text-muted">{r.email}</p>
-              <div className="mt-4 flex gap-3">
-                <form action={approveAction} className="flex-1">
-                  <input type="hidden" name="id" value={r.id} />
-                  <button type="submit" className="btn">연결할게요</button>
-                </form>
-                <form action={rejectAction}>
-                  <input type="hidden" name="id" value={r.id} />
-                  <button type="submit" className="h-[3.25rem] px-5 text-[15px] text-muted">거절</button>
-                </form>
-              </div>
-            </div>
-          ))}
-        </Section>
-      )}
-      {!waiting && (
-        <>
-          <Section title="내 주기를 기록하는 사람">
-            <p className="mb-8 text-[17px] leading-relaxed text-muted">
-              코드를 만들어 파트너에게 보내 주세요. 15분 동안 쓸 수 있어요.
-              연결해도 처음엔 아무것도 보이지 않고, 보여줄 항목은 직접 고를 수 있어요.
-            </p>
-            <InviteBox origin={await siteOrigin()} />
-            {requests.length === 0 && (
-              <p className="mt-6 text-center text-sm">
-                <Link href="/connect" className="link">파트너가 코드를 입력했다면 새로고침</Link>
-              </p>
-            )}
-          </Section>
-          <Section title="상대 편이 되어줄 사람">
-            <p className="mb-8 text-[17px] leading-relaxed text-muted">
-              상대에게 받은 8자리 코드를 입력해 주세요. 상대가 승인하면 파트너 화면으로 바뀌어요.
-              내 기록은 지워지지 않고, 연결을 끊으면 다시 보여요.
-            </p>
-            <ClaimForm code={claim.code} notice={claim.notice} />
-          </Section>
-        </>
-      )}
-    </>
-  );
-}
-
-function Waiting({ name }: { name: string }) {
-  return (
-    <>
-      <p className="mt-10 text-2xl font-medium leading-snug">{name}님이 승인하면 연결돼요</p>
-      <p className="mt-4 text-[15px] text-muted">승인을 기다리고 있어요.</p>
-      <p className="mt-8 text-sm"><Link href="/connect" className="link">새로고침</Link></p>
+      <Section title="내 주기를 기록하는 사람">
+        <p className="mb-8 text-[17px] leading-relaxed text-muted">
+          코드를 만들어 파트너에게 보내 주세요. 15분 동안 쓸 수 있고, 입력하면 바로 연결되니 믿는 사람에게만 보내 주세요.
+          연결해도 처음엔 아무것도 보이지 않고, 보여줄 항목은 직접 고를 수 있어요.
+        </p>
+        <InviteBox origin={await siteOrigin()} />
+        <p className="mt-6 text-center text-sm">
+          <Link href="/connect" className="link">파트너가 코드를 입력했다면 새로고침</Link>
+        </p>
+      </Section>
+      <Section title="상대 편이 되어줄 사람">
+        <p className="mb-8 text-[17px] leading-relaxed text-muted">
+          상대에게 받은 8자리 코드를 입력해 주세요. 연결되면 파트너 화면으로 바뀌어요.
+          내 기록은 지워지지 않고, 연결을 끊으면 다시 보여요.
+        </p>
+        <ClaimForm code={claim.code} notice={claim.notice} />
+      </Section>
     </>
   );
 }
@@ -157,8 +119,6 @@ async function PartnerConnect({ user, claim }: { user: User; claim: Claim }) {
       </>
     );
   }
-  const waiting = await waitingClaim(db, user);
-  if (waiting) return <Waiting name={waiting.nickname} />;
   return (
     <>
       <p className="mt-10 mb-10 text-[17px] leading-relaxed text-muted">상대에게 받은 8자리 코드를 입력해 주세요.</p>

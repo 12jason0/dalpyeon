@@ -75,7 +75,7 @@ export async function signup(db: DB, input: { email: unknown; password: unknown;
   const email = cleanEmail(input.email);
   const password = cleanPassword(input.password);
   const nickname = cleanNickname(input.nickname);
-  // 누구나 기록자로 시작한다. 파트너는 연결이 승인될 때만 된다.
+  // 누구나 기록자로 시작한다. 파트너는 코드로 연결될 때만 된다.
   const role: Role = "recorder";
   const passwordHash = await hashPassword(password);
   const id = randomUUID();

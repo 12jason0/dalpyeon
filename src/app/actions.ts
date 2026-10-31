@@ -13,12 +13,12 @@ import {
   type Target,
 } from "@/lib/services/community";
 import {
-  approveRequest, claimWithLimit, createInvite, disconnect, rejectRequest, tryClaim, updateSharing, PERMISSION_KEYS,
+  createInvite, disconnect, tryClaim, updateSharing, PERMISSION_KEYS,
   type ClaimProblem,
 } from "@/lib/services/couples";
 import { deletePeriod, listPeriods, savePeriod } from "@/lib/services/periods";
 import {
-  markNewsSeen, newsFor, notifyCare, notifyConnectionRequest, notifyReply, removeSubscription, saveSubscription, setReminder,
+  markNewsSeen, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
 } from "@/lib/services/push";
 import { clientIp, endSession, requireLogin, requireUser, startSession } from "@/lib/session";
 
@@ -83,18 +83,18 @@ export async function joinAction(_: FormState, form: FormData): Promise<FormStat
     });
     await startSession(user.id);
     problem = await tryClaim(db, user, code, ip);
-    if (!problem) later((d) => notifyConnectionRequest(d, user));
+    if (!problem) later((d) => notifyConnected(d, user));
   }, form, ["email", "nickname", "code"]);
   if (result?.error) return result;
   redirect(connectAfterClaim(problem, code));
 }
 
-/** 이미 로그인한 사람이 확인 화면에서 [연결 요청 보내기]를 눌렀을 때만 연결을 요청한다. */
+/** 이미 로그인한 사람이 확인 화면에서 [연결하기]를 눌렀을 때만 연결한다. */
 export async function joinWithLinkAction(form: FormData) {
   const code = String(form.get("code") ?? "");
   const user = await requireUser();
   const problem = await tryClaim(await getDb(), user, code, await clientIp());
-  if (!problem) later((d) => notifyConnectionRequest(d, user));
+  if (!problem) later((d) => notifyConnected(d, user));
   refresh();
   redirect(connectAfterClaim(problem, code));
 }
@@ -182,28 +182,6 @@ export async function createInviteAction(_: FormState): Promise<FormState> {
     const { code, expiresAt } = await createInvite(db, user);
     return { ok: true, code, expiresAt: expiresAt.toISOString() };
   });
-}
-
-export async function claimAction(_: FormState, form: FormData): Promise<FormState> {
-  return attempt(async () => {
-    const user = await requireUser();
-    await claimWithLimit(await getDb(), user, form.get("code"), await clientIp());
-    later((d) => notifyConnectionRequest(d, user));
-    refresh();
-  }, form, ["code"]);
-}
-
-export async function approveAction(form: FormData) {
-  const user = await requireUser("recorder");
-  const couple = await approveRequest(await getDb(), user, String(form.get("id"))).catch(ignoreAppError);
-  refresh();
-  if (couple) redirect("/connect?sharing=new"); // 공유는 전부 꺼진 채 시작하므로 바로 고르게 한다
-}
-
-export async function rejectAction(form: FormData) {
-  const user = await requireUser("recorder");
-  await rejectRequest(await getDb(), user, String(form.get("id"))).catch(ignoreAppError);
-  refresh();
 }
 
 export async function sharingAction(_: FormState, form: FormData): Promise<FormState> {
@@ -349,11 +327,9 @@ export async function setReminderAction(form: FormData) {
 
 export async function markNewsSeenAction() {
   const user = await requireUser();
-  const db = await getDb();
-  const { requests } = await newsFor(db, user);
-  await markNewsSeen(db, user);
+  await markNewsSeen(await getDb(), user);
   refresh();
-  redirect(requests ? "/connect" : "/");
+  redirect("/");
 }
 
 // 버튼 하나짜리 동작은 실패해도(이미 처리됨·만료 등) 화면을 새로 고쳐 현재 상태를 보여주면 충분하다.

@@ -36,15 +36,15 @@ export function JoinForm({ code }: { code: string }) {
   );
 }
 
-/** 로그인한 사람은 링크를 열어도 바로 요청하지 않는다. 버튼을 눌러야 연결을 요청한다. */
+/** 로그인한 사람은 코드를 넣어도 바로 연결하지 않는다. 버튼을 눌러야 연결한다. */
 export function JoinWithLink({ code }: { code: string }) {
   return (
     <>
-      <h1 className="mt-10 text-3xl font-semibold leading-snug tracking-tight">이 코드로 연결을 요청할까요?</h1>
-      <p className="mt-3 text-[15px] leading-relaxed text-muted">상대가 승인하면 파트너 화면으로 바뀌어요. 내 기록은 지워지지 않아요.</p>
+      <h1 className="mt-10 text-3xl font-semibold leading-snug tracking-tight">이 코드로 연결할까요?</h1>
+      <p className="mt-3 text-[15px] leading-relaxed text-muted">바로 연결되고 파트너 화면으로 바뀌어요. 내 기록은 지워지지 않아요.</p>
       <form action={joinWithLinkAction} className="mt-10 flex items-center gap-4">
         <input type="hidden" name="code" value={code} />
-        <Submit>연결 요청 보내기</Submit>
+        <Submit>연결하기</Submit>
         <Link href="/" className="link shrink-0 px-2 text-sm">취소</Link>
       </form>
     </>

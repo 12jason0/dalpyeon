@@ -72,15 +72,16 @@ const shots = require("node:os").tmpdir();
     await you.getByText("기록 모으는 중").waitFor();
     await you.goto(BASE + "/connect");
     await you.fill('input[name=code]', code.toLowerCase());
-    await you.click('button:has-text("연결 요청")');
-    await you.getByText("지민님이 승인하면 연결돼요").waitFor();
+    await you.click('button:has-text("다음")');
+    await you.click('button:has-text("연결하기")');
+    await you.getByText("지민님과 연결돼 있어요").waitFor();
   });
 
-  await step("기록자 승인 → 공유는 기본 꺼짐", async () => {
+  await step("바로 연결 → 기록자에게 보이고 공유는 기본 꺼짐", async () => {
+    await me.goto(BASE + "/");
+    await me.getByText("도윤님과 연결됨").waitFor();
     await me.goto(BASE + "/connect");
-    await me.getByText("도윤").first().waitFor();
-    await me.click('button:has-text("연결할게요")');
-    await me.getByText("도윤님과 연결돼 있어요").waitFor();
+    await me.getByText("도윤님과 연결됨").waitFor();
     await you.goto(BASE + "/");
     await you.getByText("아직 조용해요").waitFor();
   });

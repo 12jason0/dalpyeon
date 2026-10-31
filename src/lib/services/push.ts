@@ -1,13 +1,13 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { and, count, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import type { DB } from "../db";
-import { careRequests, careResponses, invitations, pushSubscriptions, users } from "../db/schema";
+import { careRequests, careResponses, pushSubscriptions, users } from "../db/schema";
 import { diffDays, todaySeoul } from "../dates";
 import { fail } from "../errors";
 import { estimate } from "../prediction";
 import type { User } from "./auth";
 import { sharedCare } from "./care";
-import { activeCouple, pendingRequests, waitingClaim } from "./couples";
+import { activeCouple } from "./couples";
 import { listPeriods } from "./periods";
 
 export const REMINDER_DAYS = 3;
@@ -80,13 +80,11 @@ async function quietly(work: () => Promise<void>) {
   }
 }
 
-/** 코드 입력 직후. 요청이 아직 유효한지 다시 보고 기록자에게 알린다. */
-export function notifyConnectionRequest(db: DB, claimant: User, sender?: Sender) {
+/** 코드로 연결된 직후. 모르는 사람이면 바로 끊을 수 있게 기록자에게 알린다. */
+export function notifyConnected(db: DB, partner: User, sender?: Sender) {
   return quietly(async () => {
-    const claim = await waitingClaim(db, claimant);
-    if (!claim) return;
-    const [invite] = await db.select({ recorderId: invitations.recorderId }).from(invitations).where(eq(invitations.id, claim.id));
-    if (invite) await sendPush(db, invite.recorderId, { body: "새 연결 요청이 있어요", url: "/connect" }, sender);
+    const couple = await activeCouple(db, partner.id);
+    if (couple?.partnerId === partner.id) await sendPush(db, couple.recorderId, { body: "파트너가 연결됐어요", url: "/connect?sharing=new" }, sender);
   });
 }
 
@@ -148,25 +146,24 @@ export function cronAuthorized(header: string | null, secret: string | undefined
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-export type News = { requests: number; replies: number; care: number };
+export type News = { replies: number; care: number };
 
-/** 알림을 거부한 사람도 볼 수 있는 새 소식. 연결 요청은 처리할 때까지 남는다. */
+/** 알림을 거부한 사람도 볼 수 있는 새 소식. */
 export async function newsFor(db: DB, user: User, today = todaySeoul()): Promise<News> {
   const [me] = await db.select({ seen: users.newsSeenAt }).from(users).where(eq(users.id, user.id));
   const since = me?.seen ?? new Date(0);
   const couple = await activeCouple(db, user.id);
   if (user.role === "recorder") {
-    const requests = couple ? 0 : (await pendingRequests(db, user)).length;
-    if (!couple) return { requests, replies: 0, care: 0 };
+    if (!couple) return { replies: 0, care: 0 };
     const [{ total }] = await db.select({ total: count() }).from(careResponses)
       .where(and(eq(careResponses.coupleId, couple.id), gt(careResponses.updatedAt, since)));
-    return { requests, replies: total, care: 0 };
+    return { replies: total, care: 0 };
   }
-  if (couple?.partnerId !== user.id) return { requests: 0, replies: 0, care: 0 };
+  if (couple?.partnerId !== user.id) return { replies: 0, care: 0 };
   const unanswered = (await sharedCare(db, couple, today)).filter((c) => !c.response).map((c) => c.id);
   const [{ total }] = await db.select({ total: count() }).from(careRequests)
     .where(and(inArray(careRequests.id, unanswered), gt(careRequests.updatedAt, since)));
-  return { requests: 0, replies: 0, care: total };
+  return { replies: 0, care: total };
 }
 
 export async function markNewsSeen(db: DB, user: User) {

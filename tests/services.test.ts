@@ -7,8 +7,7 @@ import { AppError } from "@/lib/errors";
 import { createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
 import { clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
-  activeCouple, approveRequest, claimInvite, claimWithLimit, createInvite, disconnect, pendingRequests, rejectRequest, tryClaim, updateSharing,
-  waitingClaim,
+  activeCouple, claimInvite, claimWithLimit, createInvite, disconnect, tryClaim, updateSharing,
 } from "@/lib/services/couples";
 import {
   agreeToRules, blockAuthor, communityAccess, createComment, createPost, decideReport, deleteComment, deletePost, getPost, listPosts,
@@ -17,7 +16,7 @@ import {
 import { currentPeriod, deletePeriod, listPeriods, predictionFor, savePeriod } from "@/lib/services/periods";
 import { partnerView } from "@/lib/services/partner";
 import {
-  cronAuthorized, markNewsSeen, newsFor, notifyCare, notifyConnectionRequest, notifyReply, reminderEnabled, removeSubscription, saveSubscription,
+  cronAuthorized, markNewsSeen, newsFor, notifyCare, notifyConnected, notifyReply, reminderEnabled, removeSubscription, saveSubscription,
   sendPush, sendReminders, setReminder, type Sender,
 } from "@/lib/services/push";
 
@@ -45,8 +44,7 @@ async function reload(user: User): Promise<User> {
 
 async function connect(me: User, you: User) {
   const { code } = await createInvite(db, me);
-  const { id } = await claimInvite(db, you, code.toLowerCase()); // 소문자·하이픈 입력도 받는다
-  return approveRequest(db, me, id, TODAY);
+  return claimInvite(db, you, code.toLowerCase(), TODAY); // 소문자·하이픈 입력도 받는다
 }
 
 async function fourPeriods(user: User) {
@@ -145,17 +143,16 @@ describe("생리 기록", () => {
 });
 
 describe("커플 연결", () => {
-  it("코드 → 요청 → 승인. 1:1", async () => {
+  it("코드 입력 → 바로 연결. 1:1", async () => {
     const { me, you } = await pair();
     const { code } = await createInvite(db, me);
     await expectFail(claimInvite(db, you, "AAAA-AAAA"), 404);
-    const { id } = await claimInvite(db, you, code);
-    expect(await waitingClaim(db, you)).toMatchObject({ nickname: "나" });
-    expect(await pendingRequests(db, me)).toHaveLength(1);
-    await expectFail(claimInvite(db, you, code), 404); // 한 번 쓴 코드는 끝
-    const couple = await approveRequest(db, me, id, TODAY);
+    const couple = await claimInvite(db, you, code, TODAY);
+    expect(couple).toMatchObject({ recorderId: me.id, partnerId: you.id, status: "active" });
     expect(couple.permissions).toEqual({ periods: false, predictions: false, fertility: false, care: false });
     expect(couple.shareFrom).toBe(TODAY);
+    expect((await reload(you)).role).toBe("partner");
+    expect((await reload(me)).role).toBe("recorder");
     await expectFail(createInvite(db, me), 409);
     await expectFail(createInvite(db, await reload(you)), 403); // 파트너는 코드를 만들 수 없다
   });
@@ -168,27 +165,59 @@ describe("커플 연결", () => {
     await claimInvite(db, you, code);
   });
 
-  it("코드 입력만 하면 역할은 그대로", async () => {
+  it("한 번 쓴 코드는 재사용할 수 없다. 끊은 뒤에도 마찬가지", async () => {
     const { me, you } = await pair();
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
     const { code } = await createInvite(db, me);
     await claimInvite(db, you, code);
-    expect((await reload(you)).role).toBe("recorder");
+    await expectFail(claimInvite(db, third, code), 404);
+    await expectFail(claimInvite(db, await reload(you), code), 409);
+    await disconnect(db, me);
+    await expectFail(claimInvite(db, await reload(you), code), 404);
+    await expectFail(claimInvite(db, third, code), 404);
+    expect((await reload(third)).role).toBe("recorder");
   });
 
-  it("승인하면 입력한 사람만 파트너가 된다", async () => {
-    const { me, you } = await pair();
-    await connect(me, you);
-    expect((await reload(you)).role).toBe("partner");
-    expect((await reload(me)).role).toBe("recorder");
-  });
-
-  it("거절하면 기록자 그대로", async () => {
+  it("만료된 코드는 막히고 아무것도 바뀌지 않는다", async () => {
     const { me, you } = await pair();
     const { code } = await createInvite(db, me);
-    const { id } = await claimInvite(db, you, code);
-    await rejectRequest(db, me, id);
+    await db.update(invitations).set({ expiresAt: new Date(Date.now() - 1000) });
+    await expectFail(claimInvite(db, you, code), 404);
     expect((await reload(you)).role).toBe("recorder");
-    expect(await waitingClaim(db, you)).toBeNull();
+    expect(await activeCouple(db, me.id)).toBeNull();
+  });
+
+  it("같은 코드를 동시에 입력해도 한 명만 연결된다", async () => {
+    const { me, you } = await pair();
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const { code } = await createInvite(db, me);
+    const results = await Promise.allSettled([claimInvite(db, you, code), claimInvite(db, third, code)]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const roles = [(await reload(you)).role, (await reload(third)).role];
+    expect(roles.filter((r) => r === "partner")).toHaveLength(1);
+  });
+
+  it("기록자는 모르는 사람과 연결돼도 바로 끊을 수 있다", async () => {
+    const { me, you } = await pair();
+    await connect(me, you);
+    await disconnect(db, me);
+    expect(await activeCouple(db, me.id)).toBeNull();
+    expect(await activeCouple(db, you.id)).toBeNull();
+    expect((await reload(you)).role).toBe("recorder");
+    await expectFail(partnerView(db, await reload(you), TODAY));
+  });
+
+  it("DB에 남은 대기 요청은 무시된다: 코드는 못 쓰고, 다시 연결하는 데 방해되지 않는다", async () => {
+    const { me, you } = await pair();
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const old = await createInvite(db, me);
+    await db.update(invitations).set({ status: "pending", claimantId: you.id });
+    await expectFail(claimInvite(db, third, old.code), 404);
+    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0 });
+    expect(await activeCouple(db, you.id)).toBeNull();
+    await connect(me, third); // 기록자는 새 코드로 다른 사람과 연결할 수 있다
+    const [row] = await db.select().from(invitations).where(eq(invitations.claimantId, you.id));
+    expect(row.status).toBe("revoked");
   });
 
   it("끊으면 누가 끊든 파트너가 기록자로 돌아오고, 예전 기록이 다시 보인다", async () => {
@@ -213,56 +242,50 @@ describe("커플 연결", () => {
     await createInvite(db, await reload(you)); // 다시 코드를 만들 수 있다
   });
 
-  it("입력한 사람이 만들어 둔 코드는 승인되면 무효", async () => {
+  it("입력한 사람이 만들어 둔 코드는 연결되면 무효", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
-    const yours = await createInvite(db, you);
-    const { id: stale } = await claimInvite(db, third, yours.code);
-    const mine = await createInvite(db, me);
     const late = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷", healthConsent: true });
-    const { id } = await claimInvite(db, you, mine.code);
-    await approveRequest(db, me, id, TODAY);
-    expect(await waitingClaim(db, third)).toBeNull();
-    await expectFail(approveRequest(db, await reload(you), stale, TODAY), 403);
+    const yours = await createInvite(db, you);
+    const mine = await createInvite(db, me);
+    await claimInvite(db, you, mine.code);
     await expectFail(claimInvite(db, late, yours.code), 404);
   });
 
-  it("서로의 코드를 입력해도 먼저 승인한 쪽만 연결된다", async () => {
+  it("서로의 코드를 입력해도 먼저 입력한 쪽만 연결된다", async () => {
     const { me, you } = await pair();
     const mine = await createInvite(db, me);
     const yours = await createInvite(db, you);
-    const toMe = await claimInvite(db, you, mine.code);
-    const toYou = await claimInvite(db, me, yours.code);
-    await approveRequest(db, me, toMe.id, TODAY);
-    expect(await waitingClaim(db, me)).toBeNull();
-    await expectFail(approveRequest(db, await reload(you), toYou.id, TODAY), 403);
+    await claimInvite(db, you, mine.code);
+    await expectFail(claimInvite(db, me, yours.code), 409);
     expect((await reload(me)).role).toBe("recorder");
   });
 
   it("이미 다른 연결의 기록자인 사람은 파트너가 될 수 없다", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
     const fourth = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷", healthConsent: true });
-    // you가 me의 코드를 입력해 둔 뒤, you의 코드를 fourth가 입력해 you가 먼저 승인한다
     const mine = await createInvite(db, me);
     const yours = await createInvite(db, you);
-    const toMe = await claimInvite(db, you, mine.code);
-    const toYou = await claimInvite(db, fourth, yours.code);
-    await approveRequest(db, you, toYou.id, TODAY);
-    await expectFail(approveRequest(db, me, toMe.id, TODAY), 404); // 요청이 이미 무효
+    await claimInvite(db, fourth, yours.code);
+    await expectFail(claimInvite(db, you, mine.code), 409);
     expect((await reload(you)).role).toBe("recorder");
-    await expectFail(claimInvite(db, you, (await createInvite(db, third)).code), 409);
   });
 
-  it("새 코드를 만들면 이전 요청은 무효, 거절도 가능", async () => {
+  it("이미 파트너가 있는 기록자의 코드로는 연결되지 않는다", async () => {
+    const { me, you } = await pair();
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const mine = await createInvite(db, me);
+    await claimInvite(db, you, mine.code);
+    // 연결될 때 지워지지 않고 남은 코드가 있더라도 busy 검사가 막는다
+    await db.update(invitations).set({ status: "open", claimantId: null });
+    await expectFail(claimInvite(db, third, mine.code), 409);
+    expect((await reload(third)).role).toBe("recorder");
+  });
+
+  it("새 코드를 만들면 이전 코드는 무효", async () => {
     const { me, you } = await pair();
     const first = await createInvite(db, me);
-    const { id } = await claimInvite(db, you, first.code);
     await createInvite(db, me);
-    await expectFail(approveRequest(db, me, id, TODAY), 404);
-    const second = await createInvite(db, me);
-    const req = await claimInvite(db, you, second.code);
-    await rejectRequest(db, me, req.id);
+    await expectFail(claimInvite(db, you, first.code), 404);
     expect(await activeCouple(db, me.id)).toBeNull();
   });
 });
@@ -271,17 +294,16 @@ describe("코드로 시작하기", () => {
   const newcomer = () => signup(db, { email: "new@example.com", password: "password-9", nickname: "새", healthConsent: true });
   const count = async () => (await db.select({ id: users.id }).from(users)).length;
 
-  it("맞는 코드: 가입하면 승인 대기 상태, 역할은 그대로", async () => {
+  it("맞는 코드: 가입하면 바로 파트너로 연결", async () => {
     const { me } = await pair();
     const { code } = await createInvite(db, me);
     const user = await newcomer();
     expect(await tryClaim(db, user, code, "1.1.1.1")).toBeNull();
-    expect(await waitingClaim(db, user)).toMatchObject({ nickname: "나" });
-    expect((await reload(user)).role).toBe("recorder");
-    expect(await pendingRequests(db, me)).toHaveLength(1);
+    expect((await reload(user)).role).toBe("partner");
+    expect(await activeCouple(db, me.id)).toMatchObject({ partnerId: user.id });
   });
 
-  it("틀린 코드·만료된 코드: 가입은 유지되고 대기 상태가 아니다", async () => {
+  it("틀린 코드·만료된 코드: 가입은 유지되고 연결되지 않는다", async () => {
     const { me } = await pair();
     const before = await count();
     const user = await newcomer();
@@ -293,18 +315,14 @@ describe("코드로 시작하기", () => {
     expect(await tryClaim(db, user, code, "1.1.1.1")).toBe("code");
 
     expect(await count()).toBe(before + 1);
-    expect(await waitingClaim(db, user)).toBeNull();
-    expect(await pendingRequests(db, me)).toEqual([]);
+    expect(await activeCouple(db, me.id)).toBeNull();
   });
 
-  it("로그인 상태에서 [연결 요청 보내기]: 연결 안 됨이면 요청, 연결 중이면 안내, 자기 코드는 거부", async () => {
+  it("로그인 상태에서 [연결하기]: 자기 코드는 거부, 연결 안 됨이면 연결, 연결 중이면 안내", async () => {
     const { me, you } = await pair();
     const { code } = await createInvite(db, me);
-    expect(await tryClaim(db, you, code.toLowerCase(), "1.1.1.1")).toBeNull();
-    expect(await waitingClaim(db, you)).toMatchObject({ nickname: "나" });
     expect(await tryClaim(db, me, code, "1.1.1.1")).toBe("code");
-
-    await approveRequest(db, me, (await pendingRequests(db, me))[0].id, TODAY);
+    expect(await tryClaim(db, you, code.toLowerCase(), "1.1.1.1")).toBeNull();
     const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
     const other = await createInvite(db, third);
     expect(await tryClaim(db, await reload(you), other.code, "1.1.1.1")).toBe("connected");
@@ -692,16 +710,22 @@ describe("알림", () => {
     expect((await subs()).map((s) => s.endpoint).sort()).toEqual([sub("busy").endpoint, sub("ok").endpoint]);
   });
 
-  it("연결 요청은 유효한 요청이 있을 때만 기록자에게", async () => {
+  it("연결되면 알림을 켠 기록자에게만 알린다", async () => {
     const { me, you } = await pair();
     await saveSubscription(db, me, sub("me"));
+    await saveSubscription(db, you, sub("you"));
     const { sent, sender } = outbox();
-    await notifyConnectionRequest(db, you, sender); // 요청 없음
+    await notifyConnected(db, you, sender); // 연결 없음
     expect(sent).toEqual([]);
-    const { code } = await createInvite(db, me);
-    await claimInvite(db, you, code);
-    await notifyConnectionRequest(db, you, sender);
-    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "우리주기", body: "새 연결 요청이 있어요", url: "/connect" }]);
+    await connect(me, you);
+    await notifyConnected(db, await reload(you), sender);
+    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "우리주기", body: "파트너가 연결됐어요", url: "/connect?sharing=new" }]);
+
+    await disconnect(db, me);
+    await removeSubscription(db, me, sub("me").endpoint); // 알림을 끈 기록자
+    await connect(me, await reload(you));
+    await notifyConnected(db, await reload(you), sender);
+    expect(sent).toHaveLength(1);
   });
 
   it("배려 요청: 공유 켜진 요청만 파트너에게, 처음 공유될 때만", async () => {
@@ -789,15 +813,9 @@ describe("알림", () => {
     expect(cronAuthorized("Bearer ", "")).toBe(false);
   });
 
-  it("새 소식: 처리 전 연결 요청, 안 읽은 답장, 답 안 한 요청", async () => {
+  it("새 소식: 안 읽은 답장, 답 안 한 요청", async () => {
     const { me, you } = await pair();
-    const { code } = await createInvite(db, me);
-    await claimInvite(db, you, code);
-    expect(await newsFor(db, me, TODAY)).toMatchObject({ requests: 1 });
-    await markNewsSeen(db, me);
-    expect(await newsFor(db, me, TODAY)).toMatchObject({ requests: 1 }); // 처리할 때까지 남는다
-    await rejectRequest(db, me, (await pendingRequests(db, me))[0].id);
-    expect(await newsFor(db, me, TODAY)).toEqual({ requests: 0, replies: 0, care: 0 });
+    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0 });
 
     await connect(me, you);
     await updateSharing(db, me, { permissions: { care: true }, shareFrom: TODAY, paused: false }, TODAY);

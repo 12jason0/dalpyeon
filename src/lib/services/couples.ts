@@ -39,7 +39,7 @@ export async function createInvite(db: DB, user: User) {
   const code = Array.from({ length: 8 }, () => ALPHABET[randomInt(ALPHABET.length)]).join("");
   const expiresAt = new Date(Date.now() + INVITE_MINUTES * 60000);
   await db.transaction(async (tx) => {
-    // 새 코드를 만들면 이전 코드와 아직 승인 안 한 요청은 무효
+    // 새 코드를 만들면 이전 코드는 무효
     await tx.update(invitations).set({ status: "revoked" })
       .where(and(eq(invitations.recorderId, user.id), inArray(invitations.status, ["open", "pending"])));
     await tx.insert(invitations).values({ id: randomUUID(), recorderId: user.id, codeHash: sha256(code), expiresAt, status: "open" });
@@ -47,18 +47,40 @@ export async function createInvite(db: DB, user: User) {
   return { code: `${code.slice(0, 4)}-${code.slice(4)}`, expiresAt };
 }
 
-export async function claimInvite(db: DB, user: User, rawCode: unknown) {
+/** 코드를 입력하면 승인 없이 바로 연결된다. 코드는 한 번 쓰면 끝. */
+export async function claimInvite(db: DB, user: User, rawCode: unknown, today = todaySeoul()) {
   const code = normalizeCode(String(rawCode ?? ""));
   if (code.length !== 8) fail("코드 8자리를 확인해 주세요");
   if (await activeCouple(db, user.id)) fail("이미 연결된 상대가 있어요", 409);
-  const [own] = await db.select({ id: invitations.id }).from(invitations)
-    .where(and(eq(invitations.codeHash, sha256(code)), eq(invitations.recorderId, user.id))).limit(1);
-  if (own) fail("내가 만든 코드는 입력할 수 없어요");
-  const updated = await db.update(invitations).set({ status: "pending", claimantId: user.id })
-    .where(and(eq(invitations.codeHash, sha256(code)), eq(invitations.status, "open"), gt(invitations.expiresAt, new Date())))
-    .returning({ id: invitations.id });
-  if (!updated.length) fail("사용할 수 없는 코드예요. 만료됐을 수 있어요", 404);
-  return updated[0];
+  const usable = () => and(eq(invitations.codeHash, sha256(code)), eq(invitations.status, "open"), gt(invitations.expiresAt, new Date()));
+  return db.transaction(async (tx) => {
+    const [own] = await tx.select({ id: invitations.id }).from(invitations)
+      .where(and(eq(invitations.codeHash, sha256(code)), eq(invitations.recorderId, user.id))).limit(1);
+    if (own) fail("내가 만든 코드는 입력할 수 없어요");
+    const [invite] = await tx.select().from(invitations).where(usable()).limit(1);
+    if (!invite) fail("사용할 수 없는 코드예요. 만료됐을 수 있어요", 404);
+    const both = [invite.recorderId, user.id];
+    // 서로의 코드를 동시에 입력해도 한쪽만 연결되도록 두 사람을 먼저 잠근다.
+    await tx.select({ id: users.id }).from(users).where(inArray(users.id, both)).orderBy(users.id).for("update");
+    // 코드를 입력한 사람도 다른 연결의 기록자일 수 있어서, 두 사람 모두 양쪽 자리를 다 본다.
+    const busy = await tx.select({ id: couples.id }).from(couples)
+      .where(and(eq(couples.status, "active"), or(inArray(couples.recorderId, both), inArray(couples.partnerId, both))));
+    if (busy.length) fail("둘 중 한 명은 이미 다른 사람과 연결돼 있어요", 409);
+    // 잠금을 기다리는 사이 코드가 쓰였을 수 있어 조건을 건 채로 바꾼다.
+    const claimed = await tx.update(invitations).set({ status: "approved", claimantId: user.id })
+      .where(and(eq(invitations.id, invite.id), usable())).returning({ id: invitations.id });
+    if (!claimed.length) fail("사용할 수 없는 코드예요. 만료됐을 수 있어요", 404);
+    // 연결해도 공유는 전부 꺼진 상태로 시작. 공유 시작일은 오늘.
+    const [couple] = await tx.insert(couples).values({
+      id: randomUUID(), recorderId: invite.recorderId, partnerId: user.id, status: "active", paused: false,
+      permissions: NO_PERMISSIONS, shareFrom: today,
+    }).returning();
+    await tx.update(users).set({ role: "partner" }).where(eq(users.id, user.id));
+    // 두 사람이 만든 다른 코드와 예전에 남은 대기 요청은 모두 무효
+    await tx.update(invitations).set({ status: "revoked" })
+      .where(and(or(inArray(invitations.recorderId, both), inArray(invitations.claimantId, both)), inArray(invitations.status, ["open", "pending"])));
+    return couple;
+  }) as Promise<Couple>;
 }
 
 /** 사용자가 보낸 코드 입력은 모두 이 제한을 거친다. */
@@ -79,60 +101,6 @@ export async function tryClaim(db: DB, user: User, rawCode: unknown, ip: string)
     if (!(e instanceof AppError)) throw e;
     return e.status === 409 ? "connected" : e.status === 429 ? "limit" : "code";
   }
-}
-
-/** 코드를 입력한 쪽: 내가 입력하고 승인을 기다리는 요청 */
-export async function waitingClaim(db: DB, user: User) {
-  const [row] = await db.select({ id: invitations.id, nickname: users.nickname }).from(invitations)
-    .innerJoin(users, eq(users.id, invitations.recorderId))
-    .where(and(eq(invitations.claimantId, user.id), eq(invitations.status, "pending"), gt(invitations.expiresAt, new Date())))
-    .limit(1);
-  return row ?? null;
-}
-
-/** 기록자 쪽: 승인 대기 중인 요청 */
-export async function pendingRequests(db: DB, user: User) {
-  requireRole(user, "recorder");
-  return db.select({ id: invitations.id, nickname: users.nickname, email: users.email, expiresAt: invitations.expiresAt })
-    .from(invitations).innerJoin(users, eq(users.id, invitations.claimantId))
-    .where(and(eq(invitations.recorderId, user.id), eq(invitations.status, "pending"), gt(invitations.expiresAt, new Date())));
-}
-
-export async function approveRequest(db: DB, user: User, requestId: string, today = todaySeoul()) {
-  requireRole(user, "recorder");
-  return db.transaction(async (tx) => {
-    const [invite] = await tx.select().from(invitations)
-      .where(and(eq(invitations.id, requestId), eq(invitations.recorderId, user.id), eq(invitations.status, "pending"), gt(invitations.expiresAt, new Date())))
-      .limit(1);
-    if (!invite?.claimantId) fail("유효한 연결 요청이 없어요. 코드를 새로 만들어 주세요", 404);
-    const partnerId = invite.claimantId;
-    const both = [user.id, partnerId];
-    // 서로의 코드를 입력한 두 사람을 동시에 승인해도 한쪽만 연결되도록 두 사람을 잠근다.
-    await tx.select({ id: users.id }).from(users).where(inArray(users.id, both)).orderBy(users.id).for("update");
-    // 코드를 입력한 사람도 다른 연결의 기록자일 수 있어서, 두 사람 모두 양쪽 자리를 다 본다.
-    const busy = await tx.select({ id: couples.id }).from(couples)
-      .where(and(eq(couples.status, "active"), or(inArray(couples.recorderId, both), inArray(couples.partnerId, both))));
-    if (busy.length) fail("둘 중 한 명은 이미 다른 사람과 연결돼 있어요", 409);
-    // 연결해도 공유는 전부 꺼진 상태로 시작. 공유 시작일은 오늘.
-    const [couple] = await tx.insert(couples).values({
-      id: randomUUID(), recorderId: user.id, partnerId, status: "active", paused: false,
-      permissions: NO_PERMISSIONS, shareFrom: today,
-    }).returning();
-    await tx.update(users).set({ role: "partner" }).where(eq(users.id, partnerId));
-    // 두 사람이 만든 코드와 넣어 둔 요청은 모두 무효
-    await tx.update(invitations).set({ status: "revoked" })
-      .where(and(or(inArray(invitations.recorderId, both), inArray(invitations.claimantId, both)), inArray(invitations.status, ["open", "pending"])));
-    await tx.update(invitations).set({ status: "approved" }).where(eq(invitations.id, requestId));
-    return couple;
-  }) as Promise<Couple>;
-}
-
-export async function rejectRequest(db: DB, user: User, requestId: string) {
-  requireRole(user, "recorder");
-  const changed = await db.update(invitations).set({ status: "rejected" })
-    .where(and(eq(invitations.id, requestId), eq(invitations.recorderId, user.id), inArray(invitations.status, ["open", "pending"])))
-    .returning({ id: invitations.id });
-  if (!changed.length) fail("연결 요청을 찾을 수 없어요", 404);
 }
 
 export async function updateSharing(db: DB, user: User, input: { permissions: Partial<Record<string, unknown>>; shareFrom: unknown; paused: unknown }, today = todaySeoul()) {
