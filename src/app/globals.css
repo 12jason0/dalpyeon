@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f7f5f2;
+  --color-ink: #1c1b1a;
+  --color-muted: #8a857f;
+  --color-line: #e6e1da;
+  --color-period: #c2554f;
+  --color-fertile: #5b6b8c;
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+  min-height: 100dvh;
+}
+
+/* 입력칸: 상자 대신 밑줄 */
+.field {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-line);
+  padding: 0.6rem 0;
+  font-size: 1.0625rem;
+  outline: none;
+  border-radius: 0;
+  appearance: none;
+}
+.field:focus { border-bottom-color: var(--color-ink); }
+.field::placeholder { color: var(--color-muted); }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 3.25rem;
+  width: 100%;
+  border-radius: 999px;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-weight: 600;
+  font-size: 1rem;
+  transition: opacity 0.15s;
+}
+.btn:disabled { opacity: 0.4; }
+.btn:active { opacity: 0.8; }
+
+.link {
+  color: var(--color-muted);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--color-line);
+}
+
+/* 토글 스위치 (체크박스) */
+.switch {
+  appearance: none;
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  background: var(--color-line);
+  position: relative;
+  transition: background 0.15s;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 0.2rem;
+  left: 0.2rem;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 999px;
+  background: white;
+  transition: transform 0.15s;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
+}
+.switch:checked { background: var(--color-ink); }
+.switch:checked::after { transform: translateX(1.15rem); }
+.switch:disabled { opacity: 0.4; }
