@@ -5,9 +5,9 @@ import type { User } from "@/lib/services/auth";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser, siteOrigin } from "@/lib/session";
 import { disconnectAction } from "../actions";
-import { ClaimForm, InviteBox, SharingForm } from "../_components/ConnectForms";
+import { ClaimForm, InviteBox, SharingForm, Toggle } from "../_components/ConnectForms";
 import { Nav } from "../_components/Nav";
-import { Row, Section } from "../_components/Section";
+import { Section } from "../_components/Section";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +104,10 @@ async function PartnerConnect({ user, claim }: { user: User; claim: Claim }) {
         <p className="mt-10 text-2xl font-medium">{name}님과 연결돼 있어요</p>
         <Section title={`${name}님이 보여주는 것`}>
           {Object.entries(LABELS).map(([key, label]) => (
-            <Row key={key} label={label} value={couple.permissions[key as keyof typeof LABELS] && !couple.paused ? "보여요" : "—"} />
+            <div key={key} className="flex items-center justify-between gap-4 border-b border-line py-3">
+              <span className="text-[15px]">{label}</span>
+              <Toggle on={couple.permissions[key as keyof typeof LABELS] && !couple.paused} label={label} disabled />
+            </div>
           ))}
           <p className="pt-4 text-[13px] text-muted">보여줄 항목은 {name}님이 정해요.</p>
         </Section>

@@ -28,15 +28,17 @@ export async function partnerView(db: DB, user: User, today = todaySeoul(), mont
   requireRole(user, "partner");
   const couple = await activeCouple(db, user.id);
   if (!couple) return null;
+  const [recorderNickname, all, care] = await Promise.all([
+    otherNickname(db, couple, user), couple.paused ? [] : listPeriods(db, couple.recorderId), sharedCare(db, couple, today),
+  ]);
   const base: PartnerView = {
-    recorderNickname: await otherNickname(db, couple, user),
+    recorderNickname,
     paused: couple.paused, permissions: couple.permissions,
     current: null, nextPeriod: null, fertileWindow: null, recentPeriods: [], care: [], calendar: [],
   };
   if (couple.paused) return base;
 
   const p = couple.permissions;
-  const all = await listPeriods(db, couple.recorderId);
   // 원본 기록: 공유 시작일 이후에 시작한 것만
   const visible = all.filter((x) => x.startDate >= couple.shareFrom);
   if (p.periods) {
@@ -57,6 +59,6 @@ export async function partnerView(db: DB, user: User, today = todaySeoul(), mont
     { period: p.predictions ? full?.period ?? null : null, fertileWindow: p.fertility ? full?.fertileWindow ?? null : null, ovulation: null },
     first, last, today,
   );
-  base.care = await sharedCare(db, couple, today);
+  base.care = care;
   return base;
 }

@@ -150,9 +150,10 @@ export type News = { replies: number; care: number };
 
 /** 알림을 거부한 사람도 볼 수 있는 새 소식. */
 export async function newsFor(db: DB, user: User, today = todaySeoul()): Promise<News> {
-  const [me] = await db.select({ seen: users.newsSeenAt }).from(users).where(eq(users.id, user.id));
+  const [[me], couple] = await Promise.all([
+    db.select({ seen: users.newsSeenAt }).from(users).where(eq(users.id, user.id)), activeCouple(db, user.id),
+  ]);
   const since = me?.seen ?? new Date(0);
-  const couple = await activeCouple(db, user.id);
   if (user.role === "recorder") {
     if (!couple) return { replies: 0, care: 0 };
     const [{ total }] = await db.select({ total: count() }).from(careResponses)
@@ -161,6 +162,7 @@ export async function newsFor(db: DB, user: User, today = todaySeoul()): Promise
   }
   if (couple?.partnerId !== user.id) return { replies: 0, care: 0 };
   const unanswered = (await sharedCare(db, couple, today)).filter((c) => !c.response).map((c) => c.id);
+  if (!unanswered.length) return { replies: 0, care: 0 };
   const [{ total }] = await db.select({ total: count() }).from(careRequests)
     .where(and(inArray(careRequests.id, unanswered), gt(careRequests.updatedAt, since)));
   return { replies: 0, care: total };

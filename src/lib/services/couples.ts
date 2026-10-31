@@ -1,5 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, eq, gt, inArray, or } from "drizzle-orm";
+import { and, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { cache } from "react";
 import type { DB } from "../db";
 import { couples, invitations, NO_PERMISSIONS, users, type Permissions } from "../db/schema";
 import { isDay, todaySeoul } from "../dates";
@@ -21,11 +22,12 @@ export function requireRole(user: User, role: User["role"]) {
   if (user.role !== role) fail("이 계정에서는 쓸 수 없는 기능이에요", 403);
 }
 
-export async function activeCouple(db: DB, userId: string): Promise<Couple | null> {
+/** 화면을 그리는 한 요청 안에서는 한 번만 조회한다. 서버 액션에서는 매번 조회한다. */
+export const activeCouple = cache(async (db: DB, userId: string): Promise<Couple | null> => {
   const [row] = await db.select().from(couples)
     .where(and(eq(couples.status, "active"), or(eq(couples.recorderId, userId), eq(couples.partnerId, userId)))).limit(1);
   return row ?? null;
-}
+});
 
 export async function otherNickname(db: DB, couple: Couple, user: User) {
   const otherId = user.id === couple.recorderId ? couple.partnerId : couple.recorderId;
@@ -113,6 +115,19 @@ export async function updateSharing(db: DB, user: User, input: { permissions: Pa
   const [row] = await db.update(couples).set({ permissions, shareFrom, paused: input.paused === true })
     .where(and(eq(couples.id, couple.id), eq(couples.status, "active"))).returning();
   return row;
+}
+
+/** 토글 하나만 바꾼다. 빠르게 여러 개를 눌러도 서로 덮어쓰지 않게 해당 키만 고친다. */
+export async function setSharingItem(db: DB, user: User, key: unknown, on: unknown) {
+  requireRole(user, "recorder");
+  const value = on === true;
+  const item = PERMISSION_KEYS.find((k) => k === key);
+  if (!item && key !== "paused") fail("바꿀 수 없는 항목이에요");
+  const couple = await activeCouple(db, user.id);
+  if (!couple) fail("연결된 파트너가 없어요", 404);
+  await db.update(couples)
+    .set(item ? { permissions: sql`jsonb_set(${couples.permissions}, ${`{${item}}`}::text[], to_jsonb(${value}::boolean))` } : { paused: value })
+    .where(and(eq(couples.id, couple.id), eq(couples.status, "active")));
 }
 
 export async function disconnect(db: DB, user: User) {

@@ -65,7 +65,7 @@ export function MonthCalendar({ month, marks, today, basePath, selected, dayHref
           const cell = "flex min-h-12 items-center justify-center";
           if (onPick) return <button key={day} type="button" data-day={day} onClick={() => onPick(day)} aria-pressed={painted} className={`${cell} w-full`}>{inner}</button>;
           return dayHref
-            ? <Link key={day} href={dayHref(day)} scroll={false} className={cell} aria-current={day === selected ? "date" : undefined}>{inner}</Link>
+            ? <Link key={day} href={dayHref(day)} prefetch={false} scroll={false} className={cell} aria-current={day === selected ? "date" : undefined}>{inner}</Link>
             : <div key={day} className={cell}>{inner}</div>;
         })}
       </div>

@@ -58,13 +58,13 @@ function Hero({ label, big, sub, tone }: { label?: string; big: string; sub?: Re
 async function RecorderHome({ user, month }: { user: User; month: string }) {
   const db = await getDb();
   const today = todaySeoul();
-  const [periods, care, couple, news] = await Promise.all([
-    listPeriods(db, user.id), getCare(db, user, today), activeCouple(db, user.id), newsFor(db, user, today),
+  const [periods, care, couple, partnerName, news] = await Promise.all([
+    listPeriods(db, user.id), getCare(db, user, today), activeCouple(db, user.id),
+    activeCouple(db, user.id).then((c) => (c ? otherNickname(db, c, user) : null)), newsFor(db, user, today),
   ]);
   const prediction = estimate(periods, [], today);
   const current = currentPeriod(periods, today);
   const { first, last } = monthGrid(month);
-  const partnerName = couple ? await otherNickname(db, couple, user) : null;
   const canShare = Boolean(couple && couple.permissions.care && !couple.paused);
   const shareHint = !couple
     ? "파트너와 연결하면 보낼 수 있어요"

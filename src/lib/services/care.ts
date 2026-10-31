@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, gte } from "drizzle-orm";
+import { cache } from "react";
 import type { DB } from "../db";
 import { careRequests, careResponses } from "../db/schema";
 import { addDays, todaySeoul } from "../dates";
@@ -67,7 +68,7 @@ export async function clearCare(db: DB, user: User, day = todaySeoul()) {
 }
 
 /** 파트너가 볼 수 있는 배려 요청: 배려 공유 켜짐 + 요청별 공유 켜짐 + 공유 시작일 이후 + 최근 7일 */
-export async function sharedCare(db: DB, couple: Couple, today = todaySeoul()): Promise<CareView[]> {
+export const sharedCare = cache(async (db: DB, couple: Couple, today = todaySeoul()): Promise<CareView[]> => {
   if (couple.paused || !couple.permissions.care) return [];
   const from = [couple.shareFrom, addDays(today, -6)].sort()[1];
   const rows = await db.select().from(careRequests)
@@ -77,7 +78,7 @@ export async function sharedCare(db: DB, couple: Couple, today = todaySeoul()): 
     id: r.id, day: r.day, presets: r.presets as PresetKey[], message: r.message, shareWithPartner: true,
     response: await responseFor(db, r.id, couple.id),
   })));
-}
+});
 
 export async function respondToCare(db: DB, user: User, careId: string, response: unknown, today = todaySeoul()) {
   requireRole(user, "partner");

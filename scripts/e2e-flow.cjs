@@ -87,9 +87,12 @@ const shots = require("node:os").tmpdir();
   });
 
   await step("공유 켜기 (예상·가임기·배려)", async () => {
-    for (const k of ["predictions", "fertility", "care"]) await me.check(`input[name=${k}]`);
-    await me.click('button:has-text("저장")');
-    await me.getByText("저장했어요").waitFor();
+    for (const name of ["다음 생리 예상", "가임기 (추정)", "배려 요청"]) {
+      await me.getByRole("switch", { name }).click();
+      await me.locator(`[role=switch][aria-label="${name}"][aria-checked=true]`).waitFor();
+    }
+    await you.goto(BASE + "/connect");
+    await you.locator('[role=switch][aria-label="배려 요청"][aria-checked=true]:disabled').waitFor();
     await me.screenshot({ path: `${shots}/06-sharing.png`, fullPage: true });
   });
 
@@ -131,9 +134,9 @@ const shots = require("node:os").tmpdir();
 
   await step("일시정지 → 파트너는 아무것도 안 보임", async () => {
     await me.goto(BASE + "/connect");
-    await me.check("input[name=paused]");
-    await me.click('button:has-text("저장")');
-    await me.getByText("저장했어요").waitFor();
+    await me.getByRole("switch", { name: "잠시 멈추기" }).click();
+    await me.locator('[role=switch][aria-label="잠시 멈추기"][aria-checked=true]').waitFor();
+    await me.waitForTimeout(500);
     await you.goto(BASE + "/");
     await you.getByText("잠시 쉬는 중").waitFor();
     const body = await you.textContent("body");

@@ -1,6 +1,7 @@
 import "server-only";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { getDb } from "./db";
 import { createSession, deleteSession, userFromToken, type SessionUser, type User } from "./services/auth";
 
@@ -8,26 +9,26 @@ const COOKIE = "dp_session";
 const KAKAO_STATE = "dp_kakao_state";
 const JOIN_CODE = "dp_join_code";
 
-export async function currentUser(): Promise<SessionUser | null> {
+export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null; // 로그인 전 화면은 DB를 건드리지 않는다
   return userFromToken(await getDb(), token);
-}
+});
 
 /** 로그인만 확인한다. 동의 화면에서만 쓴다. */
-export async function requireLogin(): Promise<SessionUser> {
+export const requireLogin = cache(async (): Promise<SessionUser> => {
   const user = await currentUser();
   if (!user) redirect("/login");
   return user;
-}
+});
 
 /** 페이지와 서버 액션의 관문. 건강 정보 동의 전에는 동의 화면 말고 아무것도 쓸 수 없다. */
-export async function requireUser(role?: User["role"]): Promise<SessionUser> {
+export const requireUser = cache(async (role?: User["role"]): Promise<SessionUser> => {
   const user = await requireLogin();
   if (!user.healthConsentAt) redirect("/consent");
   if (role && user.role !== role) redirect("/");
   return user;
-}
+});
 
 export async function startSession(userId: string) {
   const { token, expiresAt } = await createSession(await getDb(), userId);

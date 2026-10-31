@@ -1,5 +1,6 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { and, count, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { cache } from "react";
 import type { DB } from "../db";
 import { blocks, comments, posts, reports, users, type Board } from "../db/schema";
 import { fail } from "../errors";
@@ -23,12 +24,13 @@ export type CommentView = { id: string; body: string; nickname: string; createdA
 export type PostView = PostRow & { body: string; comments: CommentView[] };
 
 /** 활성 연결이 있는 파트너만 회원이다. 역할과 연결을 매번 함께 확인한다. */
-export async function communityAccess(db: DB, user: User): Promise<Access> {
-  const [row] = await db.select({ isAdmin: users.isAdmin, nickname: users.communityNickname })
-    .from(users).where(eq(users.id, user.id));
-  const couple = user.role === "partner" ? await activeCouple(db, user.id) : null;
+export const communityAccess = cache(async (db: DB, user: User): Promise<Access> => {
+  const [[row], couple] = await Promise.all([
+    db.select({ isAdmin: users.isAdmin, nickname: users.communityNickname }).from(users).where(eq(users.id, user.id)),
+    user.role === "partner" ? activeCouple(db, user.id) : null,
+  ]);
   return { admin: row?.isAdmin ?? false, member: couple?.partnerId === user.id, nickname: row?.nickname ?? null };
-}
+});
 
 async function requireReader(db: DB, user: User) {
   const access = await communityAccess(db, user);
@@ -121,10 +123,10 @@ export async function listPosts(db: DB, user: User, board: Board): Promise<PostR
 }
 
 /** 내가 쓴 글. 연결을 끊었거나 글이 숨겨져도 지울 수 있도록 접근 조건 없이 보여준다. */
-export async function myPosts(db: DB, user: User): Promise<Pick<PostRow, "id" | "title" | "board" | "createdAt" | "hidden">[]> {
+export const myPosts = cache(async (db: DB, user: User): Promise<Pick<PostRow, "id" | "title" | "board" | "createdAt" | "hidden">[]> => {
   return db.select({ id: posts.id, title: posts.title, board: posts.board, createdAt: posts.createdAt, hidden: posts.hidden })
     .from(posts).where(eq(posts.authorId, user.id)).orderBy(desc(posts.createdAt));
-}
+});
 
 export async function getPost(db: DB, user: User, postId: string): Promise<PostView> {
   const { admin } = await requireReader(db, user);

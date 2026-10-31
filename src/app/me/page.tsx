@@ -24,10 +24,10 @@ function SettingRow({ href, label }: { href: string; label: string }) {
 export default async function MePage() {
   const user = await requireUser();
   const db = await getDb();
-  const [access, couple, posts, reminder] = await Promise.all([
-    communityAccess(db, user), activeCouple(db, user.id), myPosts(db, user), reminderEnabled(db, user.id),
+  const [access, partnerName, posts, reminder] = await Promise.all([
+    communityAccess(db, user), activeCouple(db, user.id).then((c) => (c ? otherNickname(db, c, user) : null)),
+    myPosts(db, user), reminderEnabled(db, user.id),
   ]);
-  const partnerName = couple ? await otherNickname(db, couple, user) : null;
   return (
     <>
       <h1 className="text-4xl font-semibold tracking-tight">마이</h1>

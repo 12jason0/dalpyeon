@@ -13,7 +13,7 @@ import {
   type Target,
 } from "@/lib/services/community";
 import {
-  createInvite, disconnect, tryClaim, updateSharing, PERMISSION_KEYS,
+  createInvite, disconnect, setSharingItem, tryClaim, updateSharing, PERMISSION_KEYS,
   type ClaimProblem,
 } from "@/lib/services/couples";
 import { deletePeriod, listPeriods, savePeriod } from "@/lib/services/periods";
@@ -197,6 +197,14 @@ export async function sharingAction(_: FormState, form: FormData): Promise<FormS
       shareFrom: form.get("shareFrom"),
       paused: form.get("paused") === "on",
     });
+    refresh();
+  });
+}
+
+export async function toggleSharingAction(key: string, on: boolean): Promise<FormState> {
+  return attempt(async () => {
+    const user = await requireUser("recorder");
+    await setSharingItem(await getDb(), user, key, on);
     refresh();
   });
 }

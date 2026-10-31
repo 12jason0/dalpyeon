@@ -7,7 +7,7 @@ import { AppError } from "@/lib/errors";
 import { createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
 import { clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
-  activeCouple, claimInvite, claimWithLimit, createInvite, disconnect, tryClaim, updateSharing,
+  activeCouple, claimInvite, claimWithLimit, createInvite, disconnect, setSharingItem, tryClaim, updateSharing,
 } from "@/lib/services/couples";
 import {
   agreeToRules, blockAuthor, communityAccess, createComment, createPost, decideReport, deleteComment, deletePost, getPost, listPosts,
@@ -288,6 +288,28 @@ describe("커플 연결", () => {
     await createInvite(db, me);
     await expectFail(claimInvite(db, you, first.code), 404);
     expect(await activeCouple(db, me.id)).toBeNull();
+  });
+});
+
+describe("공유 토글", () => {
+  it("한 항목만 바뀌고 나머지는 그대로다. 잠시 멈추기도 같은 방식", async () => {
+    const { me, you } = await pair();
+    await connect(me, you);
+    await Promise.all([setSharingItem(db, me, "care", true), setSharingItem(db, me, "periods", true)]);
+    expect((await activeCouple(db, me.id))?.permissions).toEqual({ periods: true, predictions: false, fertility: false, care: true });
+    await setSharingItem(db, me, "care", false);
+    await setSharingItem(db, me, "paused", true);
+    expect(await activeCouple(db, me.id)).toMatchObject({ paused: true, permissions: { periods: true, care: false } });
+  });
+
+  it("권한이 없거나 없는 항목이면 바뀌지 않는다", async () => {
+    const { me, you } = await pair();
+    await expectFail(setSharingItem(db, me, "care", true), 404); // 연결 전
+    await connect(me, you);
+    await expectFail(setSharingItem(db, await reload(you), "care", true), 403); // 파트너는 못 바꾼다
+    await expectFail(setSharingItem(db, me, "isAdmin", true), 400);
+    await expectFail(setSharingItem(db, me, "care}", true), 400);
+    expect((await activeCouple(db, me.id))?.permissions).toEqual({ periods: false, predictions: false, fertility: false, care: false });
   });
 });
 

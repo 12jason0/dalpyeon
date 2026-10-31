@@ -110,6 +110,6 @@ body {
   transition: transform 0.15s;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
 }
-.switch:checked { background: var(--color-accent); }
-.switch:checked::after { transform: translateX(1.15rem); }
+.switch:checked, .switch[aria-checked="true"] { background: var(--color-accent); }
+.switch:checked::after, .switch[aria-checked="true"]::after { transform: translateX(1.15rem); }
 .switch:disabled { opacity: 0.4; }

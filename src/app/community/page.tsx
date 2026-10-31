@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getDb } from "@/lib/db";
 import type { Board } from "@/lib/db/schema";
 import { timeAgo } from "@/lib/dates";
-import { BOARDS, communityAccess, listPosts } from "@/lib/services/community";
+import { BOARDS, communityAccess, listPosts, myPosts } from "@/lib/services/community";
 import { requireUser } from "@/lib/session";
 import { Nav } from "../_components/Nav";
 import { Gate, MyPosts } from "./_shared";
@@ -16,7 +16,8 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
   if (!access.admin && !access.member) return <Gate user={user} />;
 
   const board: Board = (await searchParams).board === "tip" ? "tip" : "question";
-  const list = await listPosts(db, user, board);
+  // myPosts는 아래 MyPosts가 쓰는 결과를 미리 받아 둔다
+  const [list] = await Promise.all([listPosts(db, user, board), access.member && myPosts(db, user)]);
   return (
     <>
       <div className="flex items-baseline justify-between">
