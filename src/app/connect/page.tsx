@@ -28,15 +28,15 @@ async function siteOrigin() {
   return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
 }
 
-export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string }> }) {
+export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string; sharing?: string }> }) {
   const user = await requireUser();
-  const { claim, code } = await searchParams;
+  const { claim, code, sharing } = await searchParams;
   const notice = claim ? CLAIM_NOTICES[claim] : undefined;
   const sent: Claim = { code: typeof code === "string" ? code.slice(0, 12) : undefined, notice };
   return (
     <>
       <h1 className="text-4xl font-semibold tracking-tight">연결</h1>
-      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} /> : <PartnerConnect user={user} claim={sent} />}
+      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} justConnected={sharing === "new"} /> : <PartnerConnect user={user} claim={sent} />}
       <Nav role={user.role} active="connect" />
     </>
   );
@@ -57,13 +57,19 @@ function Disconnect({ name }: { name: string }) {
   );
 }
 
-async function RecorderConnect({ user, claim }: { user: User; claim: Claim }) {
+async function RecorderConnect({ user, claim, justConnected }: { user: User; claim: Claim; justConnected: boolean }) {
   const db = await getDb();
   const couple = await activeCouple(db, user.id);
   if (couple) {
     const name = await otherNickname(db, couple, user);
+    const nothingShared = Object.values(couple.permissions).every((on) => !on);
     return (
       <>
+        {justConnected && nothingShared && (
+          <p role="status" className="mt-6 rounded-[18px] bg-period px-4 py-3 text-[15px] leading-relaxed text-period-ink">
+            {name}님에게 보여줄 것을 골라 주세요. 지금은 아무것도 안 보여요
+          </p>
+        )}
         <p className="mt-10 text-2xl font-medium">{name}님과 연결돼 있어요</p>
         <Section title={`${name}님에게 보여줄 것`}>
           <SharingForm today={todaySeoul()} initial={{ permissions: couple.permissions, shareFrom: couple.shareFrom, paused: couple.paused }} />

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { diffDays, formatDay, isMonth, monthGrid, shortDay, todaySeoul } from "@/lib/dates";
 import { phaseOn } from "@/lib/phase";
@@ -8,10 +9,11 @@ import type { User } from "@/lib/services/auth";
 import { CARE_PRESETS, getCare, RESPONSES } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { partnerView } from "@/lib/services/partner";
+import { newsFor } from "@/lib/services/push";
 import { currentPeriod, listPeriods } from "@/lib/services/periods";
 import { currentUser } from "@/lib/session";
 import { CareForm } from "./_components/CareForm";
-import { CareCard, CareSummaryCard, Logo, PhaseCards, recorderStatus, StatusLine, untilText } from "./_components/HomeCards";
+import { CareCard, CareSummaryCard, Logo, NewsDot, PhaseCards, recorderStatus, StatusLine, untilText } from "./_components/HomeCards";
 import { Landing } from "./_components/Landing";
 import { MonthCalendar } from "./_components/MonthCalendar";
 import { Nav } from "./_components/Nav";
@@ -32,6 +34,7 @@ export const metadata: Metadata = {
 export default async function Home({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const user = await currentUser();
   if (!user) return <Landing />;
+  if (!user.healthConsentAt) redirect("/consent");
   const param = (await searchParams).month;
   const month = isMonth(param) ? param : todaySeoul().slice(0, 7);
   return (
@@ -55,7 +58,9 @@ function Hero({ label, big, sub, tone }: { label?: string; big: string; sub?: Re
 async function RecorderHome({ user, month }: { user: User; month: string }) {
   const db = await getDb();
   const today = todaySeoul();
-  const [periods, care, couple] = await Promise.all([listPeriods(db, user.id), getCare(db, user, today), activeCouple(db, user.id)]);
+  const [periods, care, couple, news] = await Promise.all([
+    listPeriods(db, user.id), getCare(db, user, today), activeCouple(db, user.id), newsFor(db, user, today),
+  ]);
   const prediction = estimate(periods, [], today);
   const current = currentPeriod(periods, today);
   const { first, last } = monthGrid(month);
@@ -73,7 +78,10 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
 
   return (
     <>
-      <Logo />
+      <div className="flex items-center justify-between">
+        <Logo />
+        <NewsDot show={news.requests + news.replies > 0} />
+      </div>
       <StatusLine {...recorderStatus(prediction, current, today, periods.length)} />
 
       <div className="mt-6">
@@ -81,6 +89,9 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
       </div>
 
       <div className="mt-6 space-y-3">
+        <CareSummaryCard summary={careSummary}>
+          <CareForm presets={CARE_PRESETS} current={care} canShare={canShare} shareHint={shareHint} />
+        </CareSummaryCard>
         <div className="card">
           <MonthCalendar
             month={month} marks={calendarMarks(periods, prediction, first, last, today)} today={today} basePath="/"
@@ -89,9 +100,6 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
           {prediction.status === "variable_cycles" && <p className="mt-2 text-center text-[13px] text-muted">주기 차이가 커서 가임기는 표시하지 않아요.</p>}
         </div>
         <PhaseCards phase={phaseOn(periods, today)} />
-        <CareSummaryCard summary={careSummary}>
-          <CareForm presets={CARE_PRESETS} current={care} canShare={canShare} shareHint={shareHint} />
-        </CareSummaryCard>
       </div>
 
       <p className="mt-10 text-xs leading-relaxed text-muted">{DISCLAIMER}</p>
@@ -102,8 +110,13 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
 async function PartnerHome({ user, month }: { user: User; month: string }) {
   const db = await getDb();
   const today = todaySeoul();
-  const view = await partnerView(db, user, today, month);
-  const date = <p className="text-[15px] text-muted">{formatDay(today)}</p>;
+  const [view, news] = await Promise.all([partnerView(db, user, today, month), newsFor(db, user, today)]);
+  const date = (
+    <div className="flex items-center justify-between">
+      <p className="text-[15px] text-muted">{formatDay(today)}</p>
+      <NewsDot show={news.care > 0} />
+    </div>
+  );
 
   if (!view) {
     return (

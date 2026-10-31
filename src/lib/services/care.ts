@@ -46,17 +46,19 @@ export async function saveCare(db: DB, user: User, input: { presets: unknown[]; 
   const shareWithPartner = input.share === true;
   if (!presets.length && !message) fail("하나 이상 고르거나 한마디 적어 주세요");
 
-  await db.transaction(async (tx) => {
+  // 돌려주는 값: 이번 저장으로 처음 공유됐는지. 수정할 때마다 알림이 가지 않게 한다.
+  return db.transaction(async (tx) => {
     const [old] = await tx.select().from(careRequests).where(and(eq(careRequests.ownerId, user.id), eq(careRequests.day, day)));
     if (!old) {
       await tx.insert(careRequests).values({ id: randomUUID(), ownerId: user.id, day, presets, message, shareWithPartner });
-      return;
+      return shareWithPartner;
     }
     const changed = JSON.stringify(old.presets) !== JSON.stringify(presets) || old.message !== message;
     await tx.update(careRequests).set({ presets, message, shareWithPartner, updatedAt: new Date() }).where(eq(careRequests.id, old.id));
     // 요청 내용이 바뀌면 예전 답장은 지운다 (바뀐 요청에 옛 답이 붙지 않게)
     if (changed) await tx.delete(careResponses).where(eq(careResponses.careId, old.id));
-  });
+    return shareWithPartner && !old.shareWithPartner;
+  }) as Promise<boolean>;
 }
 
 export async function clearCare(db: DB, user: User, day = todaySeoul()) {
@@ -84,8 +86,10 @@ export async function respondToCare(db: DB, user: User, careId: string, response
   if (!couple) fail("연결된 상대가 없어요", 404);
   // 서버에서 공유 조건을 다시 확인한다. 화면에 보였다고 믿지 않는다.
   const visible = await sharedCare(db, couple, today);
-  if (!visible.some((c) => c.id === careId)) fail("공유된 배려 요청을 찾을 수 없어요", 404);
+  const shown = visible.find((c) => c.id === careId);
+  if (!shown) fail("공유된 배려 요청을 찾을 수 없어요", 404);
   await db.insert(careResponses).values({ careId, coupleId: couple.id, response: response as ResponseKey })
     .onConflictDoUpdate({ target: [careResponses.careId, careResponses.coupleId], set: { response: response as ResponseKey, updatedAt: new Date() } });
+  return shown.response === null; // 첫 답장인지
 }
 

@@ -26,6 +26,27 @@ npm test           # 예측 로직 + 서비스 로직 (19개)
 - `tests/prediction.test.ts` — 원본 Python `test_prediction.py`를 그대로 옮긴 것 + 경계 케이스
 - `tests/services.test.ts` — 가입·로그인, 기록, 연결, 공유 조건, 배려 요청·답장 (메모리 DB로 실행)
 
+## 알림 설정
+
+웹 푸시는 VAPID 키가 있어야 켜집니다. 키는 한 번만 만들고, 바꾸면 기존 구독이 모두 끊깁니다.
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+아래 값을 `.env.local`과 Vercel 환경변수에 넣으세요. 비밀 키는 저장소에 올리지 마세요.
+
+```
+VAPID_PUBLIC_KEY=만든 공개 키
+VAPID_PRIVATE_KEY=만든 비밀 키
+VAPID_SUBJECT=mailto:12jason@naver.com
+CRON_SECRET=길고 무작위인 값
+```
+
+예정일 알림은 Vercel Cron이 매일 09:00(한국 시간)에 `/api/cron/reminders`를 부릅니다. Vercel이 `CRON_SECRET`을 Authorization 헤더로 보내며, 값이 비어 있으면 모든 호출을 거부합니다.
+
+아이폰은 Safari에서 "홈 화면에 추가"한 앱에서만 알림을 받을 수 있습니다.
+
 ## 배포 (Vercel + Neon)
 
 1. Neon에서 **새 프로젝트**를 만들고 연결 문자열(Pooled)을 복사

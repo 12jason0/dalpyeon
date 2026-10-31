@@ -4,10 +4,23 @@ import { diffDays, formatDay } from "@/lib/dates";
 import type { Phase } from "@/lib/phase";
 import type { Prediction } from "@/lib/prediction";
 import { CARE_PRESETS, RESPONSES, type CareView } from "@/lib/services/care";
-import { respondAction } from "../actions";
+import { markNewsSeenAction, respondAction } from "../actions";
 
 export function Logo() {
   return <p className="text-xl font-semibold tracking-tight text-accent">우리주기</p>;
+}
+
+/** 알림을 거부한 사람도 볼 수 있는 새 소식 표시. */
+export function NewsDot({ show }: { show: boolean }) {
+  if (!show) return null;
+  return (
+    <form action={markNewsSeenAction}>
+      <button type="submit" className="flex h-11 items-center gap-1.5 text-[13px] text-muted">
+        <span className="h-2 w-2 rounded-full bg-accent" aria-hidden />
+        새 소식
+      </button>
+    </form>
+  );
 }
 
 export function untilText(days: number) {

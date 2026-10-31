@@ -18,6 +18,12 @@ export const users = pgTable("users", {
   isAdmin: boolean("is_admin").notNull().default(false),
   /** 커뮤니티 이용 규칙에 동의하면서 정해진다. null이면 아직 동의 전. */
   communityNickname: text("community_nickname").unique(),
+  /** 건강 정보 저장 동의 시각. 이 기능 전에 가입한 계정은 null이다. */
+  healthConsentAt: timestamp("health_consent_at", { withTimezone: true }),
+  reminderEnabled: boolean("reminder_enabled").notNull().default(true),
+  /** 마지막으로 알림을 보낸 예정일. 크론이 두 번 돌아도 한 번만 보낸다. */
+  reminderSentFor: date("reminder_sent_for", { mode: "string" }),
+  newsSeenAt: timestamp("news_seen_at", { withTimezone: true }),
   createdAt: created(),
 });
 
@@ -129,6 +135,15 @@ export const blocks = pgTable("blocks", {
   primaryKey({ columns: [t.blockerId, t.blockedId] }),
   index("blocks_blocked").on(t.blockedId),
 ]);
+
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  createdAt: created(),
+}, (t) => [index("push_subscriptions_user").on(t.userId)]);
 
 export const rateLimits = pgTable("rate_limits", {
   key: text("key").primaryKey(),

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { exampleHome, EXAMPLE_DAYS_UNTIL } from "@/lib/content/example";
 import { PHASES } from "@/lib/content/phases";
+import { diffDays } from "@/lib/dates";
 import { phaseOn, type Phase } from "@/lib/phase";
+import { estimate } from "@/lib/prediction";
 
 // 28일 간격 → 다음 예정 10.28, 가임기(추정) 10.09~10.15
 const regular = ["2026-07-08", "2026-08-05", "2026-09-02", "2026-09-30"].map((startDate, i) => ({
@@ -39,6 +42,18 @@ describe("주기 시기", () => {
     expect(phaseOn(regular, "2026-10-29")).toBeNull();
     const uneven = ["2026-05-01", "2026-05-26", "2026-07-05", "2026-08-02"].map((startDate, i) => ({ id: String(i), startDate, endDate: null }));
     expect(phaseOn(uneven, "2026-08-20")).toBeNull();
+  });
+});
+
+describe("랜딩 예시 기록", () => {
+  it.each(["2026-10-31", "2026-12-30", "2027-01-01", "2028-02-29", "2026-03-01"])("%s 기준으로 항상 예정일 5일 전", (today) => {
+    const { periods, care } = exampleHome(today);
+    const prediction = estimate(periods, [], today);
+    expect(prediction.status).toBe("estimated");
+    expect(diffDays(prediction.period!.startDate, today)).toBe(EXAMPLE_DAYS_UNTIL);
+    expect(phaseOn(periods, today)).toBe("luteal");
+    expect(periods.every((p) => p.endDate < today)).toBe(true);
+    expect(care.day).toBe(today);
   });
 });
 

@@ -1,11 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
-import { getDb } from "@/lib/db";
+import { redirect, unstable_rethrow } from "next/navigation";
+import { after } from "next/server";
+import { getDb, type DB } from "@/lib/db";
 import { isMonth, todaySeoul } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
-import { limit, login, signup } from "@/lib/services/auth";
+import { limit, login, recordHealthConsent, signup } from "@/lib/services/auth";
 import { clearCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
   agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, updateComment, updatePost,
@@ -16,7 +17,10 @@ import {
   type ClaimProblem,
 } from "@/lib/services/couples";
 import { deletePeriod, listPeriods, savePeriod } from "@/lib/services/periods";
-import { clientIp, endSession, requireUser, startSession } from "@/lib/session";
+import {
+  markNewsSeen, newsFor, notifyCare, notifyConnectionRequest, notifyReply, removeSubscription, saveSubscription, setReminder,
+} from "@/lib/services/push";
+import { clientIp, endSession, requireLogin, requireUser, startSession } from "@/lib/session";
 
 export type FormState = {
   error?: string; ok?: boolean; code?: string; expiresAt?: string;
@@ -29,6 +33,7 @@ async function attempt(fn: () => Promise<FormState | void>, form?: FormData, kee
   try {
     return (await fn()) ?? { ok: true };
   } catch (e) {
+    unstable_rethrow(e); // requireUser의 이동은 오류가 아니다
     const values = form ? Object.fromEntries(keep.map((k) => [k, String(form.get(k) ?? "")])) : undefined;
     if (e instanceof AppError) return { error: e.message, values };
     console.error(e);
@@ -38,6 +43,15 @@ async function attempt(fn: () => Promise<FormState | void>, form?: FormData, kee
 
 const refresh = () => revalidatePath("/", "layout");
 
+/** 알림은 응답을 보낸 뒤 처리한다. 실패해도 이미 저장된 내용에 영향이 없다. */
+const later = (work: (db: DB) => Promise<void>) => after(async () => {
+  try {
+    await work(await getDb());
+  } catch (e) {
+    console.error(e);
+  }
+});
+
 // ── 계정 ─────────────────────────────────────────
 
 export async function signupAction(_: FormState, form: FormData): Promise<FormState> {
@@ -45,7 +59,7 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
     const db = await getDb();
     await limit(db, "signup", await clientIp(), 10, 3600);
     const user = await signup(db, {
-      email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"),
+      email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"), healthConsent: form.get("healthConsent") === "on",
     });
     await startSession(user.id);
   }, form, ["email", "nickname"]);
@@ -64,9 +78,12 @@ export async function joinAction(_: FormState, form: FormData): Promise<FormStat
     const db = await getDb();
     const ip = await clientIp();
     await limit(db, "signup", ip, 10, 3600);
-    const user = await signup(db, { email: form.get("email"), password: form.get("password"), nickname: form.get("nickname") });
+    const user = await signup(db, {
+      email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"), healthConsent: form.get("healthConsent") === "on",
+    });
     await startSession(user.id);
     problem = await tryClaim(db, user, code, ip);
+    if (!problem) later((d) => notifyConnectionRequest(d, user));
   }, form, ["email", "nickname", "code"]);
   if (result?.error) return result;
   redirect(connectAfterClaim(problem, code));
@@ -77,6 +94,7 @@ export async function joinWithLinkAction(form: FormData) {
   const code = String(form.get("code") ?? "");
   const user = await requireUser();
   const problem = await tryClaim(await getDb(), user, code, await clientIp());
+  if (!problem) later((d) => notifyConnectionRequest(d, user));
   refresh();
   redirect(connectAfterClaim(problem, code));
 }
@@ -90,6 +108,14 @@ export async function loginAction(_: FormState, form: FormData): Promise<FormSta
     await startSession(user.id);
   }, form, ["email"]);
   if (result?.error) return result;
+  redirect("/");
+}
+
+export async function healthConsentAction(_: FormState, form: FormData): Promise<FormState> {
+  const user = await requireLogin();
+  if (form.get("healthConsent") !== "on") return { error: "동의해야 계속 쓸 수 있어요" };
+  await recordHealthConsent(await getDb(), user);
+  refresh();
   redirect("/");
 }
 
@@ -162,14 +188,16 @@ export async function claimAction(_: FormState, form: FormData): Promise<FormSta
   return attempt(async () => {
     const user = await requireUser();
     await claimWithLimit(await getDb(), user, form.get("code"), await clientIp());
+    later((d) => notifyConnectionRequest(d, user));
     refresh();
   }, form, ["code"]);
 }
 
 export async function approveAction(form: FormData) {
   const user = await requireUser("recorder");
-  await approveRequest(await getDb(), user, String(form.get("id"))).catch(ignoreAppError);
+  const couple = await approveRequest(await getDb(), user, String(form.get("id"))).catch(ignoreAppError);
   refresh();
+  if (couple) redirect("/connect?sharing=new"); // 공유는 전부 꺼진 채 시작하므로 바로 고르게 한다
 }
 
 export async function rejectAction(form: FormData) {
@@ -201,9 +229,10 @@ export async function disconnectAction() {
 export async function saveCareAction(_: FormState, form: FormData): Promise<FormState> {
   return attempt(async () => {
     const user = await requireUser("recorder");
-    await saveCare(await getDb(), user, {
+    const firstShared = await saveCare(await getDb(), user, {
       presets: form.getAll("presets"), message: form.get("message"), share: form.get("share") === "on",
     });
+    if (firstShared) later((d) => notifyCare(d, user));
     refresh();
   }, form, ["message"]);
 }
@@ -216,7 +245,9 @@ export async function clearCareAction() {
 
 export async function respondAction(form: FormData) {
   const user = await requireUser("partner");
-  await respondToCare(await getDb(), user, String(form.get("careId")), form.get("response")).catch(ignoreAppError);
+  const careId = String(form.get("careId"));
+  const first = await respondToCare(await getDb(), user, careId, form.get("response")).catch(ignoreAppError);
+  if (first) later((d) => notifyReply(d, user, careId));
   refresh();
 }
 
@@ -297,6 +328,32 @@ export async function decideReportAction(form: FormData) {
   const user = await requireUser();
   await decideReport(await getDb(), user, targetOf(form), form.get("decision") === "hidden" ? "hidden" : "dismissed").catch(ignoreAppError);
   refresh();
+}
+
+// ── 알림 ─────────────────────────────────────────
+
+export async function subscribeAction(input: { endpoint: unknown; p256dh: unknown; auth: unknown }): Promise<FormState> {
+  return attempt(async () => {
+    await saveSubscription(await getDb(), await requireUser(), input);
+  });
+}
+
+export async function unsubscribeAction(endpoint: string) {
+  await removeSubscription(await getDb(), await requireUser(), endpoint);
+}
+
+export async function setReminderAction(form: FormData) {
+  await setReminder(await getDb(), await requireUser("recorder"), form.get("reminder") === "on");
+  refresh();
+}
+
+export async function markNewsSeenAction() {
+  const user = await requireUser();
+  const db = await getDb();
+  const { requests } = await newsFor(db, user);
+  await markNewsSeen(db, user);
+  refresh();
+  redirect(requests ? "/connect" : "/");
 }
 
 // 버튼 하나짜리 동작은 실패해도(이미 처리됨·만료 등) 화면을 새로 고쳐 현재 상태를 보여주면 충분하다.

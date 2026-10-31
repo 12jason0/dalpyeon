@@ -4,6 +4,15 @@ import { useActionState } from "react";
 import { loginAction, signupAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
+export function HealthConsent() {
+  return (
+    <label className="flex items-start gap-3 text-[15px] leading-relaxed">
+      <input type="checkbox" name="healthConsent" required className="mt-1 h-5 w-5 shrink-0 accent-accent" />
+      생리 기록 등 건강 정보를 저장하는 데 동의해요
+    </label>
+  );
+}
+
 export function AuthForm({ mode }: { mode: "login" | "signup" }) {
   const [state, action] = useActionState<FormState, FormData>(mode === "login" ? loginAction : signupAction, null);
   return (
@@ -25,6 +34,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           autoComplete={mode === "login" ? "current-password" : "new-password"}
         />
       </label>
+      {mode === "signup" && <HealthConsent />}
       <ErrorText message={state?.error} />
       <div className="pt-4">
         <Submit>{mode === "login" ? "로그인" : "시작하기"}</Submit>

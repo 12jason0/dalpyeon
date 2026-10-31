@@ -74,6 +74,7 @@ export function MonthCalendar({ month, marks, today, basePath, selected, dayHref
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border border-dotted border-period-dash" />예상</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-fertile" />가임기(추정)</span>
       </p>
+      <p className="mt-2 text-center text-[11px] text-muted">가임기는 추정이에요. 피임 판단에 쓸 수 없어요.</p>
     </div>
   );
 }

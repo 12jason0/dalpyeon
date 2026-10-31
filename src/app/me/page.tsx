@@ -4,8 +4,9 @@ import { getDb } from "@/lib/db";
 import { communityAccess, myPosts } from "@/lib/services/community";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser } from "@/lib/session";
-import { logoutAction } from "../actions";
+import { reminderEnabled } from "@/lib/services/push";
 import { Nav } from "../_components/Nav";
+import { LogoutButton, NotificationSettings } from "../_components/NotificationSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,9 @@ function SettingRow({ href, label }: { href: string; label: string }) {
 export default async function MePage() {
   const user = await requireUser();
   const db = await getDb();
-  const [access, couple, posts] = await Promise.all([communityAccess(db, user), activeCouple(db, user.id), myPosts(db, user)]);
+  const [access, couple, posts, reminder] = await Promise.all([
+    communityAccess(db, user), activeCouple(db, user.id), myPosts(db, user), reminderEnabled(db, user.id),
+  ]);
   const partnerName = couple ? await otherNickname(db, couple, user) : null;
   return (
     <>
@@ -45,6 +48,8 @@ export default async function MePage() {
         <ChevronRight size={18} className="shrink-0 text-muted" aria-hidden />
       </Link>
 
+      <NotificationSettings publicKey={process.env.VAPID_PUBLIC_KEY ?? null} showReminder={user.role === "recorder"} reminder={reminder} />
+
       <ul className="card mt-3">
         {user.role === "recorder" && <SettingRow href="/connect" label="공유 설정" />}
         {access.admin && <SettingRow href="/admin/reports" label="운영자 신고 관리" />}
@@ -53,9 +58,7 @@ export default async function MePage() {
         <SettingRow href="/me/privacy" label="개인정보 처리방침" />
       </ul>
 
-      <form action={logoutAction} className="mt-10 text-center">
-        <button type="submit" className="link h-11 text-sm">로그아웃</button>
-      </form>
+      <LogoutButton />
       <Nav role={user.role} active="me" />
     </>
   );

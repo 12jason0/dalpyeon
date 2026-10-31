@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
-import { and, eq, gt, lt, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import type { DB } from "../db";
 import { rateLimits, sessions, users, type Role } from "../db/schema";
 import { fail } from "../errors";
@@ -7,6 +7,7 @@ import { fail } from "../errors";
 export const SESSION_DAYS = 30;
 
 export type User = { id: string; email: string; role: Role; nickname: string };
+export type SessionUser = User & { healthConsentAt: Date | null };
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
@@ -69,7 +70,8 @@ export async function limit(db: DB, bucket: string, identity: string, max: numbe
   if (row.hits > max) fail("시도가 너무 많아요. 잠시 후 다시 해 주세요", 429);
 }
 
-export async function signup(db: DB, input: { email: unknown; password: unknown; nickname: unknown }): Promise<User> {
+export async function signup(db: DB, input: { email: unknown; password: unknown; nickname: unknown; healthConsent: unknown }): Promise<User> {
+  if (input.healthConsent !== true) fail("건강 정보 저장에 동의해야 가입할 수 있어요");
   const email = cleanEmail(input.email);
   const password = cleanPassword(input.password);
   const nickname = cleanNickname(input.nickname);
@@ -77,7 +79,7 @@ export async function signup(db: DB, input: { email: unknown; password: unknown;
   const role: Role = "recorder";
   const passwordHash = await hashPassword(password);
   const id = randomUUID();
-  const inserted = await db.insert(users).values({ id, email, passwordHash, role, nickname })
+  const inserted = await db.insert(users).values({ id, email, passwordHash, role, nickname, healthConsentAt: new Date() })
     .onConflictDoNothing({ target: users.email }).returning({ id: users.id });
   if (!inserted.length) fail("이 이메일로는 가입할 수 없어요", 409);
   return { id, email, role, nickname };
@@ -101,12 +103,17 @@ export async function createSession(db: DB, userId: string): Promise<{ token: st
   return { token, expiresAt };
 }
 
-export async function userFromToken(db: DB, token: string | undefined): Promise<User | null> {
+export async function userFromToken(db: DB, token: string | undefined): Promise<SessionUser | null> {
   if (!token) return null;
-  const [row] = await db.select({ id: users.id, email: users.email, role: users.role, nickname: users.nickname })
+  const [row] = await db.select({ id: users.id, email: users.email, role: users.role, nickname: users.nickname, healthConsentAt: users.healthConsentAt })
     .from(sessions).innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, sha256(token)), gt(sessions.expiresAt, new Date()))).limit(1);
   return row ?? null;
+}
+
+/** 동의 기능 전에 가입한 계정의 동의. 처음 동의한 시각을 바꾸지 않는다. */
+export async function recordHealthConsent(db: DB, user: User) {
+  await db.update(users).set({ healthConsentAt: new Date() }).where(and(eq(users.id, user.id), isNull(users.healthConsentAt)));
 }
 
 export async function deleteSession(db: DB, token: string | undefined) {

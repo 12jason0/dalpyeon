@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useActionState } from "react";
 import { joinAction, joinWithLinkAction, type FormState } from "../actions";
+import { HealthConsent } from "./AuthForm";
 import { ErrorText, Submit } from "./Submit";
 
 export function JoinForm({ code }: { code: string }) {
@@ -27,6 +28,7 @@ export function JoinForm({ code }: { code: string }) {
         <span className="text-sm text-muted">비밀번호 (8자 이상)</span>
         <input name="password" type="password" className="field" minLength={8} required autoComplete="new-password" />
       </label>
+      <HealthConsent />
       <ErrorText message={state?.error} />
       <div className="pt-4"><Submit>시작하기</Submit></div>
       <p className="text-center text-sm"><Link href="/login" className="link">이미 계정이 있어요</Link></p>

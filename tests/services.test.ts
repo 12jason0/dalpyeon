@@ -1,10 +1,10 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createLocalDb, type DB } from "@/lib/db";
-import { comments, invitations, posts, reports, users } from "@/lib/db/schema";
+import { comments, invitations, posts, pushSubscriptions, reports, users } from "@/lib/db/schema";
 import { addDays } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
-import { createSession, deleteSession, limit, login, signup, userFromToken, type User } from "@/lib/services/auth";
+import { createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
 import { clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
   activeCouple, approveRequest, claimInvite, claimWithLimit, createInvite, disconnect, pendingRequests, rejectRequest, tryClaim, updateSharing,
@@ -16,6 +16,10 @@ import {
 } from "@/lib/services/community";
 import { currentPeriod, deletePeriod, listPeriods, predictionFor, savePeriod } from "@/lib/services/periods";
 import { partnerView } from "@/lib/services/partner";
+import {
+  cronAuthorized, markNewsSeen, newsFor, notifyCare, notifyConnectionRequest, notifyReply, reminderEnabled, removeSubscription, saveSubscription,
+  sendPush, sendReminders, setReminder, type Sender,
+} from "@/lib/services/push";
 
 const TODAY = "2026-10-30";
 let db: DB;
@@ -27,8 +31,8 @@ async function expectFail(promise: Promise<unknown>, status?: number) {
 }
 
 async function pair(): Promise<{ me: User; you: User }> {
-  const me = await signup(db, { email: "me@example.com", password: "password-1", nickname: "나" });
-  const you = await signup(db, { email: "you@example.com", password: "password-2", nickname: "너" });
+  const me = await signup(db, { email: "me@example.com", password: "password-1", nickname: "나", healthConsent: true });
+  const you = await signup(db, { email: "you@example.com", password: "password-2", nickname: "너", healthConsent: true });
   return { me, you };
 }
 
@@ -58,9 +62,9 @@ beforeEach(async () => {
 
 describe("계정", () => {
   it("가입 → 로그인 → 세션 → 로그아웃", async () => {
-    const user = await signup(db, { email: " Me@Example.com ", password: "password-1", nickname: "나" });
+    const user = await signup(db, { email: " Me@Example.com ", password: "password-1", nickname: "나", healthConsent: true });
     expect(user.email).toBe("me@example.com");
-    await expectFail(signup(db, { email: "me@example.com", password: "password-1", nickname: "다른" }), 409);
+    await expectFail(signup(db, { email: "me@example.com", password: "password-1", nickname: "다른", healthConsent: true }), 409);
     await expectFail(login(db, { email: "me@example.com", password: "wrong-pass" }), 401);
     await expectFail(login(db, { email: "nobody@example.com", password: "password-1" }), 401);
     const logged = await login(db, { email: "ME@example.com", password: "password-1" });
@@ -72,13 +76,37 @@ describe("계정", () => {
   });
 
   it("가입하면 누구나 기록자", async () => {
-    const user = await signup(db, { email: "a@b.co", password: "password-1", nickname: "a" });
+    const user = await signup(db, { email: "a@b.co", password: "password-1", nickname: "a", healthConsent: true });
     expect(user.role).toBe("recorder");
     expect((await reload(user)).role).toBe("recorder");
   });
 
+  it("건강 정보 동의 없이는 가입할 수 없고, 동의 시각을 저장한다", async () => {
+    const input = { email: "a@b.co", password: "password-1", nickname: "a" };
+    for (const healthConsent of [false, undefined, "on", 1]) await expectFail(signup(db, { ...input, healthConsent }));
+    expect(await db.select().from(users)).toEqual([]);
+    const before = Date.now();
+    const user = await signup(db, { ...input, healthConsent: true });
+    const [row] = await db.select({ at: users.healthConsentAt }).from(users).where(eq(users.id, user.id));
+    expect(row.at?.getTime()).toBeGreaterThanOrEqual(before - 1000);
+  });
+
+  it("기존 가입자: 세션에 동의 여부가 실리고, 동의하면 기록되며 첫 동의 시각은 바뀌지 않는다", async () => {
+    const user = await signup(db, { email: "old@b.co", password: "password-1", nickname: "옛", healthConsent: true });
+    await db.update(users).set({ healthConsentAt: null }).where(eq(users.id, user.id));
+    const { token } = await createSession(db, user.id);
+    expect((await userFromToken(db, token))?.healthConsentAt).toBeNull();
+
+    await recordHealthConsent(db, user);
+    const first = (await userFromToken(db, token))?.healthConsentAt;
+    expect(first).toBeInstanceOf(Date);
+    await new Promise((r) => setTimeout(r, 5));
+    await recordHealthConsent(db, user);
+    expect((await userFromToken(db, token))?.healthConsentAt).toEqual(first);
+  });
+
   it("입력 검증: 짧은 비밀번호 거부", async () => {
-    await expectFail(signup(db, { email: "a@b.co", password: "short", nickname: "a" }));
+    await expectFail(signup(db, { email: "a@b.co", password: "short", nickname: "a", healthConsent: true }));
   });
 
   it("요청 제한: 최대치를 넘으면 429", async () => {
@@ -187,11 +215,11 @@ describe("커플 연결", () => {
 
   it("입력한 사람이 만들어 둔 코드는 승인되면 무효", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋" });
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
     const yours = await createInvite(db, you);
     const { id: stale } = await claimInvite(db, third, yours.code);
     const mine = await createInvite(db, me);
-    const late = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷" });
+    const late = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷", healthConsent: true });
     const { id } = await claimInvite(db, you, mine.code);
     await approveRequest(db, me, id, TODAY);
     expect(await waitingClaim(db, third)).toBeNull();
@@ -213,8 +241,8 @@ describe("커플 연결", () => {
 
   it("이미 다른 연결의 기록자인 사람은 파트너가 될 수 없다", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋" });
-    const fourth = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷" });
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const fourth = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷", healthConsent: true });
     // you가 me의 코드를 입력해 둔 뒤, you의 코드를 fourth가 입력해 you가 먼저 승인한다
     const mine = await createInvite(db, me);
     const yours = await createInvite(db, you);
@@ -240,7 +268,7 @@ describe("커플 연결", () => {
 });
 
 describe("코드로 시작하기", () => {
-  const newcomer = () => signup(db, { email: "new@example.com", password: "password-9", nickname: "새" });
+  const newcomer = () => signup(db, { email: "new@example.com", password: "password-9", nickname: "새", healthConsent: true });
   const count = async () => (await db.select({ id: users.id }).from(users)).length;
 
   it("맞는 코드: 가입하면 승인 대기 상태, 역할은 그대로", async () => {
@@ -277,7 +305,7 @@ describe("코드로 시작하기", () => {
     expect(await tryClaim(db, me, code, "1.1.1.1")).toBe("code");
 
     await approveRequest(db, me, (await pendingRequests(db, me))[0].id, TODAY);
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋" });
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
     const other = await createInvite(db, third);
     expect(await tryClaim(db, await reload(you), other.code, "1.1.1.1")).toBe("connected");
   });
@@ -380,8 +408,8 @@ describe("커뮤니티", () => {
   /** 기록자와 연결된 파트너 한 명. agree면 이용 규칙에도 동의한다. */
   async function member(agree = true) {
     const n = ++seq;
-    const recorder = await signup(db, { email: `r${n}@example.com`, password: "password-1", nickname: `기록${n}` });
-    const joined = await signup(db, { email: `p${n}@example.com`, password: "password-1", nickname: `본명${n}` });
+    const recorder = await signup(db, { email: `r${n}@example.com`, password: "password-1", nickname: `기록${n}`, healthConsent: true });
+    const joined = await signup(db, { email: `p${n}@example.com`, password: "password-1", nickname: `본명${n}`, healthConsent: true });
     await connect(recorder, joined);
     const partner = await reload(joined);
     if (agree) await agreeToRules(db, partner, "");
@@ -391,7 +419,7 @@ describe("커뮤니티", () => {
 
   it("기록자·연결 없는 사람은 읽기도 쓰기도 못 한다", async () => {
     const { partner, recorder } = await member();
-    const stranger = await signup(db, { email: "s@example.com", password: "password-1", nickname: "남" });
+    const stranger = await signup(db, { email: "s@example.com", password: "password-1", nickname: "남", healthConsent: true });
     const id = await post(partner);
     for (const user of [recorder, stranger]) {
       await expectFail(listPosts(db, user, "question"), 403);
@@ -604,6 +632,189 @@ describe("커뮤니티", () => {
     expect((await db.select().from(posts)).map((p) => p.id)).toEqual([kept]);
     expect((await db.select().from(comments)).map((c) => c.id)).toEqual([stayComment]);
     expect(await db.select().from(reports)).toEqual([]);
+  });
+});
+
+describe("알림", () => {
+  const FCM = "https://fcm.googleapis.com/fcm/send/";
+  const sub = (name: string) => ({ endpoint: FCM + name, p256dh: "key", auth: "auth" });
+  const subs = () => db.select().from(pushSubscriptions);
+
+  /** 실제로 보내지 않고 누구에게 무엇이 갔는지만 모은다. */
+  function outbox() {
+    const sent: { endpoint: string; body: string; url: string }[] = [];
+    const sender: Sender = async (target, payload) => {
+      sent.push({ endpoint: target.endpoint, ...JSON.parse(payload) });
+    };
+    return { sent, sender };
+  }
+
+  async function shared(permissions: Record<string, boolean> = { care: true }, paused = false) {
+    const { me, you } = await pair();
+    await connect(me, you);
+    await updateSharing(db, me, { permissions, shareFrom: TODAY, paused }, TODAY);
+    await saveSubscription(db, me, sub("me"));
+    await saveSubscription(db, you, sub("you"));
+    return { me, partner: await reload(you) };
+  }
+
+  it("구독 저장·갱신·삭제. 같은 기기는 새 계정으로 옮겨지고, 남의 구독은 못 지운다", async () => {
+    const { me, you } = await pair();
+    await saveSubscription(db, me, sub("a"));
+    await saveSubscription(db, me, { ...sub("a"), p256dh: "new" });
+    expect(await subs()).toMatchObject([{ userId: me.id, p256dh: "new" }]);
+    await saveSubscription(db, you, sub("a"));
+    expect(await subs()).toMatchObject([{ userId: you.id }]);
+    await removeSubscription(db, me, sub("a").endpoint);
+    expect(await subs()).toHaveLength(1);
+    await removeSubscription(db, you, sub("a").endpoint);
+    expect(await subs()).toEqual([]);
+  });
+
+  it("공식 푸시 서비스가 아닌 주소는 저장하지 않는다", async () => {
+    const { me } = await pair();
+    for (const endpoint of ["http://fcm.googleapis.com/x", "https://169.254.169.254/latest", "https://localhost/x", "https://fcm.googleapis.com.evil.io/x", "nope", ""]) {
+      await expectFail(saveSubscription(db, me, { ...sub("x"), endpoint }));
+    }
+    await expectFail(saveSubscription(db, me, { ...sub("x"), auth: "" }));
+    expect(await subs()).toEqual([]);
+  });
+
+  it("404·410이 오면 그 구독만 지우고, 다른 실패는 구독을 남긴다", async () => {
+    const { me } = await pair();
+    for (const name of ["gone", "missing", "busy", "ok"]) await saveSubscription(db, me, sub(name));
+    const status: Record<string, number> = { gone: 410, missing: 404, busy: 500 };
+    const sender: Sender = async (target) => {
+      const code = status[target.endpoint.replace(FCM, "")];
+      if (code) throw Object.assign(new Error("x"), { statusCode: code });
+    };
+    await sendPush(db, me.id, { body: "안녕", url: "/" }, sender);
+    expect((await subs()).map((s) => s.endpoint).sort()).toEqual([sub("busy").endpoint, sub("ok").endpoint]);
+  });
+
+  it("연결 요청은 유효한 요청이 있을 때만 기록자에게", async () => {
+    const { me, you } = await pair();
+    await saveSubscription(db, me, sub("me"));
+    const { sent, sender } = outbox();
+    await notifyConnectionRequest(db, you, sender); // 요청 없음
+    expect(sent).toEqual([]);
+    const { code } = await createInvite(db, me);
+    await claimInvite(db, you, code);
+    await notifyConnectionRequest(db, you, sender);
+    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "우리주기", body: "새 연결 요청이 있어요", url: "/connect" }]);
+  });
+
+  it("배려 요청: 공유 켜진 요청만 파트너에게, 처음 공유될 때만", async () => {
+    const { me, partner } = await shared();
+    const { sent, sender } = outbox();
+    expect(await saveCare(db, me, { presets: ["rest"], message: "", share: false }, TODAY)).toBe(false);
+    await notifyCare(db, me, TODAY, sender); // 요청별 공유가 꺼짐
+    expect(sent).toEqual([]);
+    expect(await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY)).toBe(true);
+    await notifyCare(db, me, TODAY, sender);
+    expect(sent).toMatchObject([{ endpoint: sub("you").endpoint, body: "새 배려 요청이 왔어요 💗" }]);
+    expect(await saveCare(db, me, { presets: ["company"], message: "", share: true }, TODAY)).toBe(false); // 수정은 다시 안 보냄
+    expect(JSON.stringify(sent)).not.toContain("조용히");
+    expect(partner.role).toBe("partner");
+  });
+
+  it("권한이 없으면 보내지 않는다: 배려 공유 꺼짐·일시정지·연결 없음", async () => {
+    for (const [permissions, paused] of [[{ care: false }, false], [{ care: true }, true]] as const) {
+      db = await createLocalDb();
+      const { me } = await shared(permissions, paused);
+      const { sent, sender } = outbox();
+      await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
+      await notifyCare(db, me, TODAY, sender);
+      expect(sent).toEqual([]);
+    }
+    db = await createLocalDb();
+    const { me, partner } = await shared();
+    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
+    await disconnect(db, me);
+    const { sent, sender } = outbox();
+    await notifyCare(db, me, TODAY, sender);
+    await notifyReply(db, await reload(partner), "any", TODAY, sender);
+    expect(sent).toEqual([]);
+  });
+
+  it("답장은 기록자에게 파트너 이름으로, 첫 답장만. 공유를 끄면 보내지 않는다", async () => {
+    const { me, partner } = await shared();
+    const { sent, sender } = outbox();
+    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
+    const care = (await getCare(db, me, TODAY))!;
+    expect(await respondToCare(db, partner, care.id, "seen", TODAY)).toBe(true);
+    expect(await respondToCare(db, partner, care.id, "done", TODAY)).toBe(false);
+    await notifyReply(db, partner, care.id, TODAY, sender);
+    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, body: "너님이 답장했어요" }]);
+    await updateSharing(db, me, { permissions: { care: false }, shareFrom: TODAY, paused: false }, TODAY);
+    await notifyReply(db, partner, care.id, TODAY, sender);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("발송이 실패해도 저장된 내용은 그대로이고 오류가 밖으로 나오지 않는다", async () => {
+    const { me, partner } = await shared();
+    const sender: Sender = async () => { throw new Error("boom"); };
+    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
+    await expect(notifyCare(db, me, TODAY, sender)).resolves.toBeUndefined();
+    expect((await partnerView(db, partner, TODAY))?.care).toHaveLength(1);
+    const broken = db;
+    db = await createLocalDb();
+    await expect(notifyCare(db, me, TODAY, sender)).resolves.toBeUndefined(); // 없는 계정이어도 조용히
+    db = broken;
+  });
+
+  it("예정일 3일 전 알림: 본인에게만, 하루 한 번, 끄면 보내지 않는다", async () => {
+    const { me, partner } = await shared({ predictions: true });
+    await fourPeriods(me); // 다음 예정일 2026-10-30
+    const { sent, sender } = outbox();
+    expect(await sendReminders(db, "2026-10-26", sender)).toBe(0); // 4일 전
+    expect(await sendReminders(db, "2026-10-27", sender)).toBe(1);
+    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, body: "오늘 확인할 소식이 있어요" }]);
+    expect(JSON.stringify(sent)).not.toContain("생리"); // 잠금 화면에 보이는 문구
+    expect(await sendReminders(db, "2026-10-27", sender)).toBe(0); // 크론이 두 번 돌아도 한 번
+    expect(sent).toHaveLength(1);
+    expect(partner.role).toBe("partner");
+
+    await db.update(users).set({ reminderSentFor: null });
+    await setReminder(db, me, false);
+    expect(await reminderEnabled(db, me.id)).toBe(false);
+    expect(await sendReminders(db, "2026-10-27", sender)).toBe(0);
+  });
+
+  it("크론은 비밀값이 맞을 때만 통과한다", () => {
+    expect(cronAuthorized("Bearer s3cret", "s3cret")).toBe(true);
+    expect(cronAuthorized("Bearer wrong!", "s3cret")).toBe(false);
+    expect(cronAuthorized(null, "s3cret")).toBe(false);
+    expect(cronAuthorized("Bearer undefined", undefined)).toBe(false);
+    expect(cronAuthorized("Bearer ", "")).toBe(false);
+  });
+
+  it("새 소식: 처리 전 연결 요청, 안 읽은 답장, 답 안 한 요청", async () => {
+    const { me, you } = await pair();
+    const { code } = await createInvite(db, me);
+    await claimInvite(db, you, code);
+    expect(await newsFor(db, me, TODAY)).toMatchObject({ requests: 1 });
+    await markNewsSeen(db, me);
+    expect(await newsFor(db, me, TODAY)).toMatchObject({ requests: 1 }); // 처리할 때까지 남는다
+    await rejectRequest(db, me, (await pendingRequests(db, me))[0].id);
+    expect(await newsFor(db, me, TODAY)).toEqual({ requests: 0, replies: 0, care: 0 });
+
+    await connect(me, you);
+    await updateSharing(db, me, { permissions: { care: true }, shareFrom: TODAY, paused: false }, TODAY);
+    const partner = await reload(you);
+    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
+    expect(await newsFor(db, partner, TODAY)).toMatchObject({ care: 1 });
+    await markNewsSeen(db, partner);
+    expect(await newsFor(db, partner, TODAY)).toMatchObject({ care: 0 });
+
+    await respondToCare(db, partner, (await getCare(db, me, TODAY))!.id, "seen", TODAY);
+    expect(await newsFor(db, me, TODAY)).toMatchObject({ replies: 1 });
+    await markNewsSeen(db, me);
+    expect(await newsFor(db, me, TODAY)).toMatchObject({ replies: 0 });
+
+    await updateSharing(db, me, { permissions: { care: false }, shareFrom: TODAY, paused: false }, TODAY);
+    await saveCare(db, me, { presets: ["company"], message: "", share: true }, TODAY);
+    expect(await newsFor(db, partner, TODAY)).toMatchObject({ care: 0 }); // 공유를 끄면 파트너에게 소식도 없다
   });
 });
 

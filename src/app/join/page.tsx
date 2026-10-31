@@ -13,6 +13,7 @@ export default async function JoinPage({ searchParams }: { searchParams: Promise
   const user = await currentUser();
 
   if (user) {
+    if (!user.healthConsentAt) redirect("/consent");
     // 이미 승인을 기다리는 중이면 링크를 다시 열어도 새 요청을 보내지 않는다
     if (!code || (await waitingClaim(await getDb(), user))) redirect("/connect");
     return (
