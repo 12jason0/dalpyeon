@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { getDb } from "@/lib/db";
-import { diffDays, formatDay, shortDay, todaySeoul } from "@/lib/dates";
+import { diffDays, formatDay, isMonth, shortDay, todaySeoul } from "@/lib/dates";
 import { DISCLAIMER, type Prediction } from "@/lib/prediction";
 import type { User } from "@/lib/services/auth";
-import { CARE_PRESETS, getCare, RESPONSES } from "@/lib/services/care";
+import { CARE_PRESETS, getCare, RESPONSES, type CareView } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { partnerView } from "@/lib/services/partner";
 import { currentPeriod, listPeriods } from "@/lib/services/periods";
@@ -11,18 +11,20 @@ import { estimate } from "@/lib/prediction";
 import { requireUser } from "@/lib/session";
 import { respondAction } from "./actions";
 import { CareForm } from "./_components/CareForm";
+import { MonthCalendar } from "./_components/MonthCalendar";
 import { Nav } from "./_components/Nav";
 import { EndTodayButton, StartTodayButton } from "./_components/PeriodButtons";
 import { Row, Section } from "./_components/Section";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const user = await requireUser();
+  const { month } = await searchParams;
   return (
     <>
       <p className="text-[15px] text-muted">{formatDay(todaySeoul())}</p>
-      {user.role === "recorder" ? <RecorderHome user={user} /> : <PartnerHome user={user} />}
+      {user.role === "recorder" ? <RecorderHome user={user} /> : <PartnerHome user={user} month={isMonth(month) ? month : undefined} />}
       <Nav role={user.role} active="home" />
     </>
   );
@@ -129,10 +131,37 @@ async function RecorderHome({ user }: { user: User }) {
   );
 }
 
-async function PartnerHome({ user }: { user: User }) {
+function CareCard({ care, today, featured }: { care: CareView; today: string; featured?: boolean }) {
+  return (
+    <article>
+      <p className="text-sm text-muted">{care.day === today ? "오늘" : formatDay(care.day)}</p>
+      <ul className="mt-2 space-y-1">
+        {care.presets.map((key) => (
+          <li key={key} className={`font-medium leading-snug ${featured ? "text-3xl tracking-tight" : "text-2xl"}`}>{CARE_PRESETS[key]}</li>
+        ))}
+      </ul>
+      {care.message && <p className="mt-3 text-[17px] leading-relaxed">“{care.message}”</p>}
+      <form action={respondAction} className="mt-6 flex gap-2">
+        <input type="hidden" name="careId" value={care.id} />
+        {Object.entries(RESPONSES).map(([key, label]) => (
+          <button
+            key={key} name="response" value={key} type="submit"
+            className={`h-11 flex-1 rounded-full border text-[15px] transition ${
+              care.response === key ? "border-ink bg-ink font-semibold text-paper" : "border-line text-muted"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </form>
+    </article>
+  );
+}
+
+async function PartnerHome({ user, month = todaySeoul().slice(0, 7) }: { user: User; month?: string }) {
   const db = await getDb();
   const today = todaySeoul();
-  const view = await partnerView(db, user, today);
+  const view = await partnerView(db, user, today, month);
 
   if (!view) {
     return (
@@ -155,8 +184,19 @@ async function PartnerHome({ user }: { user: User }) {
   } else if (nothingShared) hero = <Hero big="아직 조용해요" sub={`${name}님이 보여줄 항목을 고르면 여기에 나타나요.`} />;
   else hero = <Hero label={`${name}님의 오늘`} big="평온한 날" />;
 
+  // 오늘 요청이 있으면 맨 위로. 지난 요청은 아래 목록에 그대로 둔다.
+  const todayCare = view.care.find((c) => c.day === today);
+  const pastCare = view.care.filter((c) => c !== todayCare);
+
   return (
     <>
+      {todayCare && (
+        <section className="mt-10">
+          <h2 className="mb-4 text-[17px] text-muted">{name}님이 바라는 것</h2>
+          <CareCard care={todayCare} today={today} featured />
+        </section>
+      )}
+
       {hero}
 
       {!view.paused && view.fertileWindow && view.fertileWindow.endDate >= today && (
@@ -165,34 +205,16 @@ async function PartnerHome({ user }: { user: User }) {
         </div>
       )}
 
-      {!view.paused && p.care && (
+      {!view.paused && p.care && !todayCare && pastCare.length === 0 && (
         <Section title={`${name}님이 바라는 것`}>
-          {view.care.length === 0 && <p className="text-[17px] text-muted">아직 남긴 요청이 없어요.</p>}
+          <p className="text-[17px] text-muted">아직 남긴 요청이 없어요.</p>
+        </Section>
+      )}
+
+      {!view.paused && pastCare.length > 0 && (
+        <Section title={todayCare ? "지난 요청" : `${name}님이 바라는 것`}>
           <div className="space-y-12">
-            {view.care.map((c) => (
-              <article key={c.id}>
-                <p className="text-sm text-muted">{c.day === today ? "오늘" : formatDay(c.day)}</p>
-                <ul className="mt-2 space-y-1">
-                  {c.presets.map((key) => (
-                    <li key={key} className="text-2xl font-medium leading-snug">{CARE_PRESETS[key]}</li>
-                  ))}
-                </ul>
-                {c.message && <p className="mt-3 text-[17px] leading-relaxed">“{c.message}”</p>}
-                <form action={respondAction} className="mt-6 flex gap-2">
-                  <input type="hidden" name="careId" value={c.id} />
-                  {Object.entries(RESPONSES).map(([key, label]) => (
-                    <button
-                      key={key} name="response" value={key} type="submit"
-                      className={`h-11 flex-1 rounded-full border text-[15px] transition ${
-                        c.response === key ? "border-ink bg-ink font-semibold text-paper" : "border-line text-muted"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </form>
-              </article>
-            ))}
+            {pastCare.map((c) => <CareCard key={c.id} care={c} today={today} />)}
           </div>
         </Section>
       )}
@@ -202,6 +224,12 @@ async function PartnerHome({ user }: { user: User }) {
           {view.recentPeriods.map((r) => (
             <Row key={r.startDate} label={formatDay(r.startDate)} value={r.endDate ? `${diffDays(r.endDate, r.startDate) + 1}일` : "진행 중"} />
           ))}
+        </Section>
+      )}
+
+      {!view.paused && (p.periods || p.predictions || p.fertility) && (
+        <Section title={`${name}님의 달력`}>
+          <MonthCalendar month={month} marks={view.calendar} today={today} basePath="/" />
         </Section>
       )}
 

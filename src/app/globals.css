@@ -21,6 +21,8 @@ body {
   font-family: var(--font-sans);
   letter-spacing: -0.01em;
   min-height: 100dvh;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 
 /* 입력칸: 상자 대신 밑줄 */

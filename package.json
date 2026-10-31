@@ -8,7 +8,8 @@
     "start": "next start",
     "test": "vitest run",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "admin:grant": "node --env-file-if-exists=.env.local scripts/grant-admin.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.13",

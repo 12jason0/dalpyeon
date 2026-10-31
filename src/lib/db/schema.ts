@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex,
+  boolean, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export type Role = "recorder" | "partner";
@@ -15,6 +15,9 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   role: text("role").$type<Role>().notNull(),
   nickname: text("nickname").notNull(),
+  isAdmin: boolean("is_admin").notNull().default(false),
+  /** 커뮤니티 이용 규칙에 동의하면서 정해진다. null이면 아직 동의 전. */
+  communityNickname: text("community_nickname").unique(),
   createdAt: created(),
 });
 
@@ -74,6 +77,58 @@ export const careResponses = pgTable("care_responses", {
   response: text("response").$type<"seen" | "will_help" | "done">().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.careId, t.coupleId] })]);
+
+export type Board = "question" | "tip";
+
+export const posts = pgTable("posts", {
+  id: text("id").primaryKey(),
+  authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  board: text("board").$type<Board>().notNull(),
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  hidden: boolean("hidden").notNull().default(false),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("posts_board_created").on(t.board, t.createdAt),
+  index("posts_author").on(t.authorId),
+]);
+
+export const comments = pgTable("comments", {
+  id: text("id").primaryKey(),
+  postId: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  body: text("body").notNull(),
+  hidden: boolean("hidden").notNull().default(false),
+  createdAt: created(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("comments_post").on(t.postId),
+  index("comments_author").on(t.authorId),
+]);
+
+export const reports = pgTable("reports", {
+  id: text("id").primaryKey(),
+  reporterId: text("reporter_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  postId: text("post_id").references(() => posts.id, { onDelete: "cascade" }),
+  commentId: text("comment_id").references(() => comments.id, { onDelete: "cascade" }),
+  status: text("status").$type<"open" | "hidden" | "dismissed">().notNull().default("open"),
+  createdAt: created(),
+}, (t) => [
+  uniqueIndex("reports_once_post").on(t.reporterId, t.postId).where(sql`post_id is not null`),
+  uniqueIndex("reports_once_comment").on(t.reporterId, t.commentId).where(sql`comment_id is not null`),
+  index("reports_status").on(t.status),
+  check("reports_one_target", sql`(post_id is null) <> (comment_id is null)`),
+]);
+
+export const blocks = pgTable("blocks", {
+  blockerId: text("blocker_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  blockedId: text("blocked_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: created(),
+}, (t) => [
+  primaryKey({ columns: [t.blockerId, t.blockedId] }),
+  index("blocks_blocked").on(t.blockedId),
+]);
 
 export const rateLimits = pgTable("rate_limits", {
   key: text("key").primaryKey(),

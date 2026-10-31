@@ -26,6 +26,7 @@ const shots = require("node:os").tmpdir();
 
   await step("지난 기록 4번 입력", async () => {
     await me.goto(BASE + "/records");
+    await me.click('summary:has-text("직접 입력·전체 기록")');
     const list = [["2026-07-15", "2026-07-19"], ["2026-08-12", "2026-08-16"], ["2026-09-09", "2026-09-13"], ["2026-10-07", "2026-10-11"]];
     for (let i = 0; i < list.length; i++) {
       await me.fill('input[name=startDate]', list[i][0]);

@@ -3,10 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
-import { todaySeoul } from "@/lib/dates";
+import { isMonth, todaySeoul } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { limit, login, signup } from "@/lib/services/auth";
 import { clearCare, respondToCare, saveCare } from "@/lib/services/care";
+import {
+  agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, updateComment, updatePost,
+  type Target,
+} from "@/lib/services/community";
 import {
   approveRequest, claimInvite, createInvite, disconnect, rejectRequest, updateSharing, PERMISSION_KEYS,
 } from "@/lib/services/couples";
@@ -83,10 +87,13 @@ export async function savePeriodAction(_: FormState, form: FormData): Promise<Fo
   redirect("/records");
 }
 
-export async function startTodayAction(_: FormState): Promise<FormState> {
+// 달력에서 누른 날짜. 없으면 오늘. 날짜 검증은 savePeriod가 한다.
+const dayOf = (form: FormData) => String(form.get("day") || todaySeoul());
+
+export async function startTodayAction(_: FormState, form: FormData): Promise<FormState> {
   return attempt(async () => {
     const user = await requireUser("recorder");
-    await savePeriod(await getDb(), user.id, { startDate: todaySeoul() });
+    await savePeriod(await getDb(), user.id, { startDate: dayOf(form) });
     refresh();
   });
 }
@@ -97,7 +104,7 @@ export async function endTodayAction(_: FormState, form: FormData): Promise<Form
     const db = await getDb();
     const period = (await listPeriods(db, user.id)).find((p) => p.id === form.get("id"));
     if (!period) throw new AppError("기록을 찾을 수 없어요");
-    await savePeriod(db, user.id, { ...period, endDate: todaySeoul() });
+    await savePeriod(db, user.id, { ...period, endDate: dayOf(form) });
     refresh();
   });
 }
@@ -106,7 +113,8 @@ export async function deletePeriodAction(form: FormData) {
   const user = await requireUser("recorder");
   await deletePeriod(await getDb(), user.id, String(form.get("id")));
   refresh();
-  redirect("/records");
+  const month = form.get("month");
+  redirect(isMonth(month) ? `/records?month=${month}` : "/records");
 }
 
 // ── 커플 연결 ─────────────────────────────────────
@@ -183,6 +191,85 @@ export async function clearCareAction() {
 export async function respondAction(form: FormData) {
   const user = await requireUser("partner");
   await respondToCare(await getDb(), user, String(form.get("careId")), form.get("response")).catch(ignoreAppError);
+  refresh();
+}
+
+// ── 커뮤니티 ──────────────────────────────────────
+
+const targetOf = (form: FormData): Target => ({
+  kind: form.get("kind") === "comment" ? "comment" : "post",
+  id: String(form.get("id")),
+});
+
+export async function agreeAction(_: FormState, form: FormData): Promise<FormState> {
+  const result = await attempt(async () => {
+    await agreeToRules(await getDb(), await requireUser("partner"), form.get("nickname"));
+    refresh();
+  }, form, ["nickname"]);
+  if (result?.error) return result;
+  redirect(`/community/new?board=${form.get("board") === "tip" ? "tip" : "question"}`);
+}
+
+export async function savePostAction(_: FormState, form: FormData): Promise<FormState> {
+  let id = String(form.get("id") ?? "");
+  const result = await attempt(async () => {
+    const user = await requireUser("partner");
+    const db = await getDb();
+    const input = { title: form.get("title"), body: form.get("body") };
+    if (id) await updatePost(db, user, id, input);
+    else id = await createPost(db, user, { ...input, board: form.get("board") });
+    refresh();
+  }, form, ["title", "body"]);
+  if (result?.error) return result;
+  redirect(`/community/${id}`);
+}
+
+export async function deletePostAction(form: FormData) {
+  const user = await requireUser();
+  await deletePost(await getDb(), user, String(form.get("id"))).catch(ignoreAppError);
+  refresh();
+  redirect("/community");
+}
+
+export async function saveCommentAction(_: FormState, form: FormData): Promise<FormState> {
+  const id = String(form.get("id") ?? "");
+  const postId = String(form.get("postId"));
+  const result = await attempt(async () => {
+    const user = await requireUser("partner");
+    const db = await getDb();
+    if (id) await updateComment(db, user, id, form.get("body"));
+    else await createComment(db, user, postId, form.get("body"));
+    refresh();
+  }, form, ["body"]);
+  if (result?.error || !id) return result;
+  redirect(`/community/${postId}`);
+}
+
+export async function deleteCommentAction(form: FormData) {
+  const user = await requireUser();
+  await deleteComment(await getDb(), user, String(form.get("id"))).catch(ignoreAppError);
+  refresh();
+}
+
+export async function reportAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    await report(await getDb(), await requireUser("partner"), targetOf(form));
+    refresh();
+  });
+}
+
+export async function blockAction(_: FormState, form: FormData): Promise<FormState> {
+  const result = await attempt(async () => {
+    await blockAuthor(await getDb(), await requireUser("partner"), targetOf(form));
+    refresh();
+  });
+  if (result?.error) return result;
+  redirect("/community");
+}
+
+export async function decideReportAction(form: FormData) {
+  const user = await requireUser();
+  await decideReport(await getDb(), user, targetOf(form), form.get("decision") === "hidden" ? "hidden" : "dismissed").catch(ignoreAppError);
   refresh();
 }
 

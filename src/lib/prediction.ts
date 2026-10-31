@@ -147,3 +147,18 @@ export function calendarEvents(
   if (prediction.ovulation) span(prediction.ovulation.estimatedDate, prediction.ovulation.estimatedDate, "estimated_ovulation", true);
   return events.sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
 }
+
+export type CalendarMark = Pick<CalendarEvent, "date" | "type">;
+
+/** 달력에 그릴 표시. 지나간 예측은 빼고, 날짜와 종류만 남긴다. */
+export function calendarMarks(
+  periods: PeriodInput[],
+  prediction: Pick<Prediction, "period" | "fertileWindow" | "ovulation">,
+  start: string,
+  end: string,
+  today: string,
+): CalendarMark[] {
+  return calendarEvents(periods, prediction, start, end)
+    .filter((e) => !e.estimated || e.date >= today)
+    .map(({ date, type }) => ({ date, type }));
+}

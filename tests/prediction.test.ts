@@ -1,7 +1,7 @@
 // 원본 Python 테스트(tests/test_prediction.py)를 그대로 옮긴 것 + 경계 케이스 몇 개
 import { describe, expect, it } from "vitest";
-import { addDays } from "@/lib/dates";
-import { calendarEvents, estimate, type PeriodInput } from "@/lib/prediction";
+import { addDays, addMonths, dayRange, isMonth, monthGrid, monthLabel } from "@/lib/dates";
+import { calendarEvents, calendarMarks, estimate, type PeriodInput } from "@/lib/prediction";
 
 function periods(lengths: number[], first = "2026-01-01"): PeriodInput[] {
   const result: PeriodInput[] = [];
@@ -91,5 +91,51 @@ describe("주기 예측 v1", () => {
     expect(result.sampleSize).toBe(6);
     expect(result.typicalCycleDays).toBe(28);
     expect(result.status).toBe("estimated");
+  });
+
+  it("달력 표시: 지나간 예측은 빼고 실제 기록은 남긴다", () => {
+    const records = periods([28, 28, 28]);
+    const last = lastStart(records);
+    const result = estimate(records, [], last);
+    const predicted = result.period!.startDate;
+    const start = addDays(last, -40), end = addDays(predicted, 10);
+    const beforeExpected = calendarMarks(records, result, start, end, addDays(predicted, 2));
+    expect(beforeExpected.some((m) => m.type === "predicted_period" && m.date < addDays(predicted, 2))).toBe(false);
+    expect(beforeExpected.some((m) => m.type === "predicted_period" && m.date === addDays(predicted, 2))).toBe(true); // 오늘은 남긴다
+    expect(beforeExpected.some((m) => m.type === "estimated_fertile_window")).toBe(false);
+    expect(beforeExpected.some((m) => m.type === "period" && m.date === last)).toBe(true);
+    expect(beforeExpected[0]).toEqual({ date: expect.any(String), type: expect.any(String) }); // 기록 id는 내보내지 않는다
+  });
+});
+
+describe("월 달력", () => {
+  it("2026년 10월: 목요일 시작, 31일", () => {
+    const { first, last, cells } = monthGrid("2026-10");
+    expect(first).toBe("2026-10-01");
+    expect(last).toBe("2026-10-31");
+    expect(cells.slice(0, 5)).toEqual([null, null, null, null, "2026-10-01"]);
+    expect(cells.filter(Boolean)).toHaveLength(31);
+    expect(cells.length % 7).toBe(0);
+  });
+
+  it("윤년 2월은 29일, 평년 2월은 28일", () => {
+    expect(monthGrid("2024-02").last).toBe("2024-02-29");
+    expect(monthGrid("2026-02").last).toBe("2026-02-28");
+    expect(monthGrid("2100-02").last).toBe("2100-02-28"); // 100으로 나눠지는 해는 평년
+  });
+
+  it("일요일에 시작하고 딱 떨어지는 달은 빈칸이 없다", () => {
+    expect(monthGrid("2026-02").cells).toHaveLength(28);
+  });
+
+  it("월 이동·검증·표기", () => {
+    expect(addMonths("2026-12", 1)).toBe("2027-01");
+    expect(addMonths("2026-01", -1)).toBe("2025-12");
+    expect(addMonths("2026-03", -1)).toBe("2026-02");
+    expect(monthLabel("2026-10")).toBe("2026년 10월");
+    for (const bad of ["2026-13", "2026-00", "2026-1", "x", undefined, ["2026-10"], "1899-12"]) expect(isMonth(bad)).toBe(false);
+    expect(isMonth("2026-10")).toBe(true);
+    expect(dayRange("2026-10-07", "2026-10-11")).toBe("10월 7일 ~ 11일");
+    expect(dayRange("2026-10-30", "2026-11-02")).toBe("10월 30일 ~ 11월 2일");
   });
 });

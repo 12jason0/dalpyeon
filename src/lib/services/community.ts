@@ -1,0 +1,270 @@
+import { randomInt, randomUUID } from "node:crypto";
+import { and, count, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import type { DB } from "../db";
+import { blocks, comments, posts, reports, users, type Board } from "../db/schema";
+import { fail } from "../errors";
+import { limit, type User } from "./auth";
+import { activeCouple } from "./couples";
+
+export const BOARDS: Record<Board, string> = { question: "질문", tip: "팁" };
+export const REPORTS_TO_HIDE = 3;
+export const WRITE_LIMIT = 5;
+export const WRITE_WINDOW_SECONDS = 600;
+
+export type Target = { kind: "post" | "comment"; id: string };
+export type Access = { admin: boolean; member: boolean; nickname: string | null };
+
+// 화면에 내려가는 값에는 작성자 id·이메일·앱 닉네임을 넣지 않는다. 내 글인지만 mine으로 알린다.
+export type PostRow = {
+  id: string; board: Board; title: string; nickname: string; commentCount: number;
+  createdAt: Date; hidden: boolean; mine: boolean;
+};
+export type CommentView = { id: string; body: string; nickname: string; createdAt: Date; hidden: boolean; mine: boolean };
+export type PostView = PostRow & { body: string; comments: CommentView[] };
+
+/** 활성 연결이 있는 파트너만 회원이다. 역할과 연결을 매번 함께 확인한다. */
+export async function communityAccess(db: DB, user: User): Promise<Access> {
+  const [row] = await db.select({ isAdmin: users.isAdmin, nickname: users.communityNickname })
+    .from(users).where(eq(users.id, user.id));
+  const couple = user.role === "partner" ? await activeCouple(db, user.id) : null;
+  return { admin: row?.isAdmin ?? false, member: couple?.partnerId === user.id, nickname: row?.nickname ?? null };
+}
+
+async function requireReader(db: DB, user: User) {
+  const access = await communityAccess(db, user);
+  if (!access.admin && !access.member) fail("연결된 파트너만 볼 수 있어요", 403);
+  return access;
+}
+
+async function requireMember(db: DB, user: User) {
+  const access = await communityAccess(db, user);
+  if (!access.member) fail("연결된 파트너만 쓸 수 있어요", 403);
+  return access;
+}
+
+async function requireWriter(db: DB, user: User) {
+  const access = await requireMember(db, user);
+  if (!access.nickname) fail("먼저 이용 규칙에 동의해 주세요", 403);
+}
+
+async function requireAdmin(db: DB, user: User) {
+  if (!(await communityAccess(db, user)).admin) fail("운영자만 쓸 수 있어요", 403);
+}
+
+async function nicknameTaken(db: DB, nickname: string) {
+  const [row] = await db.select({ id: users.id }).from(users).where(eq(users.communityNickname, nickname)).limit(1);
+  return Boolean(row);
+}
+
+async function randomNickname(db: DB): Promise<string> {
+  for (let i = 0; i < 8; i++) {
+    const nickname = `편-${randomInt(1000, 10000)}`;
+    if (!(await nicknameTaken(db, nickname))) return nickname;
+  }
+  return `편-${randomInt(100000, 1000000)}`; // 네 자리가 붐비면 자리를 늘린다
+}
+
+/** 이용 규칙 동의. 닉네임을 비워 두면 무작위로 정한다. 이미 동의했으면 아무것도 바꾸지 않는다. */
+export async function agreeToRules(db: DB, user: User, rawNickname: unknown) {
+  const access = await requireMember(db, user);
+  if (access.nickname) return access.nickname;
+  const typed = String(rawNickname ?? "").trim();
+  if (typed && (typed.length < 2 || typed.length > 12)) fail("닉네임은 2~12자로 적어 주세요");
+  if (/운영자|관리자/.test(typed)) fail("쓸 수 없는 닉네임이에요");
+  if (typed && (await nicknameTaken(db, typed))) fail("이미 쓰고 있는 닉네임이에요", 409);
+  const nickname = typed || (await randomNickname(db));
+  await db.update(users).set({ communityNickname: nickname }).where(and(eq(users.id, user.id), isNull(users.communityNickname)));
+  return nickname;
+}
+
+/** 나와 어느 쪽으로든 차단 관계인 사람들. */
+async function blockedIds(db: DB, userId: string): Promise<string[]> {
+  const rows = await db.select().from(blocks).where(or(eq(blocks.blockerId, userId), eq(blocks.blockedId, userId)));
+  return rows.map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId));
+}
+
+/** 숨겨지지 않았고 차단 관계도 아닌 글. 운영자라도 쓰기 동작에는 이 기준을 그대로 쓴다. */
+async function openPost(db: DB, userId: string, postId: string) {
+  const [post] = await db.select().from(posts).where(eq(posts.id, postId)).limit(1);
+  if (!post || post.hidden || (await blockedIds(db, userId)).includes(post.authorId)) fail("글을 찾을 수 없어요", 404);
+  return post;
+}
+
+async function openComment(db: DB, userId: string, commentId: string) {
+  const [comment] = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
+  if (!comment || comment.hidden || (await blockedIds(db, userId)).includes(comment.authorId)) fail("댓글을 찾을 수 없어요", 404);
+  await openPost(db, userId, comment.postId); // 숨긴 글의 댓글은 글과 함께 닫힌다
+  return comment;
+}
+
+async function commentCounts(db: DB, postIds: string[], blocked: string[], admin: boolean) {
+  if (!postIds.length) return new Map<string, number>();
+  const rows = await db.select({ postId: comments.postId, total: count() }).from(comments)
+    .where(and(inArray(comments.postId, postIds), ...(admin ? [] : [eq(comments.hidden, false), notInArray(comments.authorId, blocked)])))
+    .groupBy(comments.postId);
+  return new Map(rows.map((r) => [r.postId, r.total]));
+}
+
+export async function listPosts(db: DB, user: User, board: Board): Promise<PostRow[]> {
+  const { admin } = await requireReader(db, user);
+  const blocked = admin ? [] : await blockedIds(db, user.id);
+  const rows = await db.select({
+    id: posts.id, board: posts.board, title: posts.title, nickname: users.communityNickname,
+    createdAt: posts.createdAt, hidden: posts.hidden, authorId: posts.authorId,
+  }).from(posts).innerJoin(users, eq(users.id, posts.authorId))
+    .where(and(eq(posts.board, board), ...(admin ? [] : [eq(posts.hidden, false), notInArray(posts.authorId, blocked)])))
+    .orderBy(desc(posts.createdAt)).limit(50);
+  const counts = await commentCounts(db, rows.map((r) => r.id), blocked, admin);
+  return rows.map(({ authorId, nickname, ...r }) => ({
+    ...r, nickname: nickname ?? "", commentCount: counts.get(r.id) ?? 0, mine: authorId === user.id,
+  }));
+}
+
+/** 내가 쓴 글. 연결을 끊었거나 글이 숨겨져도 지울 수 있도록 접근 조건 없이 보여준다. */
+export async function myPosts(db: DB, user: User): Promise<Pick<PostRow, "id" | "title" | "board" | "createdAt" | "hidden">[]> {
+  return db.select({ id: posts.id, title: posts.title, board: posts.board, createdAt: posts.createdAt, hidden: posts.hidden })
+    .from(posts).where(eq(posts.authorId, user.id)).orderBy(desc(posts.createdAt));
+}
+
+export async function getPost(db: DB, user: User, postId: string): Promise<PostView> {
+  const { admin } = await requireReader(db, user);
+  const blocked = admin ? [] : await blockedIds(db, user.id);
+  const [row] = await db.select({ post: posts, nickname: users.communityNickname })
+    .from(posts).innerJoin(users, eq(users.id, posts.authorId)).where(eq(posts.id, postId)).limit(1);
+  if (!row || (!admin && (row.post.hidden || blocked.includes(row.post.authorId)))) fail("글을 찾을 수 없어요", 404);
+  const list = await db.select({ comment: comments, nickname: users.communityNickname })
+    .from(comments).innerJoin(users, eq(users.id, comments.authorId))
+    .where(and(eq(comments.postId, postId), ...(admin ? [] : [eq(comments.hidden, false), notInArray(comments.authorId, blocked)])))
+    .orderBy(comments.createdAt);
+  const { id, board, title, body, createdAt, hidden, authorId } = row.post;
+  return {
+    id, board, title, body, createdAt, hidden, mine: authorId === user.id, nickname: row.nickname ?? "", commentCount: list.length,
+    comments: list.map(({ comment: c, nickname }) => ({
+      id: c.id, body: c.body, createdAt: c.createdAt, hidden: c.hidden, mine: c.authorId === user.id, nickname: nickname ?? "",
+    })),
+  };
+}
+
+function cleanText(value: unknown, label: string, max: number) {
+  const text = String(value ?? "").trim();
+  if (text.length < 1 || text.length > max) fail(`${label}은 1~${max}자로 적어 주세요`);
+  return text;
+}
+
+function cleanBoard(value: unknown): Board {
+  if (value !== "question" && value !== "tip") fail("게시판을 골라 주세요");
+  return value;
+}
+
+export async function createPost(db: DB, user: User, input: { board: unknown; title: unknown; body: unknown }) {
+  await requireWriter(db, user);
+  const board = cleanBoard(input.board);
+  const title = cleanText(input.title, "제목", 60);
+  const body = cleanText(input.body, "본문", 2000);
+  await limit(db, "community-post", user.id, WRITE_LIMIT, WRITE_WINDOW_SECONDS);
+  const id = randomUUID();
+  await db.insert(posts).values({ id, authorId: user.id, board, title, body });
+  return id;
+}
+
+export async function updatePost(db: DB, user: User, postId: string, input: { title: unknown; body: unknown }) {
+  await requireMember(db, user);
+  const post = await openPost(db, user.id, postId);
+  if (post.authorId !== user.id) fail("내가 쓴 글만 고칠 수 있어요", 403);
+  const title = cleanText(input.title, "제목", 60);
+  const body = cleanText(input.body, "본문", 2000);
+  await db.update(posts).set({ title, body, updatedAt: new Date() }).where(eq(posts.id, postId));
+}
+
+/** 내 글 삭제는 연결이 끊겨도, 글이 숨겨져도 할 수 있다. */
+export async function deletePost(db: DB, user: User, postId: string) {
+  const deleted = await db.delete(posts).where(and(eq(posts.id, postId), eq(posts.authorId, user.id))).returning({ id: posts.id });
+  if (!deleted.length) fail("글을 찾을 수 없어요", 404);
+}
+
+export async function createComment(db: DB, user: User, postId: string, rawBody: unknown) {
+  await requireWriter(db, user);
+  await openPost(db, user.id, postId);
+  const body = cleanText(rawBody, "댓글", 500);
+  await limit(db, "community-comment", user.id, WRITE_LIMIT, WRITE_WINDOW_SECONDS);
+  const id = randomUUID();
+  await db.insert(comments).values({ id, postId, authorId: user.id, body });
+  return id;
+}
+
+export async function updateComment(db: DB, user: User, commentId: string, rawBody: unknown) {
+  await requireMember(db, user);
+  const comment = await openComment(db, user.id, commentId);
+  if (comment.authorId !== user.id) fail("내가 쓴 댓글만 고칠 수 있어요", 403);
+  const body = cleanText(rawBody, "댓글", 500);
+  await db.update(comments).set({ body, updatedAt: new Date() }).where(eq(comments.id, commentId));
+}
+
+export async function deleteComment(db: DB, user: User, commentId: string) {
+  const deleted = await db.delete(comments).where(and(eq(comments.id, commentId), eq(comments.authorId, user.id))).returning({ id: comments.id });
+  if (!deleted.length) fail("댓글을 찾을 수 없어요", 404);
+}
+
+const reportOn = ({ kind, id }: Target) => (kind === "post" ? eq(reports.postId, id) : eq(reports.commentId, id));
+
+/** 처리 전 신고가 3건 쌓이면 자동으로 숨긴다. 기각된 신고는 세지 않는다. */
+export async function report(db: DB, user: User, target: Target) {
+  await requireMember(db, user);
+  const { id, kind } = target;
+  const authorId = kind === "post" ? (await openPost(db, user.id, id)).authorId : (await openComment(db, user.id, id)).authorId;
+  if (authorId === user.id) fail("내 글은 신고할 수 없어요");
+  await db.transaction(async (tx) => {
+    // 동시에 들어온 신고가 서로의 건수를 못 보고 지나치지 않도록 대상을 잠근다
+    if (kind === "post") await tx.select({ id: posts.id }).from(posts).where(eq(posts.id, id)).for("update");
+    else await tx.select({ id: comments.id }).from(comments).where(eq(comments.id, id)).for("update");
+    const inserted = await tx.insert(reports)
+      .values({ id: randomUUID(), reporterId: user.id, postId: kind === "post" ? id : null, commentId: kind === "comment" ? id : null })
+      .onConflictDoNothing().returning({ id: reports.id });
+    if (!inserted.length) fail("이미 신고했어요", 409);
+    const [{ total }] = await tx.select({ total: count() }).from(reports).where(and(reportOn(target), eq(reports.status, "open")));
+    if (total < REPORTS_TO_HIDE) return;
+    if (kind === "post") await tx.update(posts).set({ hidden: true }).where(eq(posts.id, id));
+    else await tx.update(comments).set({ hidden: true }).where(eq(comments.id, id));
+  });
+}
+
+/** 글이나 댓글의 작성자를 차단한다. 화면에는 작성자 id가 없으므로 대상으로 찾는다. */
+export async function blockAuthor(db: DB, user: User, target: Target) {
+  await requireMember(db, user);
+  const authorId = target.kind === "post" ? (await openPost(db, user.id, target.id)).authorId : (await openComment(db, user.id, target.id)).authorId;
+  if (authorId === user.id) fail("나를 차단할 수는 없어요");
+  await db.insert(blocks).values({ blockerId: user.id, blockedId: authorId }).onConflictDoNothing();
+}
+
+export type ReportRow = Target & { postId: string; text: string; nickname: string; total: number; hidden: boolean };
+
+/** 운영자 화면: 처리 전 신고를 대상별로 묶어 많은 순으로. */
+export async function listReports(db: DB, user: User): Promise<ReportRow[]> {
+  await requireAdmin(db, user);
+  const open = await db.select({ postId: reports.postId, commentId: reports.commentId }).from(reports).where(eq(reports.status, "open"));
+  const tally = (ids: (string | null)[]) => ids.reduce((m, id) => (id ? m.set(id, (m.get(id) ?? 0) + 1) : m), new Map<string, number>());
+  const postTally = tally(open.map((r) => r.postId));
+  const commentTally = tally(open.map((r) => r.commentId));
+  const postRows = await db.select({ id: posts.id, text: posts.title, hidden: posts.hidden, nickname: users.communityNickname })
+    .from(posts).innerJoin(users, eq(users.id, posts.authorId)).where(inArray(posts.id, [...postTally.keys()]));
+  const commentRows = await db.select({ id: comments.id, postId: comments.postId, text: comments.body, hidden: comments.hidden, nickname: users.communityNickname })
+    .from(comments).innerJoin(users, eq(users.id, comments.authorId)).where(inArray(comments.id, [...commentTally.keys()]));
+  const rows: ReportRow[] = [
+    ...postRows.map((r) => ({ ...r, kind: "post" as const, postId: r.id, nickname: r.nickname ?? "", total: postTally.get(r.id) ?? 0 })),
+    ...commentRows.map((r) => ({ ...r, kind: "comment" as const, nickname: r.nickname ?? "", total: commentTally.get(r.id) ?? 0 })),
+  ];
+  return rows.sort((a, b) => b.total - a.total);
+}
+
+/** 숨김은 대상을 숨긴 채 확정하고, 기각은 자동 숨김까지 되돌린다. */
+export async function decideReport(db: DB, user: User, target: Target, decision: "hidden" | "dismissed") {
+  await requireAdmin(db, user);
+  await db.transaction(async (tx) => {
+    const decided = await tx.update(reports).set({ status: decision })
+      .where(and(reportOn(target), eq(reports.status, "open"))).returning({ id: reports.id });
+    if (!decided.length) fail("처리할 신고가 없어요", 404);
+    const hidden = decision === "hidden";
+    if (target.kind === "post") await tx.update(posts).set({ hidden }).where(eq(posts.id, target.id));
+    else await tx.update(comments).set({ hidden }).where(eq(comments.id, target.id));
+  });
+}

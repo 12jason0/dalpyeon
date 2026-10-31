@@ -1,10 +1,12 @@
 import Link from "next/link";
 import type { Role } from "@/lib/db/schema";
 
-export function Nav({ role, active }: { role: Role; active: "home" | "records" | "connect" }) {
+export function Nav({ role, active }: { role: Role; active: "home" | "records" | "calendar" | "community" | "connect" }) {
   const items = [
     { key: "home", href: "/", label: "오늘" },
-    ...(role === "recorder" ? [{ key: "records", href: "/records", label: "기록" }] : []),
+    ...(role === "recorder"
+      ? [{ key: "records", href: "/records", label: "기록" }]
+      : [{ key: "calendar", href: "/calendar", label: "달력" }, { key: "community", href: "/community", label: "이야기" }]),
     { key: "connect", href: "/connect", label: "연결" },
   ];
   return (

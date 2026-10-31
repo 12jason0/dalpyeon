@@ -47,6 +47,7 @@ src/lib/services/           DB 로직 — 화면과 분리돼 있어서 테스�
   couples.ts                초대 코드·승인·공유 설정·연결 해제
   care.ts                   오늘 필요한 배려 요청·답장
   partner.ts                파트너 화면 데이터 (공유 조건을 여기서 한 번에 거름)
+  community.ts              파트너 커뮤니티 (글·댓글·신고·차단). 운영자 지정: npm run admin:grant -- 이메일
 src/app/actions.ts          화면에서 부르는 서버 액션
 src/app/page.tsx            오늘 (기록자 / 파트너 화면)
 src/app/records/            지난 기록 입력·수정
