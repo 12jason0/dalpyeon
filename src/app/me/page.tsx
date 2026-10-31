@@ -34,7 +34,7 @@ export default async function MePage() {
 
       <section className="card mt-8">
         <p className="text-xl font-semibold tracking-tight">{user.nickname}</p>
-        <p className="mt-1 text-[15px] text-muted">{user.email}</p>
+        <p className="mt-1 text-[15px] text-muted">{user.email ?? "카카오 계정"}</p>
         {user.role === "partner" && (
           <p className="mt-1 text-[13px] text-muted">커뮤니티 닉네임 · {access.nickname ?? "아직 없어요"}</p>
         )}

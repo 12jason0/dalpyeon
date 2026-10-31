@@ -20,7 +20,7 @@ import { deletePeriod, listPeriods, savePeriod } from "@/lib/services/periods";
 import {
   markNewsSeen, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
 } from "@/lib/services/push";
-import { clientIp, endSession, requireLogin, requireUser, startSession } from "@/lib/session";
+import { clientIp, endSession, requireLogin, requireUser, startSession, takeJoinCode } from "@/lib/session";
 
 export type FormState = {
   error?: string; ok?: boolean; code?: string; expiresAt?: string;
@@ -114,9 +114,14 @@ export async function loginAction(_: FormState, form: FormData): Promise<FormSta
 export async function healthConsentAction(_: FormState, form: FormData): Promise<FormState> {
   const user = await requireLogin();
   if (form.get("healthConsent") !== "on") return { error: "동의해야 계속 쓸 수 있어요" };
-  await recordHealthConsent(await getDb(), user);
+  const db = await getDb();
+  await recordHealthConsent(db, user);
+  // /join에서 카카오로 가입했다면 동의가 끝난 지금 그 코드로 연결한다
+  const code = await takeJoinCode();
+  const problem = code ? await tryClaim(db, user, code, await clientIp()) : null;
+  if (code && !problem) later((d) => notifyConnected(d, user));
   refresh();
-  redirect("/");
+  redirect(code ? connectAfterClaim(problem, code) : "/");
 }
 
 export async function logoutAction() {

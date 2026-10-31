@@ -5,6 +5,8 @@ import { getDb } from "./db";
 import { createSession, deleteSession, userFromToken, type SessionUser, type User } from "./services/auth";
 
 const COOKIE = "dp_session";
+const KAKAO_STATE = "dp_kakao_state";
+const JOIN_CODE = "dp_join_code";
 
 export async function currentUser(): Promise<SessionUser | null> {
   const token = (await cookies()).get(COOKIE)?.value;
@@ -35,10 +37,47 @@ export async function startSession(userId: string) {
   });
 }
 
+const shortCookie = () => ({
+  httpOnly: true, sameSite: "lax", path: "/", maxAge: 900,
+  secure: process.env.NODE_ENV === "production",
+} as const);
+
+/** 카카오로 떠나기 전에 state와, /join에서 왔다면 코드를 쿠키에 남긴다. */
+export async function rememberKakaoLogin(state: string, joinCode: string | null) {
+  const jar = await cookies();
+  jar.set(KAKAO_STATE, state, shortCookie());
+  if (joinCode) jar.set(JOIN_CODE, joinCode, shortCookie());
+  else jar.delete(JOIN_CODE);
+}
+
+export async function takeKakaoState() {
+  const jar = await cookies();
+  const state = jar.get(KAKAO_STATE)?.value;
+  jar.delete(KAKAO_STATE);
+  return state;
+}
+
+export async function kakaoJoinCode() {
+  return (await cookies()).get(JOIN_CODE)?.value;
+}
+
+export async function takeJoinCode() {
+  const jar = await cookies();
+  const code = jar.get(JOIN_CODE)?.value;
+  jar.delete(JOIN_CODE);
+  return code;
+}
+
 export async function endSession() {
   const jar = await cookies();
   await deleteSession(await getDb(), jar.get(COOKIE)?.value);
   jar.delete(COOKIE);
+}
+
+/** 링크와 카카오 redirect_uri에 쓸 주소. 요청 헤더에서 읽는다. */
+export async function siteOrigin() {
+  const h = await headers();
+  return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
 }
 
 /** 요청 제한용 IP. Vercel은 x-forwarded-for 첫 값이 실제 접속 IP. */

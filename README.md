@@ -47,6 +47,13 @@ CRON_SECRET=길고 무작위인 값
 
 아이폰은 Safari에서 "홈 화면에 추가"한 앱에서만 알림을 받을 수 있습니다.
 
+## 카카오 로그인
+
+Kakao Developers 앱에서 아래를 설정하고, `KAKAO_REST_API_KEY`와 `KAKAO_CLIENT_SECRET`을 `.env.local`과 Vercel 환경변수에 넣으세요. 둘 중 하나라도 없으면 버튼이 숨겨집니다.
+
+- 카카오 로그인 활성화, 동의항목에서 닉네임 켜기, Client Secret 사용
+- Redirect URI: `http://localhost:3000/api/auth/kakao/callback`, `https://uri-jugi.vercel.app/api/auth/kakao/callback`
+
 ## 배포 (Vercel + Neon)
 
 1. Neon에서 **새 프로젝트**를 만들고 연결 문자열(Pooled)을 복사

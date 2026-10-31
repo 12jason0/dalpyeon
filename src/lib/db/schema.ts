@@ -11,8 +11,10 @@ const created = () => timestamp("created_at", { withTimezone: true }).notNull().
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
-  email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  /** 카카오로 가입한 계정은 이메일과 비밀번호가 없다. */
+  email: text("email").unique(),
+  passwordHash: text("password_hash"),
+  kakaoId: text("kakao_id").unique(),
   role: text("role").$type<Role>().notNull(),
   nickname: text("nickname").notNull(),
   isAdmin: boolean("is_admin").notNull().default(false),

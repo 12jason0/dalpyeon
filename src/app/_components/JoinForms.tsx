@@ -1,19 +1,23 @@
 "use client";
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { joinAction, joinWithLinkAction, type FormState } from "../actions";
 import { HealthConsent } from "./AuthForm";
+import { KakaoButton } from "./KakaoButton";
 import { ErrorText, Submit } from "./Submit";
 
-export function JoinForm({ code }: { code: string }) {
+export function JoinForm({ code, kakao, kakaoFailed }: { code: string; kakao: boolean; kakaoFailed: boolean }) {
   const [state, action] = useActionState<FormState, FormData>(joinAction, null);
+  const [typed, setTyped] = useState<string>();
   return (
     <form action={action} className="space-y-6">
+      {kakao && <KakaoButton code={typed ?? state?.values?.code ?? code} failed={kakaoFailed} />}
       <label className="block">
         <span className="text-sm text-muted">받은 코드 8자리</span>
         <input
           name="code" className="field font-mono text-2xl tracking-wider uppercase" placeholder="ABCD-EFGH"
           autoComplete="off" autoCapitalize="characters" maxLength={12} required defaultValue={state?.values?.code ?? code}
+          onChange={(e) => setTyped(e.target.value)}
         />
       </label>
       <label className="block">

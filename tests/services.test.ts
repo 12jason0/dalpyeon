@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLocalDb, type DB } from "@/lib/db";
 import { comments, invitations, posts, pushSubscriptions, reports, users } from "@/lib/db/schema";
 import { addDays } from "@/lib/dates";
@@ -13,6 +13,7 @@ import {
   agreeToRules, blockAuthor, communityAccess, createComment, createPost, decideReport, deleteComment, deletePost, getPost, listPosts,
   listReports, myPosts, report, updateComment, updatePost,
 } from "@/lib/services/community";
+import { kakaoAuthorizeUrl, kakaoEnabled, kakaoLanding, signInWithKakao } from "@/lib/services/kakao";
 import { currentPeriod, deletePeriod, listPeriods, predictionFor, savePeriod } from "@/lib/services/periods";
 import { partnerView } from "@/lib/services/partner";
 import {
@@ -287,6 +288,90 @@ describe("커플 연결", () => {
     await createInvite(db, me);
     await expectFail(claimInvite(db, you, first.code), 404);
     expect(await activeCouple(db, me.id)).toBeNull();
+  });
+});
+
+describe("카카오 로그인", () => {
+  const REDIRECT = "http://localhost:3000/api/auth/kakao/callback";
+
+  /** 카카오 서버 대신 답하는 가짜 fetch. 요청은 calls에 남긴다. */
+  function kakao(id: number, nickname?: string) {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const fetcher = (async (url: string, init?: RequestInit) => {
+      calls.push({ url, init });
+      return String(url).includes("/oauth/token") ? Response.json({ access_token: "token-1" }) : Response.json({ id, properties: { nickname } });
+    }) as unknown as typeof fetch;
+    return { calls, fetcher };
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("KAKAO_REST_API_KEY", "rest-key");
+    vi.stubEnv("KAKAO_CLIENT_SECRET", "secret");
+  });
+
+  it("키가 하나라도 없으면 꺼진다", () => {
+    expect(kakaoEnabled()).toBe(true);
+    vi.stubEnv("KAKAO_CLIENT_SECRET", "");
+    expect(kakaoEnabled()).toBe(false);
+  });
+
+  it("인증 주소에 state와 요청 주소 기준 redirect_uri가 들어간다", () => {
+    const url = new URL(kakaoAuthorizeUrl("state-1", REDIRECT));
+    expect(url.origin).toBe("https://kauth.kakao.com");
+    expect(Object.fromEntries(url.searchParams)).toMatchObject({ client_id: "rest-key", redirect_uri: REDIRECT, response_type: "code", state: "state-1" });
+  });
+
+  it("처음이면 이메일 없이 기록자로 가입하고 동의 화면으로 간다", async () => {
+    const { calls, fetcher } = kakao(1001, "지민");
+    const user = await signInWithKakao(db, "auth-code", REDIRECT, fetcher);
+    expect(user).toMatchObject({ email: null, role: "recorder", nickname: "지민", healthConsentAt: null });
+    expect(kakaoLanding(user, undefined)).toBe("/consent");
+    expect(kakaoLanding(user, "ABCDEFGH")).toBe("/consent"); // 코드가 있어도 동의가 먼저
+
+    const body = calls[0].init?.body as URLSearchParams;
+    expect(Object.fromEntries(body)).toMatchObject({ code: "auth-code", client_id: "rest-key", client_secret: "secret", redirect_uri: REDIRECT });
+    expect(calls[1].init?.headers).toEqual({ Authorization: "Bearer token-1" });
+  });
+
+  it("다시 로그인하면 같은 계정이고, 이메일 없는 계정이 여럿이어도 된다", async () => {
+    const first = await signInWithKakao(db, "a", REDIRECT, kakao(1001, "지민").fetcher);
+    await recordHealthConsent(db, first);
+    const again = await signInWithKakao(db, "b", REDIRECT, kakao(1001, "바뀐이름").fetcher);
+    expect(again.id).toBe(first.id);
+    expect(again.nickname).toBe("지민");
+    expect(kakaoLanding(again, undefined)).toBe("/");
+    expect(kakaoLanding(again, "ABCDEFGH")).toBe("/join?code=ABCDEFGH"); // 쓰던 계정은 확인 화면을 거친다
+
+    const other = await signInWithKakao(db, "c", REDIRECT, kakao(1002, "도윤").fetcher);
+    expect(other.id).not.toBe(first.id);
+    expect(await db.select({ id: users.id }).from(users)).toHaveLength(2);
+  });
+
+  it("닉네임이 없거나 길어도 가입된다", async () => {
+    expect((await signInWithKakao(db, "a", REDIRECT, kakao(1001).fetcher)).nickname).toBe("우리주기 사용자");
+    expect((await signInWithKakao(db, "b", REDIRECT, kakao(1002, "가".repeat(30)).fetcher)).nickname).toHaveLength(20);
+  });
+
+  it("코드로 들어와 가입하면 동의 뒤 그 코드로 바로 연결된다", async () => {
+    const { me } = await pair();
+    const { code } = await createInvite(db, me);
+    const user = await signInWithKakao(db, "a", REDIRECT, kakao(1001, "도윤").fetcher);
+    await recordHealthConsent(db, user); // healthConsentAction과 같은 순서
+    expect(await tryClaim(db, user, code, "1.1.1.1")).toBeNull();
+    expect((await reload(user)).role).toBe("partner");
+    expect(await activeCouple(db, me.id)).toMatchObject({ partnerId: user.id });
+  });
+
+  it("카카오가 실패하면 계정을 만들지 않는다", async () => {
+    const denied = (async () => new Response("{}", { status: 401 })) as unknown as typeof fetch;
+    await expect(signInWithKakao(db, "bad", REDIRECT, denied)).rejects.toThrow("kakao token 401");
+    expect(await db.select({ id: users.id }).from(users)).toEqual([]);
+  });
+
+  it("비밀번호가 없는 계정은 비밀번호로 로그인할 수 없다", async () => {
+    const { me } = await pair();
+    await db.update(users).set({ passwordHash: null }).where(eq(users.id, me.id));
+    await expectFail(login(db, { email: "me@example.com", password: "timing-dummy-password" }), 401);
   });
 });
 

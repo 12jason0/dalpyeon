@@ -6,7 +6,7 @@ import { fail } from "../errors";
 
 export const SESSION_DAYS = 30;
 
-export type User = { id: string; email: string; role: Role; nickname: string };
+export type User = { id: string; email: string | null; role: Role; nickname: string };
 export type SessionUser = User & { healthConsentAt: Date | null };
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -90,8 +90,8 @@ export async function login(db: DB, input: { email: unknown; password: unknown }
   const password = String(input.password ?? "");
   const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   dummyHash ??= hashPassword("timing-dummy-password");
-  const ok = await verifyPassword(password, row ? row.passwordHash : await dummyHash);
-  if (!row || !ok) fail("이메일 또는 비밀번호를 확인해 주세요", 401);
+  const ok = await verifyPassword(password, row?.passwordHash ?? await dummyHash);
+  if (!row?.passwordHash || !ok) fail("이메일 또는 비밀번호를 확인해 주세요", 401);
   return { id: row.id, email: row.email, role: row.role, nickname: row.nickname };
 }
 

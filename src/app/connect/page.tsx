@@ -1,10 +1,9 @@
-import { headers } from "next/headers";
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { todaySeoul } from "@/lib/dates";
 import type { User } from "@/lib/services/auth";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
-import { requireUser } from "@/lib/session";
+import { requireUser, siteOrigin } from "@/lib/session";
 import { disconnectAction } from "../actions";
 import { ClaimForm, InviteBox, SharingForm } from "../_components/ConnectForms";
 import { Nav } from "../_components/Nav";
@@ -21,12 +20,6 @@ const CLAIM_NOTICES: Record<string, string> = {
 };
 
 type Claim = { code?: string; notice?: string };
-
-/** 링크를 보낼 주소. 요청 헤더에서 읽는다. */
-async function siteOrigin() {
-  const h = await headers();
-  return `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
-}
 
 export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string; sharing?: string; disconnect?: string }> }) {
   const user = await requireUser();
