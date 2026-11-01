@@ -47,7 +47,7 @@ const shots = require("node:os").tmpdir();
 
   await step("홈에 예측 표시", async () => {
     await me.goto(BASE + "/");
-    await me.getByText("생리 예정일까지").waitFor();
+    await me.getByText("다음 생리까지").waitFor();
     await me.screenshot({ path: `${shots}/04-home-prediction.png`, fullPage: true });
   });
 
@@ -83,7 +83,7 @@ const shots = require("node:os").tmpdir();
     await me.goto(BASE + "/connect");
     await me.getByText("도윤님과 연결됨").waitFor();
     await you.goto(BASE + "/");
-    await you.getByText("아직 조용해요").waitFor();
+    await you.getByText("아직 공유된 항목이 없어요").waitFor();
   });
 
   await step("공유 켜기 (예상·가임기·배려)", async () => {
@@ -109,7 +109,7 @@ const shots = require("node:os").tmpdir();
 
   await step("파트너 화면: 허용된 것만 + 답장", async () => {
     await you.goto(BASE + "/");
-    await you.getByText("지민님 다음 생리까지").waitFor();
+    await you.getByText("다음 생리까지").waitFor();
     await you.getByText("따뜻한 거 같이 먹고 싶어").waitFor();
     const body = await you.textContent("body");
     if (body.includes("최근 기록")) throw new Error("기록 공유를 안 켰는데 최근 기록이 보임");

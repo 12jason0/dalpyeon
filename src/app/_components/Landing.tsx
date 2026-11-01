@@ -30,7 +30,7 @@ function HomePreview({ today }: { today: string }) {
     <div inert className="pointer-events-none mx-auto select-none overflow-hidden rounded-[2.25rem] border-4 border-line bg-paper px-2 pb-6 pt-6">
       <div className="px-2"><Logo /></div>
       <MoonPhase moon={moonShape(prediction, today)} />
-      <div className="px-2"><StatusLine {...recorderStatus(prediction, null, today, periods.length)} /></div>
+      <div className="px-2"><StatusLine {...recorderStatus(prediction, null, today)} /></div>
       <div className="mt-4 px-2"><div className="btn">오늘 시작했어요</div></div>
       <div className="mt-4 space-y-2">
         <CareSummaryCard summary="도윤 · 도와줄게요" />

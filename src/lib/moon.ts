@@ -17,6 +17,24 @@ export function moonShape(prediction: Pick<Prediction, "period" | "typicalCycleD
   return { lit: Math.max(THINNEST, (1 - Math.cos(2 * Math.PI * position)) / 2), waxing: position < 0.5 };
 }
 
+export const MOON_WAITING = "기록이 쌓이면 달이 차올라요";
+
+/** 달 아래 한 줄. 기록자·파트너 공용이라, 허락되지 않은 값은 null로 넘긴다. 말할 사실이 없으면 null. */
+export function cycleLine(
+  current: { day: number } | null,
+  nextStart: string | null,
+  fertile: { startDate: string; endDate: string } | null,
+  today: string,
+) {
+  if (current) return `생리 ${current.day}일째`;
+  const fertileNow = fertile && fertile.startDate <= today && today <= fertile.endDate;
+  if (!nextStart) return fertileNow ? "가임기 예상" : null;
+  const days = diffDays(nextStart, today);
+  if (days < 0) return `예정일이 ${-days}일 지났어요`;
+  const until = days ? `다음 생리까지 ${days}일` : "오늘이 생리 예정일이에요";
+  return fertileNow ? `가임기 예상 · ${until}` : until;
+}
+
 /** 원의 왼쪽 위를 (0,0)으로 둔 밝은 부분. 바깥 반원 + 타원 호(명암 경계)로 그린다. */
 export function moonPath({ lit, waxing }: MoonShape, r: number) {
   const edge = (r * Math.abs(1 - 2 * lit)).toFixed(2);

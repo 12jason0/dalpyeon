@@ -61,10 +61,10 @@ describe("랜딩 예시 기록", () => {
 
 describe("시기 문구", () => {
   it("모든 시기에 증상 3개·팁 3개가 있고 단정하지 않는다", () => {
-    for (const { line, symptoms, tips } of Object.values(PHASES)) {
+    for (const { symptoms, tips } of Object.values(PHASES)) {
       expect(symptoms).toHaveLength(3);
       expect(tips).toHaveLength(3);
-      for (const text of [line, ...tips.map((t) => t.text)]) expect(text).toContain("수 있어요");
+      for (const text of [...symptoms, ...tips.map((t) => t.text)]) expect(text).toContain("수 있어요");
     }
   });
 });

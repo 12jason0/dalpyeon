@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addDays } from "@/lib/dates";
-import { CRESCENT, moonPath, moonShape } from "@/lib/moon";
+import { CRESCENT, cycleLine, moonPath, moonShape } from "@/lib/moon";
 
 const LENGTH = 28;
 const start = "2026-10-01";
@@ -41,5 +41,24 @@ describe("달 모양", () => {
     expect(moonPath({ lit: 0.75, waxing: true }, 80)).toBe("M80 0A80 80 0 0 1 80 160A40.00 80 0 0 1 80 0Z");
     expect(moonPath({ lit: 0.25, waxing: false }, 80)).toBe("M80 0A80 80 0 0 0 80 160A40.00 80 0 0 1 80 0Z");
     expect(moonPath({ lit: 0.75, waxing: false }, 80)).toBe("M80 0A80 80 0 0 0 80 160A40.00 80 0 0 0 80 0Z");
+  });
+});
+
+describe("달 아래 한 줄", () => {
+  const fertile = { startDate: "2026-10-09", endDate: "2026-10-15" };
+  it.each<[string, Parameters<typeof cycleLine>, string | null]>([
+    ["생리 중", [{ day: 3 }, "2026-10-28", fertile, "2026-10-03"], "생리 3일째"],
+    ["생리 끝난 뒤", [null, "2026-10-28", fertile, "2026-10-08"], "다음 생리까지 20일"],
+    ["가임기 첫날", [null, "2026-10-28", fertile, "2026-10-09"], "가임기 예상 · 다음 생리까지 19일"],
+    ["가임기 마지막 날", [null, "2026-10-28", fertile, "2026-10-15"], "가임기 예상 · 다음 생리까지 13일"],
+    ["가임기 다음 날", [null, "2026-10-28", fertile, "2026-10-16"], "다음 생리까지 12일"],
+    ["예정일 당일", [null, "2026-10-28", null, "2026-10-28"], "오늘이 생리 예정일이에요"],
+    ["예정일 지남", [null, "2026-10-28", null, "2026-10-31"], "예정일이 3일 지났어요"],
+    ["예측 없음", [null, null, null, "2026-10-31"], null],
+    ["가임기만 허락됨", [null, null, fertile, "2026-10-10"], "가임기 예상"],
+    ["가임기만 허락됐고 기간 밖", [null, null, fertile, "2026-10-20"], null],
+    ["예상만 허락돼 가임기를 모름", [null, "2026-10-28", null, "2026-10-10"], "다음 생리까지 18일"],
+  ])("%s", (_, args, expected) => {
+    expect(cycleLine(...args)).toBe(expected);
   });
 });

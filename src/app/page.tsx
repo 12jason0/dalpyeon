@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { diffDays, formatDay, isMonth, monthGrid, shortDay, todaySeoul } from "@/lib/dates";
-import { CRESCENT, moonShape } from "@/lib/moon";
+import { CRESCENT, cycleLine, MOON_WAITING, moonShape } from "@/lib/moon";
 import { phaseOn } from "@/lib/phase";
 import { calendarMarks, DISCLAIMER, estimate } from "@/lib/prediction";
 import type { User } from "@/lib/services/auth";
@@ -14,7 +14,7 @@ import { newsFor } from "@/lib/services/push";
 import { currentPeriod, listPeriods } from "@/lib/services/periods";
 import { currentUser } from "@/lib/session";
 import { CareForm } from "./_components/CareForm";
-import { CareCard, CareSummaryCard, Logo, MOON_WAITING, MoonPhase, NewsDot, PhaseCards, recorderStatus, StatusLine, untilText } from "./_components/HomeCards";
+import { CareCard, CareSummaryCard, Logo, MoonPhase, NewsDot, PhaseCards, recorderStatus, StatusLine } from "./_components/HomeCards";
 import { Landing } from "./_components/Landing";
 import { MonthCalendar } from "./_components/MonthCalendar";
 import { Nav } from "./_components/Nav";
@@ -46,11 +46,11 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ m
   );
 }
 
-function Hero({ label, big, sub, tone }: { label?: string; big: string; sub?: React.ReactNode; tone?: "period" }) {
+function Hero({ label, big, sub }: { label?: string; big: string; sub?: React.ReactNode }) {
   return (
     <div className="mt-4 text-center">
       {label && <p className="text-[17px] text-muted">{label}</p>}
-      <p className={`mt-1 font-semibold leading-tight tracking-tight ${big.length > 6 ? "text-[2.75rem]" : "text-6xl"} ${tone === "period" ? "text-period-ink" : ""}`}>{big}</p>
+      <p className={`mt-1 font-semibold leading-tight tracking-tight ${big.length > 6 ? "text-[2.75rem]" : "text-6xl"}`}>{big}</p>
       {sub && <p className="mt-4 text-[17px] leading-relaxed text-muted">{sub}</p>}
     </div>
   );
@@ -84,7 +84,7 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
         <NewsDot show={news.replies > 0} />
       </div>
       <MoonPhase moon={moonShape(prediction, today)} />
-      <StatusLine {...recorderStatus(prediction, current, today, periods.length)} />
+      <StatusLine {...recorderStatus(prediction, current, today)} />
       {partnerName && (
         <p className="mt-3 text-center text-sm text-muted">
           {partnerName}님과 연결됨 · <Link href="/me/settings" className="link">연결 끊기</Link>
@@ -139,14 +139,11 @@ async function PartnerHome({ user, month }: { user: User; month: string }) {
   const name = view.recorderNickname;
   const p = view.permissions;
   const nothingShared = !p.periods && !p.predictions && !p.fertility && !p.care;
-  let hero: React.ReactNode;
-  if (view.paused) hero = <Hero label={`${name}님은`} big="잠시 쉬는 중" sub="지금은 공유를 잠시 멈췄어요." />;
-  else if (view.current) hero = <Hero label={`${name}님은 지금`} big={`생리 ${view.current.day}일째`} tone="period" />;
-  else if (view.nextPeriod) {
-    const days = diffDays(view.nextPeriod.startDate, today);
-    hero = <Hero label={days >= 0 ? `${name}님 다음 생리까지` : `${name}님 예상일이`} big={untilText(days)} sub={`${formatDay(view.nextPeriod.startDate)} 예상`} />;
-  } else if (nothingShared) hero = <Hero big="아직 조용해요" sub={`${name}님이 보여줄 항목을 고르면 여기에 나타나요.`} />;
-  else hero = <Hero label={`${name}님의 오늘`} big="평온한 날" sub={p.predictions ? MOON_WAITING : undefined} />;
+  // 예측을 허락받지 않았으면 쌓일 달도 볼 수 없으니 문구를 두지 않는다.
+  const line = cycleLine(view.current, view.nextPeriod?.startDate ?? null, view.fertileWindow, today) ?? (p.predictions ? MOON_WAITING : null);
+  const hero = view.paused ? <Hero label={`${name}님은`} big="잠시 쉬는 중" sub="지금은 공유를 잠시 멈췄어요." />
+    : nothingShared ? <StatusLine main="아직 공유된 항목이 없어요" sub={`${name}님이 보여줄 항목을 고르면 여기에 나타나요.`} />
+    : line && <StatusLine main={line} />;
 
   // 오늘 요청이 있으면 달 바로 아래로. 지난 요청은 아래 목록에 그대로 둔다.
   const todayCare = view.care.find((c) => c.day === today);
