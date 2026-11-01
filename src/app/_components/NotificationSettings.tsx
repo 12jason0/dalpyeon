@@ -38,8 +38,7 @@ export function NotificationSettings({ publicKey, showReminder, reminder }: { pu
     try {
       const permission = await Notification.requestPermission();
       if (permission !== "granted") return setStatus(permission === "denied" ? "denied" : "off");
-      const registration = await navigator.serviceWorker.register("/sw.js");
-      await navigator.serviceWorker.ready;
+      const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: toKey(publicKey!) });
       const { endpoint, keys } = subscription.toJSON();
       const result = await subscribeAction({ endpoint, p256dh: keys?.p256dh, auth: keys?.auth });
@@ -102,6 +101,8 @@ async function dropSubscription(subscription: PushSubscription) {
 
 /** 계정을 떠날 때 이 기기의 구독도 지운다. 같은 기기로 다음 사람이 써도 이전 계정 알림이 오지 않게. */
 async function leaveThisDevice() {
+  // 오프라인용으로 저장된 HTML에는 건강 기록이 들어 있다
+  if ("caches" in window) await Promise.all((await caches.keys()).filter((k) => k.startsWith("pages-")).map((k) => caches.delete(k)));
   if (!("serviceWorker" in navigator)) return;
   const subscription = await currentSubscription().catch(() => null);
   if (subscription) await dropSubscription(subscription);

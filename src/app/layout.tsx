@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { ServiceWorker } from "./_components/ServiceWorker";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,11 +21,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link
           rel="stylesheet"
+          crossOrigin="anonymous"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
         />
       </head>
       <body>
         <main className="mx-auto max-w-md px-6 pb-32 pt-[max(3rem,env(safe-area-inset-top))]">{children}</main>
+        <ServiceWorker version={process.env.VERCEL_GIT_COMMIT_SHA} />
       </body>
     </html>
   );

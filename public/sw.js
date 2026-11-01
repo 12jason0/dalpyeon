@@ -1,4 +1,54 @@
-// 우리주기 서비스 워커: 푸시를 받아 알림을 띄우고, 누르면 앱을 연다.
+// 우리주기 서비스 워커: 푸시 알림, 앱 껍데기 캐시.
+// 배포마다 등록 주소의 ?v=커밋이 바뀌어 새 워커가 설치되고 옛 캐시가 지워진다. v가 없으면(로컬) 캐시하지 않는다.
+const VERSION = new URL(self.location.href).searchParams.get("v");
+const ASSETS = `assets-${VERSION}`;
+const PAGES = `pages-${VERSION}`; // 건강 기록이 든 HTML. 로그아웃·탈퇴 때 NotificationSettings가 지운다
+
+self.addEventListener("install", () => self.skipWaiting());
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((k) => k !== ASSETS && k !== PAGES).map((k) => caches.delete(k)));
+    // 워커가 깨어나는 시간만큼 페이지 요청이 늦어지지 않게 한다
+    await self.registration.navigationPreload?.enable();
+    await self.clients.claim();
+  })());
+});
+
+function isAsset(url) {
+  if (url.origin !== self.location.origin) return url.hostname === "cdn.jsdelivr.net"; // Pretendard 글꼴
+  return /^\/(_next\/static\/|icon|apple-icon)/.test(url.pathname);
+}
+
+async function cacheFirst(request) {
+  const cache = await caches.open(ASSETS);
+  const hit = await cache.match(request);
+  if (hit) return hit;
+  const response = await fetch(request);
+  if (response.ok) await cache.put(request, response.clone());
+  return response;
+}
+
+// 쿼리는 키에서 뺀다. 경로마다 최신 한 장만 남아 캐시가 늘지 않는다.
+async function networkFirst(event, path) {
+  const cache = await caches.open(PAGES);
+  try {
+    const response = (await event.preloadResponse) || (await fetch(event.request));
+    if (response.ok && !response.redirected) event.waitUntil(cache.put(path, response.clone()));
+    return response;
+  } catch {
+    return (await cache.match(path)) || Response.error();
+  }
+}
+
+self.addEventListener("fetch", (event) => {
+  if (!VERSION || event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (isAsset(url)) return event.respondWith(cacheFirst(event.request));
+  if (event.request.mode === "navigate" && !/^\/(api|admin)(\/|$)/.test(url.pathname)) event.respondWith(networkFirst(event, url.pathname));
+});
+
 self.addEventListener("push", (event) => {
   let data = {};
   try {

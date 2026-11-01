@@ -8,11 +8,18 @@ import { createSession, deleteSession, userFromToken, type SessionUser, type Use
 const COOKIE = "dp_session";
 const KAKAO_STATE = "dp_kakao_state";
 const JOIN_CODE = "dp_join_code";
+const IDLE_MS = 4 * 60_000;
+let lastLookup = 0;
 
 export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const token = (await cookies()).get(COOKIE)?.value;
   if (!token) return null; // 로그인 전 화면은 DB를 건드리지 않는다
-  return userFromToken(await getDb(), token);
+  const start = performance.now();
+  const user = await userFromToken(await getDb(), token);
+  // 쉬고 난 첫 조회만 찍는다. Neon이 깨어나는 시간을 Vercel 로그에서 보기 위한 것.
+  if (start - lastLookup > IDLE_MS) console.log(`[timing] first-db-query ${Math.round(performance.now() - start)}ms idle=${Math.round((start - lastLookup) / 1000)}s`);
+  lastLookup = performance.now();
+  return user;
 });
 
 /** 로그인만 확인한다. 동의 화면에서만 쓴다. */
