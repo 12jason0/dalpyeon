@@ -1,6 +1,7 @@
-import { ChevronRight, Droplet } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { PHASES } from "@/lib/content/phases";
 import { diffDays, formatDay } from "@/lib/dates";
+import { moonPath, type MoonShape } from "@/lib/moon";
 import type { Phase } from "@/lib/phase";
 import type { Prediction } from "@/lib/prediction";
 import { CARE_PRESETS, RESPONSES, type CareView } from "@/lib/services/care";
@@ -29,11 +30,29 @@ export function untilText(days: number) {
   return `${-days}일 지남`;
 }
 
+export const MOON_WAITING = "기록이 쌓이면 달이 차올라요";
+
+const MOON_RADIUS = 80;
+
+/** 홈 맨 위의 달. 모양 계산은 lib/moon. 오늘 상태는 바로 아래 문구가 읽어 주므로 그림은 숨긴다. */
+export function MoonPhase({ moon }: { moon: MoonShape }) {
+  const size = MOON_RADIUS * 2;
+  return (
+    <svg viewBox={`0 0 ${size} ${size}`} width={size} height={size} className="mx-auto mt-6 block" aria-hidden>
+      <circle cx={MOON_RADIUS} cy={MOON_RADIUS} r={MOON_RADIUS} className="fill-moon-dark" />
+      <path d={moonPath(moon, MOON_RADIUS)} className="fill-moon-lit" />
+    </svg>
+  );
+}
+
 type Status = { label?: string; main: string; sub?: string };
 
 /** 기록자 홈 맨 위 상태 한 줄에 들어갈 문구. */
 export function recorderStatus(prediction: Prediction, current: { day: number; open: boolean } | null, today: string, count: number): Status {
-  if (current) return { main: `생리 ${current.day}일째`, sub: current.open ? "끝나면 알려주세요." : undefined };
+  if (current) {
+    const notes = [current.open && "끝나면 알려주세요.", prediction.status === "insufficient_data" && MOON_WAITING].filter(Boolean);
+    return { main: `생리 ${current.day}일째`, sub: notes.join(" ") || undefined };
+  }
   const p = prediction.period;
   if (p && (prediction.status === "estimated" || prediction.status === "variable_cycles")) {
     const days = diffDays(p.startDate, today);
@@ -43,20 +62,15 @@ export function recorderStatus(prediction: Prediction, current: { day: number; o
   if (prediction.status === "needs_record_review") {
     return { main: "기록 확인 필요", sub: "간격이 15일보다 짧거나 90일보다 긴 기록이 있어요. 날짜가 맞는지 확인해 주세요." };
   }
-  return { main: "기록 모으는 중", sub: `생리 시작일을 4번 기록하면 다음 날짜를 예상해 드려요. 지금 ${count}번 기록했어요.` };
+  return { main: MOON_WAITING, sub: `생리 시작일을 4번 기록하면 다음 날짜를 예상해 드려요. 지금 ${count}번 기록했어요.` };
 }
 
 export function StatusLine({ label, main, sub }: Status) {
   return (
-    <div className="mt-6 flex items-center gap-3">
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-period text-period-ink">
-        <Droplet size={22} aria-hidden />
-      </span>
-      <div className="min-w-0">
-        {label && <p className="text-[13px] text-muted">{label}</p>}
-        <p className="text-xl font-semibold tracking-tight">{main}</p>
-        {sub && <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{sub}</p>}
-      </div>
+    <div className="mt-4 text-center">
+      {label && <p className="text-[13px] text-muted">{label}</p>}
+      <p className="text-xl font-semibold tracking-tight">{main}</p>
+      {sub && <p className="mt-0.5 text-[13px] leading-relaxed text-muted">{sub}</p>}
     </div>
   );
 }

@@ -21,7 +21,7 @@ const shots = require("node:os").tmpdir();
     await me.check('input[name=healthConsent]');
     await me.click('button[type=submit]');
     await me.waitForURL(BASE + "/");
-    await me.getByText("기록 모으는 중").waitFor();
+    await me.getByText("기록이 쌓이면 달이 차올라요").waitFor();
     await me.screenshot({ path: `${shots}/02-home-empty.png`, fullPage: true });
   });
 
@@ -69,7 +69,7 @@ const shots = require("node:os").tmpdir();
     await you.check('input[name=healthConsent]');
     await you.click('button[type=submit]');
     await you.waitForURL(BASE + "/");
-    await you.getByText("기록 모으는 중").waitFor();
+    await you.getByText("기록이 쌓이면 달이 차올라요").waitFor();
     await you.goto(BASE + "/connect");
     await you.fill('input[name=code]', code.toLowerCase());
     await you.click('button:has-text("다음")');
@@ -150,7 +150,7 @@ const shots = require("node:os").tmpdir();
     await you.click('button:has-text("끊을게요")');
     await you.locator('summary:has-text("연결 끊기")').waitFor({ state: "detached" });
     await you.goto(BASE + "/");
-    await you.getByText("기록 모으는 중").waitFor();
+    await you.getByText("기록이 쌓이면 달이 차올라요").waitFor();
   });
 
   await step("로그아웃 → 로그인", async () => {

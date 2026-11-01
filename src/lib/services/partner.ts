@@ -1,4 +1,5 @@
 import { monthGrid, todaySeoul } from "../dates";
+import { CRESCENT, moonShape, type MoonShape } from "../moon";
 import { calendarMarks, estimate, type CalendarMark } from "../prediction";
 import type { User } from "./auth";
 import { sharedCare, type CareView } from "./care";
@@ -18,6 +19,8 @@ export type PartnerView = {
   care: CareView[];
   /** 해당 달의 달력 표시. 켜진 항목만 들어 있다. */
   calendar: CalendarMark[];
+  /** 예측이 허락된 경우에만 실제 주기를 따른다. */
+  moon: MoonShape;
 };
 
 /**
@@ -34,7 +37,7 @@ export async function partnerView(db: DB, user: User, today = todaySeoul(), mont
   const base: PartnerView = {
     recorderNickname,
     paused: couple.paused, permissions: couple.permissions,
-    current: null, nextPeriod: null, fertileWindow: null, recentPeriods: [], care: [], calendar: [],
+    current: null, nextPeriod: null, fertileWindow: null, recentPeriods: [], care: [], calendar: [], moon: CRESCENT,
   };
   if (couple.paused) return base;
 
@@ -49,6 +52,7 @@ export async function partnerView(db: DB, user: User, today = todaySeoul(), mont
   // 예측: 비공개 과거 기록까지 써서 계산하되, 결과 날짜만 보여준다
   const full = p.predictions || p.fertility ? estimate(all, [], today) : null;
   if (p.predictions && full?.period) {
+    base.moon = moonShape(full, today);
     base.nextPeriod = { startDate: full.period.startDate, earliestStart: full.period.earliestStart, latestStart: full.period.latestStart };
   }
   if (p.fertility && full?.fertileWindow) base.fertileWindow = full.fertileWindow;

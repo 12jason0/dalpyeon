@@ -2,10 +2,11 @@ import { Bell, CalendarDays, Flower2, HeartHandshake } from "lucide-react";
 import Link from "next/link";
 import { exampleHome } from "@/lib/content/example";
 import { monthGrid, todaySeoul } from "@/lib/dates";
+import { moonShape } from "@/lib/moon";
 import { phaseOn } from "@/lib/phase";
 import { calendarMarks, DISCLAIMER, estimate } from "@/lib/prediction";
 import { CARE_PRESETS, RESPONSES } from "@/lib/services/care";
-import { CareCard, CareSummaryCard, Logo, PhaseCards, recorderStatus, StatusLine } from "./HomeCards";
+import { CareCard, CareSummaryCard, Logo, MoonPhase, PhaseCards, recorderStatus, StatusLine } from "./HomeCards";
 import { MonthCalendar } from "./MonthCalendar";
 
 const FEATURES = [
@@ -28,6 +29,7 @@ function HomePreview({ today }: { today: string }) {
   return (
     <div inert className="pointer-events-none mx-auto select-none overflow-hidden rounded-[2.25rem] border-4 border-line bg-paper px-2 pb-6 pt-6">
       <div className="px-2"><Logo /></div>
+      <MoonPhase moon={moonShape(prediction, today)} />
       <div className="px-2"><StatusLine {...recorderStatus(prediction, null, today, periods.length)} /></div>
       <div className="mt-4 px-2"><div className="btn">오늘 시작했어요</div></div>
       <div className="mt-4 space-y-2">

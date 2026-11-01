@@ -5,6 +5,8 @@ import {
   blocks, careRequests, careResponses, comments, couples, invitations, periods, posts, pushSubscriptions, reports, sessions, users,
 } from "@/lib/db/schema";
 import { addDays } from "@/lib/dates";
+import { CRESCENT, moonShape } from "@/lib/moon";
+import { estimate } from "@/lib/prediction";
 import { AppError } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
 import { createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
@@ -1109,5 +1111,26 @@ describe("회원 탈퇴", () => {
     log.mockRestore();
     expect(down).toHaveBeenCalledOnce();
     expect((await db.select().from(users).where(eq(users.id, user.id)))[0].kakaoId).toBeNull();
+  });
+});
+
+describe("파트너 홈의 달", () => {
+  it("예측 공유가 켜져 있을 때만 실제 달, 아니면 초승달", async () => {
+    const { me, you } = await pair();
+    await fourPeriods(me);
+    await connect(me, you);
+    const partner = await reload(you);
+    const share = (permissions: Record<string, boolean>, paused = false) =>
+      updateSharing(db, me, { permissions, shareFrom: "2026-01-01", paused }, TODAY);
+
+    expect((await partnerView(db, partner, TODAY))?.moon).toEqual(CRESCENT);
+    await share({ periods: true });
+    expect((await partnerView(db, partner, TODAY))?.moon).toEqual(CRESCENT);
+    await share({ predictions: true });
+    const expected = moonShape(estimate(await listPeriods(db, me.id), [], TODAY), TODAY);
+    expect(expected).not.toEqual(CRESCENT);
+    expect((await partnerView(db, partner, TODAY))?.moon).toEqual(expected);
+    await share({ predictions: true }, true);
+    expect((await partnerView(db, partner, TODAY))?.moon).toEqual(CRESCENT);
   });
 });
