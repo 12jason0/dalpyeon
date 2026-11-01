@@ -50,6 +50,23 @@ export async function signInWithKakao(db: DB, code: string, redirectUri: string,
   return find();
 }
 
+/** 카카오 쪽 앱 연결을 끊는다. 탈퇴는 이미 끝난 뒤라 실패해도 기록만 남긴다. */
+export async function unlinkKakao(kakaoId: string, fetcher: typeof fetch = fetch) {
+  const adminKey = process.env.KAKAO_ADMIN_KEY;
+  if (!adminKey) return;
+  try {
+    const res = await fetcher("https://kapi.kakao.com/v1/user/unlink", {
+      method: "POST",
+      headers: { Authorization: `KakaoAK ${adminKey}`, "Content-Type": "application/x-www-form-urlencoded;charset=utf-8" },
+      body: new URLSearchParams({ target_id_type: "user_id", target_id: kakaoId }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) console.error("kakao unlink failed", res.status);
+  } catch (e) {
+    console.error("kakao unlink failed", e instanceof Error ? e.message : e);
+  }
+}
+
 /** 동의 전이면 코드는 쿠키에 남겨 동의 뒤 연결하고, 이미 쓰던 계정은 확인 화면에서 직접 연결하게 한다. */
 export function kakaoLanding(user: SessionUser, joinCode: string | undefined) {
   if (!user.healthConsentAt) return "/consent";

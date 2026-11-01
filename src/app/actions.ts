@@ -6,6 +6,7 @@ import { after } from "next/server";
 import { getDb, type DB } from "@/lib/db";
 import { isMonth, todaySeoul } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
+import { withdraw } from "@/lib/services/account";
 import { limit, login, recordHealthConsent, signup } from "@/lib/services/auth";
 import { clearCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
@@ -127,6 +128,17 @@ export async function healthConsentAction(_: FormState, form: FormData): Promise
 export async function logoutAction() {
   await endSession();
   redirect("/login");
+}
+
+export async function withdrawAction(_: FormState): Promise<FormState> {
+  const result = await attempt(async () => {
+    const user = await requireUser();
+    await withdraw(await getDb(), user);
+    await endSession();
+    refresh();
+  });
+  if (result?.error) return result;
+  redirect("/");
 }
 
 // ── 생리 기록 ─────────────────────────────────────

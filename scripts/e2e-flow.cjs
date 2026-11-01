@@ -91,6 +91,7 @@ const shots = require("node:os").tmpdir();
       await me.getByRole("switch", { name }).click();
       await me.locator(`[role=switch][aria-label="${name}"][aria-checked=true]`).waitFor();
     }
+    await me.waitForTimeout(500); // 토글은 화면부터 바뀌므로 저장이 끝나길 기다린다
     await you.goto(BASE + "/connect");
     await you.locator('[role=switch][aria-label="배려 요청"][aria-checked=true]:disabled').waitFor();
     await me.screenshot({ path: `${shots}/06-sharing.png`, fullPage: true });
@@ -144,16 +145,16 @@ const shots = require("node:os").tmpdir();
   });
 
   await step("연결 끊기 → 파트너가 기록자 화면으로 돌아옴", async () => {
-    await you.goto(BASE + "/connect");
-    await you.click("summary");
+    await you.goto(BASE + "/me/settings");
+    await you.click('summary:has-text("연결 끊기")');
     await you.click('button:has-text("끊을게요")');
-    await you.getByText("상대에게 받은 8자리 코드를 입력해 주세요").waitFor();
+    await you.locator('summary:has-text("연결 끊기")').waitFor({ state: "detached" });
     await you.goto(BASE + "/");
     await you.getByText("기록 모으는 중").waitFor();
   });
 
   await step("로그아웃 → 로그인", async () => {
-    await me.goto(BASE + "/me");
+    await me.goto(BASE + "/me/settings");
     await me.click('button:has-text("로그아웃")');
     await me.getByText("처음이에요").waitFor();
     if (!me.url().endsWith("/login")) throw new Error("로그인 화면으로 안 감: " + me.url());

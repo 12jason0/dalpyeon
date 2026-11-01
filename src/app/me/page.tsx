@@ -6,7 +6,7 @@ import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser } from "@/lib/session";
 import { reminderEnabled } from "@/lib/services/push";
 import { Nav } from "../_components/Nav";
-import { LogoutButton, NotificationSettings } from "../_components/NotificationSettings";
+import { NotificationSettings } from "../_components/NotificationSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -56,9 +56,9 @@ export default async function MePage() {
         {user.role === "recorder" && posts.length > 0 && <SettingRow href="/community" label="이야기에 쓴 내 글" />}
         <SettingRow href="/me/rules" label="이용 규칙" />
         <SettingRow href="/me/privacy" label="개인정보 처리방침" />
+        <SettingRow href="/me/settings" label="설정" />
       </ul>
 
-      <LogoutButton />
       <Nav role={user.role} active="me" />
     </>
   );

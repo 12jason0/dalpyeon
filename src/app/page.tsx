@@ -85,7 +85,7 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
       <StatusLine {...recorderStatus(prediction, current, today, periods.length)} />
       {partnerName && (
         <p className="mt-3 text-sm text-muted">
-          {partnerName}님과 연결됨 · <Link href="/connect?disconnect=1" className="link">연결 끊기</Link>
+          {partnerName}님과 연결됨 · <Link href="/me/settings" className="link">연결 끊기</Link>
         </p>
       )}
 

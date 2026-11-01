@@ -11,11 +11,13 @@ export const BOARDS: Record<Board, string> = { question: "질문", tip: "팁" };
 export const REPORTS_TO_HIDE = 3;
 export const WRITE_LIMIT = 5;
 export const WRITE_WINDOW_SECONDS = 600;
+export const WITHDRAWN_NAME = "탈퇴한 사용자";
 
 export type Target = { kind: "post" | "comment"; id: string };
 export type Access = { admin: boolean; member: boolean; nickname: string | null };
 
 // 화면에 내려가는 값에는 작성자 id·이메일·앱 닉네임을 넣지 않는다. 내 글인지만 mine으로 알린다.
+// 글을 쓰려면 닉네임이 있어야 하므로, 작성자 닉네임이 비어 있으면 탈퇴한 사람이다.
 export type PostRow = {
   id: string; board: Board; title: string; nickname: string; commentCount: number;
   createdAt: Date; hidden: boolean; mine: boolean;
@@ -72,7 +74,7 @@ export async function agreeToRules(db: DB, user: User, rawNickname: unknown) {
   if (access.nickname) return access.nickname;
   const typed = String(rawNickname ?? "").trim();
   if (typed && (typed.length < 2 || typed.length > 12)) fail("닉네임은 2~12자로 적어 주세요");
-  if (/운영자|관리자/.test(typed)) fail("쓸 수 없는 닉네임이에요");
+  if (/운영자|관리자|탈퇴/.test(typed)) fail("쓸 수 없는 닉네임이에요");
   if (typed && (await nicknameTaken(db, typed))) fail("이미 쓰고 있는 닉네임이에요", 409);
   const nickname = typed || (await randomNickname(db));
   await db.update(users).set({ communityNickname: nickname }).where(and(eq(users.id, user.id), isNull(users.communityNickname)));
@@ -118,7 +120,7 @@ export async function listPosts(db: DB, user: User, board: Board): Promise<PostR
     .orderBy(desc(posts.createdAt)).limit(50);
   const counts = await commentCounts(db, rows.map((r) => r.id), blocked, admin);
   return rows.map(({ authorId, nickname, ...r }) => ({
-    ...r, nickname: nickname ?? "", commentCount: counts.get(r.id) ?? 0, mine: authorId === user.id,
+    ...r, nickname: nickname ?? WITHDRAWN_NAME, commentCount: counts.get(r.id) ?? 0, mine: authorId === user.id,
   }));
 }
 
@@ -140,9 +142,9 @@ export async function getPost(db: DB, user: User, postId: string): Promise<PostV
     .orderBy(comments.createdAt);
   const { id, board, title, body, createdAt, hidden, authorId } = row.post;
   return {
-    id, board, title, body, createdAt, hidden, mine: authorId === user.id, nickname: row.nickname ?? "", commentCount: list.length,
+    id, board, title, body, createdAt, hidden, mine: authorId === user.id, nickname: row.nickname ?? WITHDRAWN_NAME, commentCount: list.length,
     comments: list.map(({ comment: c, nickname }) => ({
-      id: c.id, body: c.body, createdAt: c.createdAt, hidden: c.hidden, mine: c.authorId === user.id, nickname: nickname ?? "",
+      id: c.id, body: c.body, createdAt: c.createdAt, hidden: c.hidden, mine: c.authorId === user.id, nickname: nickname ?? WITHDRAWN_NAME,
     })),
   };
 }
@@ -252,8 +254,8 @@ export async function listReports(db: DB, user: User): Promise<ReportRow[]> {
   const commentRows = await db.select({ id: comments.id, postId: comments.postId, text: comments.body, hidden: comments.hidden, nickname: users.communityNickname })
     .from(comments).innerJoin(users, eq(users.id, comments.authorId)).where(inArray(comments.id, [...commentTally.keys()]));
   const rows: ReportRow[] = [
-    ...postRows.map((r) => ({ ...r, kind: "post" as const, postId: r.id, nickname: r.nickname ?? "", total: postTally.get(r.id) ?? 0 })),
-    ...commentRows.map((r) => ({ ...r, kind: "comment" as const, nickname: r.nickname ?? "", total: commentTally.get(r.id) ?? 0 })),
+    ...postRows.map((r) => ({ ...r, kind: "post" as const, postId: r.id, nickname: r.nickname ?? WITHDRAWN_NAME, total: postTally.get(r.id) ?? 0 })),
+    ...commentRows.map((r) => ({ ...r, kind: "comment" as const, nickname: r.nickname ?? WITHDRAWN_NAME, total: commentTally.get(r.id) ?? 0 })),
   ];
   return rows.sort((a, b) => b.total - a.total);
 }

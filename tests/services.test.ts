@@ -1,9 +1,12 @@
 import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLocalDb, type DB } from "@/lib/db";
-import { comments, invitations, posts, pushSubscriptions, reports, users } from "@/lib/db/schema";
+import {
+  blocks, careRequests, careResponses, comments, couples, invitations, periods, posts, pushSubscriptions, reports, sessions, users,
+} from "@/lib/db/schema";
 import { addDays } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
+import { withdraw } from "@/lib/services/account";
 import { createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
 import { clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
@@ -974,5 +977,137 @@ describe("오늘 필요한 배려", () => {
 
     await clearCare(db, me, TODAY);
     expect(await getCare(db, me, TODAY)).toBeNull();
+  });
+});
+
+describe("회원 탈퇴", () => {
+  const kakaoUser = (id: number) => signInWithKakao(db, "code", "http://x", (async (url: string) =>
+    new Response(JSON.stringify(String(url).includes("token") ? { access_token: "t" } : { id, properties: { nickname: "카카오" } }))) as unknown as typeof fetch);
+
+  /** 기록자 me와 파트너가 연결되어, 기록·배려·답장·초대·구독이 모두 있는 상태 */
+  async function fullPair() {
+    const { me, you } = await pair();
+    await fourPeriods(me);
+    await connect(me, you);
+    const partner = await reload(you);
+    await updateSharing(db, me, { permissions: { care: true }, shareFrom: "2026-01-01", paused: false }, TODAY);
+    await saveCare(db, me, { presets: ["rest"], message: null, share: true }, TODAY);
+    const [care] = await db.select().from(careRequests);
+    await respondToCare(db, partner, care.id, "seen", TODAY);
+    await saveSubscription(db, me, { endpoint: "https://fcm.googleapis.com/fcm/send/me", p256dh: "p", auth: "a" });
+    return { me, partner };
+  }
+
+  it("연결 상대가 기록자로 돌아가고, 내 데이터가 모두 지워진다", async () => {
+    const { me, partner } = await fullPair();
+    const { token } = await createSession(db, me.id);
+    await withdraw(db, me);
+
+    expect((await reload(partner)).role).toBe("recorder");
+    expect(await activeCouple(db, partner.id)).toBeNull();
+    for (const table of [periods, careRequests, careResponses, couples, invitations, pushSubscriptions]) {
+      expect(await db.select().from(table)).toEqual([]);
+    }
+    expect(await db.select().from(sessions).where(eq(sessions.userId, me.id))).toEqual([]);
+    expect(await userFromToken(db, token)).toBeNull();
+    await expectFail(login(db, { email: "me@example.com", password: "password-1" }), 401);
+  });
+
+  it("파트너가 탈퇴해도 상대의 기록은 남고, 내가 남긴 답장만 지워진다", async () => {
+    const { me, partner } = await fullPair();
+    await withdraw(db, partner);
+    expect(await db.select().from(careResponses)).toEqual([]);
+    expect(await listPeriods(db, me.id)).toHaveLength(4);
+    expect(await db.select().from(careRequests)).toHaveLength(1);
+    expect((await reload(me)).role).toBe("recorder");
+    expect(await activeCouple(db, me.id)).toBeNull();
+  });
+
+  it("개인정보를 비우고, 같은 이메일로 다시 가입할 수 있다", async () => {
+    const { me } = await pair();
+    await withdraw(db, me);
+    const [row] = await db.select().from(users).where(eq(users.id, me.id));
+    expect(row).toMatchObject({
+      email: null, passwordHash: null, kakaoId: null, nickname: "탈퇴한 사용자", communityNickname: null, isAdmin: false, healthConsentAt: null,
+    });
+    await signup(db, { email: "me@example.com", password: "password-1", nickname: "새로", healthConsent: true });
+  });
+
+  it("글·댓글과 신고는 남고 작성자만 탈퇴한 사용자로 바뀐다", async () => {
+    const { me, you } = await pair();
+    await connect(me, you);
+    const writer = await reload(you);
+    await agreeToRules(db, writer, "쓰는사람");
+    const postId = await createPost(db, writer, { board: "tip", title: "제목", body: "본문" });
+    await createComment(db, writer, postId, "댓글");
+
+    const other = await signup(db, { email: "o@b.co", password: "password-1", nickname: "다른", healthConsent: true });
+    const reader = await signup(db, { email: "r@b.co", password: "password-1", nickname: "읽는", healthConsent: true });
+    await connect(other, reader);
+    const member = await reload(reader);
+    await report(db, member, { kind: "post", id: postId });
+    await db.update(users).set({ isAdmin: true }).where(eq(users.id, me.id));
+
+    await withdraw(db, writer);
+
+    const post = await getPost(db, member, postId);
+    expect(post).toMatchObject({ nickname: "탈퇴한 사용자", body: "본문", mine: false });
+    expect(post.comments).toMatchObject([{ nickname: "탈퇴한 사용자", body: "댓글" }]);
+    expect((await listPosts(db, member, "tip"))[0].nickname).toBe("탈퇴한 사용자");
+    expect(await listReports(db, await reload(me))).toMatchObject([{ id: postId, nickname: "탈퇴한 사용자", total: 1 }]);
+
+    // 신고한 사람이 탈퇴해도 신고 내역은 남는다
+    await withdraw(db, member);
+    expect(await db.select().from(reports)).toHaveLength(1);
+  });
+
+  it("내가 건 차단은 지우고, 다른 사람이 나를 차단한 기록은 남긴다", async () => {
+    const { me, you } = await pair();
+    const third = await signup(db, { email: "t@b.co", password: "password-1", nickname: "셋", healthConsent: true });
+    await db.insert(blocks).values([{ blockerId: me.id, blockedId: you.id }, { blockerId: third.id, blockedId: me.id }]);
+    await withdraw(db, me);
+    expect(await db.select().from(blocks)).toMatchObject([{ blockerId: third.id, blockedId: me.id }]);
+  });
+
+  it("탈퇴한 사용자라는 닉네임은 쓸 수 없다", async () => {
+    const { me, you } = await pair();
+    await connect(me, you);
+    await expectFail(agreeToRules(db, await reload(you), "탈퇴한 사용자"));
+  });
+
+  it("카카오 계정은 어드민 키가 있을 때만 연결을 끊는다", async () => {
+    const calls: [string, RequestInit][] = [];
+    const fetcher = (async (url: string, init: RequestInit) => {
+      calls.push([url, init]);
+      return new Response("{}");
+    }) as unknown as typeof fetch;
+
+    vi.stubEnv("KAKAO_ADMIN_KEY", "");
+    await withdraw(db, await kakaoUser(123), fetcher);
+    expect(calls).toEqual([]);
+
+    vi.stubEnv("KAKAO_ADMIN_KEY", "admin-key");
+    await withdraw(db, await kakaoUser(456), fetcher);
+    vi.unstubAllEnvs();
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0]).toBe("https://kapi.kakao.com/v1/user/unlink");
+    expect(calls[0][1].headers).toMatchObject({ Authorization: "KakaoAK admin-key" });
+    expect(String(calls[0][1].body)).toBe("target_id_type=user_id&target_id=456");
+  });
+
+  it("이메일 계정은 카카오를 부르지 않고, 카카오 호출이 실패해도 탈퇴는 끝나 있다", async () => {
+    vi.stubEnv("KAKAO_ADMIN_KEY", "admin-key");
+    const down = vi.fn(async () => { throw new Error("down"); }) as unknown as typeof fetch;
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { me } = await pair();
+    await withdraw(db, me, down);
+    expect(down).not.toHaveBeenCalled();
+
+    const user = await kakaoUser(123);
+    await withdraw(db, user, down);
+    vi.unstubAllEnvs();
+    log.mockRestore();
+    expect(down).toHaveBeenCalledOnce();
+    expect((await db.select().from(users).where(eq(users.id, user.id)))[0].kakaoId).toBeNull();
   });
 });

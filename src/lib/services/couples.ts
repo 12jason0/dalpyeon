@@ -49,6 +49,11 @@ export async function createInvite(db: DB, user: User) {
   return { code: `${code.slice(0, 4)}-${code.slice(4)}`, expiresAt };
 }
 
+/** 연결을 바꾸는 트랜잭션은 모두 이걸 맨 먼저 부른다. 같은 순서로 잠가야 서로 기다리다 교착되지 않는다. */
+export async function lockUsers(tx: DB, ids: string[]) {
+  await tx.select({ id: users.id }).from(users).where(inArray(users.id, ids)).orderBy(users.id).for("update");
+}
+
 /** 코드를 입력하면 승인 없이 바로 연결된다. 코드는 한 번 쓰면 끝. */
 export async function claimInvite(db: DB, user: User, rawCode: unknown, today = todaySeoul()) {
   const code = normalizeCode(String(rawCode ?? ""));
@@ -63,7 +68,7 @@ export async function claimInvite(db: DB, user: User, rawCode: unknown, today = 
     if (!invite) fail("사용할 수 없는 코드예요. 만료됐을 수 있어요", 404);
     const both = [invite.recorderId, user.id];
     // 서로의 코드를 동시에 입력해도 한쪽만 연결되도록 두 사람을 먼저 잠근다.
-    await tx.select({ id: users.id }).from(users).where(inArray(users.id, both)).orderBy(users.id).for("update");
+    await lockUsers(tx, both);
     // 코드를 입력한 사람도 다른 연결의 기록자일 수 있어서, 두 사람 모두 양쪽 자리를 다 본다.
     const busy = await tx.select({ id: couples.id }).from(couples)
       .where(and(eq(couples.status, "active"), or(inArray(couples.recorderId, both), inArray(couples.partnerId, both))));
@@ -130,14 +135,21 @@ export async function setSharingItem(db: DB, user: User, key: unknown, on: unkno
     .where(and(eq(couples.id, couple.id), eq(couples.status, "active")));
 }
 
+/**
+ * 다시 연결하면 새 연결이 만들어지고 공유 설정도 처음부터 다시 한다.
+ * 파트너는 다시 기록자로 돌아가고, 전에 남긴 기록도 그대로 다시 보인다.
+ */
+export async function endCouple(tx: DB, couple: Couple) {
+  const changed = await tx.update(couples).set({ status: "disconnected", paused: true, permissions: NO_PERMISSIONS })
+    .where(and(eq(couples.id, couple.id), eq(couples.status, "active"))).returning({ id: couples.id });
+  if (changed.length) await tx.update(users).set({ role: "recorder" }).where(eq(users.id, couple.partnerId));
+}
+
 export async function disconnect(db: DB, user: User) {
   const couple = await activeCouple(db, user.id);
   if (!couple) fail("연결된 상대가 없어요", 404);
-  // 다시 연결하면 새 연결이 만들어지고 공유 설정도 처음부터 다시 한다.
-  // 파트너는 다시 기록자로 돌아가고, 전에 남긴 기록도 그대로 다시 보인다.
   await db.transaction(async (tx) => {
-    const changed = await tx.update(couples).set({ status: "disconnected", paused: true, permissions: NO_PERMISSIONS })
-      .where(and(eq(couples.id, couple.id), eq(couples.status, "active"))).returning({ id: couples.id });
-    if (changed.length) await tx.update(users).set({ role: "recorder" }).where(eq(users.id, couple.partnerId));
+    await lockUsers(tx, [couple.recorderId, couple.partnerId]);
+    await endCouple(tx, couple);
   });
 }

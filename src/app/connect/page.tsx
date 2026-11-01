@@ -4,7 +4,6 @@ import { todaySeoul } from "@/lib/dates";
 import type { User } from "@/lib/services/auth";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser, siteOrigin } from "@/lib/session";
-import { disconnectAction } from "../actions";
 import { ClaimForm, InviteBox, SharingForm, Toggle } from "../_components/ConnectForms";
 import { Nav } from "../_components/Nav";
 import { Section } from "../_components/Section";
@@ -21,36 +20,21 @@ const CLAIM_NOTICES: Record<string, string> = {
 
 type Claim = { code?: string; notice?: string };
 
-export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string; sharing?: string; disconnect?: string }> }) {
+export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string; sharing?: string }> }) {
   const user = await requireUser();
-  const { claim, code, sharing, disconnect } = await searchParams;
+  const { claim, code, sharing } = await searchParams;
   const notice = claim ? CLAIM_NOTICES[claim] : undefined;
   const sent: Claim = { code: typeof code === "string" ? code.slice(0, 12) : undefined, notice };
   return (
     <>
       <h1 className="text-4xl font-semibold tracking-tight">연결</h1>
-      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} justConnected={sharing === "new"} askDisconnect={disconnect === "1"} /> : <PartnerConnect user={user} claim={sent} />}
+      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} justConnected={sharing === "new"} /> : <PartnerConnect user={user} claim={sent} />}
       <Nav role={user.role} active="connect" />
     </>
   );
 }
 
-function Disconnect({ name, open, className = "mt-12" }: { name: string; open?: boolean; className?: string }) {
-  return (
-    <details open={open} className={className}>
-      <summary className="cursor-pointer list-none text-sm text-muted underline underline-offset-4">연결 끊기</summary>
-      <p className="mt-4 text-[15px] leading-relaxed text-muted">
-        끊으면 {name}님은 바로 아무것도 볼 수 없어요. 다시 연결하면 공유 설정은 처음부터 다시 정해요.
-        이미 본 내용까지 지울 수는 없어요.
-      </p>
-      <form action={disconnectAction} className="mt-4">
-        <button type="submit" className="h-11 rounded-full border border-period-ink px-6 text-[15px] text-period-ink">끊을게요</button>
-      </form>
-    </details>
-  );
-}
-
-async function RecorderConnect({ user, claim, justConnected, askDisconnect }: { user: User; claim: Claim; justConnected: boolean; askDisconnect: boolean }) {
+async function RecorderConnect({ user, claim, justConnected }: { user: User; claim: Claim; justConnected: boolean }) {
   const db = await getDb();
   const couple = await activeCouple(db, user.id);
   if (couple) {
@@ -64,7 +48,6 @@ async function RecorderConnect({ user, claim, justConnected, askDisconnect }: { 
           </p>
         )}
         <p className="mt-10 text-2xl font-medium">{name}님과 연결됨</p>
-        <Disconnect name={name} open={askDisconnect} className="mt-3" />
         <Section title={`${name}님에게 보여줄 것`}>
           <SharingForm today={todaySeoul()} initial={{ permissions: couple.permissions, shareFrom: couple.shareFrom, paused: couple.paused }} />
         </Section>
@@ -111,7 +94,6 @@ async function PartnerConnect({ user, claim }: { user: User; claim: Claim }) {
           ))}
           <p className="pt-4 text-[13px] text-muted">보여줄 항목은 {name}님이 정해요.</p>
         </Section>
-        <Disconnect name={name} />
       </>
     );
   }

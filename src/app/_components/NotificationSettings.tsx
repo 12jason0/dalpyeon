@@ -1,6 +1,7 @@
 "use client";
-import { useEffect, useState, useTransition } from "react";
-import { logoutAction, setReminderAction, subscribeAction, unsubscribeAction } from "../actions";
+import { useActionState, useEffect, useState, useTransition } from "react";
+import { logoutAction, setReminderAction, subscribeAction, unsubscribeAction, withdrawAction, type FormState } from "../actions";
+import { ErrorText, Submit } from "./Submit";
 
 type Status = "loading" | "unsupported" | "ios-browser" | "denied" | "off" | "on";
 
@@ -99,18 +100,34 @@ async function dropSubscription(subscription: PushSubscription) {
   await unsubscribeAction(endpoint);
 }
 
-/** 로그아웃하면 이 기기의 구독도 지운다. 같은 기기로 다음 사람이 써도 이전 계정 알림이 오지 않게. */
-export function LogoutButton() {
+/** 계정을 떠날 때 이 기기의 구독도 지운다. 같은 기기로 다음 사람이 써도 이전 계정 알림이 오지 않게. */
+async function leaveThisDevice() {
+  if (!("serviceWorker" in navigator)) return;
+  const subscription = await currentSubscription().catch(() => null);
+  if (subscription) await dropSubscription(subscription);
+}
+
+export function LogoutButton({ className = "mt-10 text-center", buttonClassName = "link h-11 text-sm" }: { className?: string; buttonClassName?: string }) {
   const logout = async () => {
-    if ("serviceWorker" in navigator) {
-      const subscription = await currentSubscription().catch(() => null);
-      if (subscription) await dropSubscription(subscription);
-    }
+    await leaveThisDevice();
     await logoutAction();
   };
   return (
-    <form action={logout} className="mt-10 text-center">
-      <button type="submit" className="link h-11 text-sm">로그아웃</button>
+    <form action={logout} className={className}>
+      <button type="submit" className={buttonClassName}>로그아웃</button>
+    </form>
+  );
+}
+
+export function WithdrawForm({ buttonClassName }: { buttonClassName: string }) {
+  const [state, action] = useActionState<FormState, FormData>(async (prev) => {
+    await leaveThisDevice();
+    return withdrawAction(prev);
+  }, null);
+  return (
+    <form action={action} className="mt-4">
+      <Submit className={buttonClassName}>탈퇴할게요</Submit>
+      <ErrorText message={state?.error} />
     </form>
   );
 }

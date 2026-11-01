@@ -49,7 +49,7 @@ CRON_SECRET=길고 무작위인 값
 
 ## 카카오 로그인
 
-Kakao Developers 앱에서 아래를 설정하고, `KAKAO_REST_API_KEY`와 `KAKAO_CLIENT_SECRET`을 `.env.local`과 Vercel 환경변수에 넣으세요. 둘 중 하나라도 없으면 버튼이 숨겨집니다.
+Kakao Developers 앱에서 아래를 설정하고, `KAKAO_REST_API_KEY`와 `KAKAO_CLIENT_SECRET`을 `.env.local`과 Vercel 환경변수에 넣으세요. 둘 중 하나라도 없으면 버튼이 숨겨집니다. 회원 탈퇴 때 카카오 연결까지 끊으려면 `KAKAO_ADMIN_KEY`(앱 키의 어드민 키)도 넣으세요.
 
 - 카카오 로그인 활성화, 동의항목에서 닉네임 켜기, Client Secret 사용
 - Redirect URI: `http://localhost:3000/api/auth/kakao/callback`, `https://uri-jugi.vercel.app/api/auth/kakao/callback`
@@ -71,6 +71,7 @@ Kakao Developers 앱에서 아래를 설정하고, `KAKAO_REST_API_KEY`와 `KAKA
 src/lib/prediction.ts       주기 예측 v1 (순수 함수)
 src/lib/services/           DB 로직 — 화면과 분리돼 있어서 테스트 가능
   auth.ts                   가입·로그인·세션·요청 제한
+  account.ts                회원 탈퇴
   periods.ts                생리 기록, 오늘 며칠째
   couples.ts                초대 코드·연결·공유 설정·연결 해제
   care.ts                   오늘 필요한 배려 요청·답장
@@ -79,7 +80,8 @@ src/lib/services/           DB 로직 — 화면과 분리돼 있어서 테스�
 src/app/actions.ts          화면에서 부르는 서버 액션
 src/app/page.tsx            오늘 (기록자 / 파트너 화면)
 src/app/records/            지난 기록 입력·수정
-src/app/connect/            연결·공유 설정·로그아웃
+src/app/connect/            연결·공유 설정
+src/app/me/settings/        연결 끊기·로그아웃·회원 탈퇴
 drizzle/                    DB 마이그레이션 SQL
 ```
 
@@ -92,6 +94,7 @@ drizzle/                    DB 마이그레이션 SQL
 - 배려 요청 내용이 바뀌면 이전 답장은 초기화
 - 예측은 저장하지 않고 매번 계산. 기록 4번(간격 3개) 전엔 예측하지 않음. 들쭉날쭉하면 가임기 숨김
 - 날짜는 Asia/Seoul 기준
+- 탈퇴해도 `users` 행은 남기고 개인정보만 비움. 글·댓글은 "탈퇴한 사용자"로, 신고 내역은 그대로 남음
 - 비밀번호는 scrypt 해시, 세션은 HttpOnly 쿠키(30일). 서버엔 세션 값의 해시만 저장
 - 로그인·가입·코드 입력은 IP·계정별 횟수 제한 (`x-forwarded-for` 첫 IP 기준)
 
