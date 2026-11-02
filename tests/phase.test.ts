@@ -1,4 +1,8 @@
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import moon from "@/app/_components/brand-moon.json";
+import manifest from "@/app/manifest";
+import SPLASH_SIZES from "@/lib/content/splash-sizes.json";
 import { exampleHome, EXAMPLE_DAYS_UNTIL } from "@/lib/content/example";
 import { PHASES, tipFor } from "@/lib/content/phases";
 import { diffDays, monthGrid } from "@/lib/dates";
@@ -77,5 +81,17 @@ describe("오늘 챙기면 좋은 것", () => {
 
   it("시기를 모르면 없다", () => {
     expect(tipFor(null, "2026-11-02")).toBeNull();
+  });
+});
+
+describe("시작 화면", () => {
+  it("manifest 색이 바탕색과 같다", () => {
+    expect(manifest()).toMatchObject({ background_color: "#FBF4F1", theme_color: "#FBF4F1" });
+    expect(readFileSync("src/app/globals.css", "utf8")).toContain("--color-paper: #FBF4F1");
+  });
+
+  it("splash.svg의 달은 BrandMoon과 같은 모양이고, 크기마다 PNG가 있다", () => {
+    expect(readFileSync("public/brand/splash.svg", "utf8")).toContain(`d="${moon.d}"`);
+    for (const { width, height, ratio } of SPLASH_SIZES) expect(existsSync(`public/brand/splash/${width * ratio}x${height * ratio}.png`)).toBe(true);
   });
 });

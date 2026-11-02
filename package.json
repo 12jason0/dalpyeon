@@ -9,6 +9,7 @@
     "test": "vitest run",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:generate": "drizzle-kit generate",
+    "splash": "node scripts/splash.mjs",
     "db:seed:pinned": "node --env-file-if-exists=.env.local scripts/seed-pinned.mjs",
     "admin:grant": "node --env-file-if-exists=.env.local scripts/grant-admin.mjs"
   },
@@ -30,6 +31,7 @@
     "@types/react-dom": "^19.3.0",
     "@types/web-push": "^3.6.4",
     "drizzle-kit": "^0.31.11",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4.3.3",
     "typescript": "^5.9.3",
     "vitest": "^5.0.5"

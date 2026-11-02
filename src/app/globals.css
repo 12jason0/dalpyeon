@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --color-paper: #FFFDFC;
+  --color-paper: #FBF4F1;
   --color-ink: #3F3A3D;
-  --color-muted: #7D7376;
+  --color-muted: #786E71;
   --color-line: #F1E8E6;
   --color-card: #FFFFFF;
   --color-period: #FFDDE4;
@@ -15,6 +15,7 @@
   --color-moon-lit: #FFE5D6;
   --color-moon-dark: #ECEAF7;
   --color-danger: #C8323C;
+  --color-ring: #F1E8EA;
   --shadow-soft: 0 1px 3px rgb(63 58 61 / 0.04);
   --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }
@@ -29,11 +30,27 @@ html {
 }
 
 body {
+  background: var(--color-paper);
   font-family: var(--font-sans);
   letter-spacing: -0.01em;
   min-height: 100dvh;
   word-break: keep-all;
   overflow-wrap: anywhere;
+}
+
+/* 앱을 처음 열 때의 로딩 링. 움직임 줄이기면 천천히 깜빡인다 */
+.open-ring {
+  transform-origin: center;
+  animation: open-ring-spin 1.2s linear infinite;
+}
+@keyframes open-ring-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes open-ring-blink {
+  50% { opacity: 0.35; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .open-ring { animation: open-ring-blink 2.4s ease-in-out infinite; }
 }
 
 /* 입력칸: 상자 대신 밑줄 */

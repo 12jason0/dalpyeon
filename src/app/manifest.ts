@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "말하기 어려운 날에도, 서로의 편.",
     start_url: "/",
     display: "standalone",
-    background_color: "#FFFDFC",
-    theme_color: "#FFFDFC",
+    background_color: "#FBF4F1",
+    theme_color: "#FBF4F1",
     lang: "ko",
     icons: [
       { src: "/icon", sizes: "512x512", type: "image/png" },
