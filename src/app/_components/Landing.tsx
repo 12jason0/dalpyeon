@@ -3,11 +3,11 @@ import Link from "next/link";
 import { exampleHome } from "@/lib/content/example";
 import { monthGrid, todaySeoul } from "@/lib/dates";
 import { moonShape } from "@/lib/moon";
-import { phaseOn } from "@/lib/phase";
 import { calendarMarks, DISCLAIMER, ESTIMATE_NOTE, estimate } from "@/lib/prediction";
 import { CARE_PRESETS, RESPONSES } from "@/lib/services/care";
-import { CareCard, CareSummaryCard, Logo, MoonPhase, PhaseCards, recorderStatus, StatusLine } from "./HomeCards";
-import { MonthCalendar } from "./MonthCalendar";
+import { CalendarMonth, WeekdayRow } from "./CalendarMonth";
+import { CareCard, Logo, recorderStatus, TopBar } from "./HomeCards";
+import { LINE_CARD } from "./Sheet";
 
 const FEATURES = [
   { icon: HeartHandshake, title: "연인에게 배려 요청하고 답장 받기", line: "말하기 어려운 날, 버튼 하나로 전해요." },
@@ -22,16 +22,11 @@ function HomePreview({ today }: { today: string }) {
   const prediction = estimate(periods, [], today);
   const { first, last } = monthGrid(month);
   return (
-    <div inert className="pointer-events-none mx-auto select-none overflow-hidden rounded-[2.25rem] border-4 border-line bg-paper px-2 pb-6 pt-6">
-      <div className="px-2"><Logo /></div>
-      <MoonPhase moon={moonShape(prediction, today)} />
-      <div className="px-2"><StatusLine {...recorderStatus(prediction, null, today)} /></div>
-      <div className="mt-4 px-2"><div className="btn">오늘 시작했어요</div></div>
-      <div className="mt-4 space-y-2">
-        <CareSummaryCard summary="도윤 · 도와줄게요" />
-        <div className="card"><MonthCalendar month={month} marks={calendarMarks(periods, prediction, first, last, today)} today={today} basePath="/" /></div>
-        <PhaseCards phase={phaseOn(periods, today)} />
-      </div>
+    <div inert className="pointer-events-none mx-auto select-none overflow-hidden rounded-[2.25rem] border-4 border-line bg-paper px-3 pb-6 pt-6">
+      <TopBar moon={moonShape(prediction, today)} {...recorderStatus(prediction, null, today)} />
+      <p className={`${LINE_CARD} mt-3`}>오늘 필요한 배려 · 도윤 · 도와줄게요</p>
+      <WeekdayRow />
+      <CalendarMonth month={month} marks={calendarMarks(periods, prediction, first, last, today)} today={today} />
     </div>
   );
 }

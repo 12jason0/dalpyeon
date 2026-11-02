@@ -4,6 +4,7 @@ import { createLocalDb, type DB } from "@/lib/db";
 import {
   blocks, careRequests, careResponses, comments, couples, dayLogs, invitations, periods, posts, pushSubscriptions, rateLimits, reports, sessions, users,
 } from "@/lib/db/schema";
+import { calendarWindow } from "@/lib/calendar";
 import { ARTICLES, articleFor, findArticle } from "@/lib/content/articles";
 import { addDays } from "@/lib/dates";
 import { summarizeLogs, todayBodyLine } from "@/lib/daylog";
@@ -34,6 +35,7 @@ import {
 } from "@/lib/services/push";
 
 const TODAY = "2026-10-30";
+const inMonth = <T extends { date: string }>(marks: T[], month: string) => marks.filter((m) => m.date.startsWith(month));
 const AGREED = { healthConsent: true, ageConfirmed: true, transferConsent: true };
 let db: DB;
 
@@ -524,6 +526,7 @@ describe("공유", () => {
     expect(view.ovulation).toBe("2026-10-16");
     expect(view.recentPeriods.map((p) => p.startDate)).toEqual(["2026-10-02", "2026-09-04"]);
     expect(new Set(view.calendar.map((m) => m.type))).toEqual(new Set(["period", "predicted_period", "estimated_fertile_window", "estimated_ovulation"]));
+    expect(view.calendar.some((m) => m.date < calendarWindow(asOf).first || m.date > calendarWindow(asOf).last)).toBe(false);
     const sent = JSON.stringify(view);
     for (const secret of ["intervals", "비밀 사유", "excluded", "usual", "permissions"]) expect(sent).not.toContain(secret);
   });
@@ -547,11 +550,11 @@ describe("공유", () => {
     const asOf = "2026-10-12";
     expect((await partnerView(db, partner, asOf))?.recentPeriods).toEqual([]);
     await updateSharing(db, me, { shareFrom: "2026-09-01" }, asOf);
-    expect((await partnerView(db, partner, asOf, "2026-08"))!.calendar).toEqual([]);
-    expect((await partnerView(db, partner, asOf, "2026-09"))!.calendar.map((m) => m.date))
+    expect(inMonth((await partnerView(db, partner, asOf))!.calendar, "2026-08")).toEqual([]);
+    expect(inMonth((await partnerView(db, partner, asOf))!.calendar, "2026-09").map((m) => m.date))
       .toEqual(["2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07", "2026-09-08"]);
     await updateSharing(db, me, { shareFrom: "2026-09-05" }, asOf);
-    expect((await partnerView(db, partner, asOf, "2026-09"))!.calendar).toEqual([]); // 9.4 시작 기록 전체가 숨겨짐
+    expect(inMonth((await partnerView(db, partner, asOf))!.calendar, "2026-09")).toEqual([]); // 9.4 시작 기록 전체가 숨겨짐
 
     await expectFail(updateSharing(db, partner, { shareFrom: TODAY }, TODAY), 403);
     await expectFail(updateSharing(db, me, { shareFrom: "2026-12-01" }, TODAY));
@@ -561,7 +564,7 @@ describe("공유", () => {
     const { me, you } = await pair();
     await fourPeriods(me);
     await connect(me, you);
-    const late = await partnerView(db, await reload(you), "2026-10-31", "2026-10");
+    const late = await partnerView(db, await reload(you), "2026-10-31");
     expect(late!.calendar.some((m) => m.type === "predicted_period" && m.date < "2026-10-31")).toBe(false);
     expect(JSON.stringify(late!.calendar)).not.toContain("recordId");
   });
@@ -1172,7 +1175,7 @@ describe("기록 → 화면 시나리오", () => {
     // 기록자: 지난달에 시작해도 이번 달에 이어서 칠해지고, 남은 날과 다음 생리는 예상
     let mine = await recorderMarks(me.id);
     expect(days(mine, "period")).toEqual(["2026-11-01", "2026-11-02"]);
-    expect(days(mine, "predicted_period").slice(0, 2)).toEqual(["2026-11-03", "2026-11-04"]);
+    expect(days(mine, "remaining_period")).toEqual(["2026-11-03", "2026-11-04"]);
     expect(days(mine, "predicted_period")).toContain("2026-11-28");
 
     // 연결 전에 시작한 생리도 공유 시작일에 포함된다
@@ -1184,12 +1187,12 @@ describe("기록 → 화면 시나리오", () => {
     let view = (await partnerView(db, partner, NOW))!;
     expect(view.current).toEqual({ day: 3 });
     expect(view.recentPeriods).toEqual([{ startDate: "2026-10-31", endDate: null }]);
-    expect(view.calendar).toEqual(mine);
+    expect(inMonth(view.calendar, "2026-11")).toEqual(mine);
     expect(view.nextPeriod?.startDate).toBe("2026-11-28");
     expect(view.moon).not.toEqual(CRESCENT);
 
-    // 파트너 달력 화면은 ?month=로 지난달을 볼 수 있다
-    expect(days((await partnerView(db, partner, NOW, "2026-10"))!.calendar, "period")).toEqual(["2026-10-31"]);
+    // 달력은 지난달도 함께 내려준다
+    expect(days((await partnerView(db, partner, NOW))!.calendar, "period")).toContain("2026-10-31");
 
     // 일시정지 동안은 아무것도 없다
     await setPaused(db, me, true);
@@ -1200,11 +1203,11 @@ describe("기록 → 화면 시나리오", () => {
     await savePeriod(db, me.id, { ...record, endDate: NOW }, NOW);
     mine = await recorderMarks(me.id);
     expect(days(mine, "period")).toEqual(["2026-11-01", "2026-11-02"]);
-    expect(days(mine, "predicted_period")).not.toContain("2026-11-03");
+    expect(days(mine, "remaining_period")).toEqual([]);
     expect(days(mine, "predicted_period").slice(0, 3)).toEqual(["2026-11-28", "2026-11-29", "2026-11-30"]); // 3일 기간
 
     view = (await partnerView(db, partner, NOW))!;
-    expect(view.calendar).toEqual(mine);
+    expect(inMonth(view.calendar, "2026-11")).toEqual(mine);
     expect(view.current).toEqual({ day: 3 });
     expect(view.recentPeriods).toEqual([{ startDate: "2026-10-31", endDate: NOW }]);
   });
@@ -1220,7 +1223,7 @@ describe("기록 → 화면 시나리오", () => {
     const view = (await partnerView(db, partner, NOW))!;
     expect(view.current).toBeNull();
     expect(days(view.calendar, "period")).toEqual([]);
-    expect(days(view.calendar, "predicted_period")).not.toContain("2026-11-03");
+    expect(days(view.calendar, "remaining_period")).toEqual([]);
   });
 
   it("생리 중이 아닐 때 연결하면 공유 시작일은 오늘, 진행 중 기록 안에 새 기록은 못 넣는다", async () => {
@@ -1286,9 +1289,9 @@ describe("끝나지 않은 생리", () => {
     expect(ended).toMatchObject({ startDate: START, endDate: "2026-10-24", autoEnded: true });
 
     await updateSharing(db, me, { shareFrom: START }, asOf);
-    const view = (await partnerView(db, await reload(you), asOf, "2026-10"))!;
+    const view = (await partnerView(db, await reload(you), asOf))!;
     expect(view.recentPeriods).toEqual([{ startDate: START, endDate: "2026-10-24" }]);
-    expect(view.calendar.map((m) => m.date)).toEqual(["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24"]);
+    expect(inMonth(view.calendar, "2026-10").filter((m) => m.type === "period").map((m) => m.date)).toEqual(["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24"]);
     expect(JSON.stringify(view)).not.toContain("autoEnded");
 
     await savePeriod(db, me.id, { ...ended, id: record.id, endDate: "2026-10-23" }, asOf);

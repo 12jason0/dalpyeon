@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { getDb, type DB } from "@/lib/db";
-import { isMonth, todaySeoul } from "@/lib/dates";
+import { todaySeoul } from "@/lib/dates";
 import { AppError, errorKind } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
 import { changePassword, limit, login, recordConsents, signup } from "@/lib/services/auth";
@@ -169,7 +169,7 @@ export async function savePeriodAction(_: FormState, form: FormData): Promise<Fo
     refresh();
   }, form, ["startDate", "endDate", "excludeReason"]);
   if (result?.error || !form.get("id")) return result;
-  redirect("/records");
+  redirect("/report");
 }
 
 // 달력에서 누른 날짜. 없으면 오늘. 날짜 검증은 savePeriod가 한다.
@@ -221,8 +221,7 @@ export async function deletePeriodAction(form: FormData) {
   const user = await requireUser("recorder");
   await deletePeriod(await getDb(), user.id, String(form.get("id")));
   refresh();
-  const month = form.get("month");
-  redirect(isMonth(month) ? `/records?month=${month}` : "/records");
+  if (form.get("stay") !== "on") redirect("/report"); // 홈의 시트에서 지우면 그 자리에 머문다
 }
 
 // ── 커플 연결 ─────────────────────────────────────

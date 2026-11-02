@@ -1,29 +1,29 @@
 "use client";
 import { useActionState } from "react";
-import { monthDay } from "@/lib/dates";
 import { endTodayAction, snoozeEndAction, startTodayAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
-export function StartTodayButton() {
+/** day를 주면 그 날짜로, 없으면 오늘로 시작한다. */
+export function StartTodayButton({ day }: { day?: string }) {
   const [state, action] = useActionState<FormState, FormData>(startTodayAction, null);
   return (
     <form action={action}>
-      <Submit>오늘 시작했어요</Submit>
+      {day && <input type="hidden" name="day" value={day} />}
+      <Submit>{day ? "이날 시작했어요" : "오늘 시작했어요"}</Submit>
       <ErrorText message={state?.error} />
     </form>
   );
 }
 
-/** 예상 종료일이 지났는데 종료일이 없을 때 기록자 홈 맨 위에 묻는다. */
-export function EndQuestion({ question: { id, startDate, date, day }, today }: {
-  question: { id: string; startDate: string; date: string; day: number }; today: string;
+/** 예상 종료일이 지났는데 종료일이 없을 때 묻는다. 질문은 시트 제목에 있다. */
+export function EndQuestion({ question: { id, startDate, date }, today }: {
+  question: { id: string; startDate: string; date: string }; today: string;
 }) {
   const [ended, end] = useActionState<FormState, FormData>(endTodayAction, null);
   const [snoozed, snooze] = useActionState<FormState, FormData>(snoozeEndAction, null);
   return (
-    <section className="card mb-4">
-      <h2 className="text-[17px] font-medium">{day}일째({monthDay(date)})에 끝났나요?</h2>
-      <form action={end} className="mt-4">
+    <section>
+      <form action={end}>
         <input type="hidden" name="id" value={id} />
         <input type="hidden" name="day" value={date} />
         <Submit>네, 그날 끝났어요</Submit>

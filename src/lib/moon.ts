@@ -40,6 +40,11 @@ export function nextRange(current: unknown, next: { earliestStart: string; lates
   return !current && next && today <= next.latestStart ? `${dayRange(next.earliestStart, next.latestStart)} 사이` : undefined;
 }
 
+/** 홈 맨 위의 작은 줄. 생리 중에도 보여주고, 예상 범위가 지났거나 예측이 없으면 말하지 않는다. */
+export function nextLine(next: { earliestStart: string; latestStart: string } | null, today: string) {
+  return next && today <= next.latestStart ? `다음 생리 ${dayRange(next.earliestStart, next.latestStart)}` : undefined;
+}
+
 /** 원의 왼쪽 위를 (0,0)으로 둔 밝은 부분. 바깥 반원 + 타원 호(명암 경계)로 그린다. */
 export function moonPath({ lit, waxing }: MoonShape, r: number) {
   const edge = (r * Math.abs(1 - 2 * lit)).toFixed(2);

@@ -1,5 +1,5 @@
 import { CRESCENT } from "@/lib/moon";
-import { Logo, MoonPhase } from "./HomeCards";
+import { MoonPhase } from "./HomeCards";
 import { LoadingNav } from "./Nav";
 
 export const BLOCK = "animate-pulse rounded-[18px] bg-line motion-reduce:animate-none";
@@ -24,12 +24,13 @@ export function HomeSkeleton() {
   return (
     <>
       <div role="status" aria-label="불러오는 중">
-        <Logo />
-        <div className="animate-pulse motion-reduce:animate-none"><MoonPhase moon={CRESCENT} /></div>
-        <div className={`${BLOCK} mx-auto mt-4 h-7 w-44`} />
-        <div className={`${BLOCK} mt-6 h-14`} />
-        <div className={`${BLOCK} mt-6 h-20`} />
-        <div className={`${BLOCK} mt-3 h-80`} />
+        <div className="flex items-center gap-3">
+          <div className="animate-pulse motion-reduce:animate-none"><MoonPhase moon={CRESCENT} /></div>
+          <div className={`${BLOCK} h-10 w-44`} />
+        </div>
+        <div className={`${BLOCK} mt-3 h-11`} />
+        <div className={`${BLOCK} mt-2 h-11`} />
+        <div className={`${BLOCK} mt-6 h-96`} />
       </div>
       <LoadingNav active="home" />
     </>

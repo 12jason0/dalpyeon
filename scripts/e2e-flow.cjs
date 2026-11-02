@@ -26,7 +26,7 @@ const shots = require("node:os").tmpdir();
   });
 
   await step("지난 기록 4번 입력", async () => {
-    await me.goto(BASE + "/records");
+    await me.goto(BASE + "/report");
     await me.click('summary:has-text("직접 입력·전체 기록")');
     const list = [["2026-07-15", "2026-07-19"], ["2026-08-12", "2026-08-16"], ["2026-09-09", "2026-09-13"], ["2026-10-07", "2026-10-11"]];
     for (let i = 0; i < list.length; i++) {
@@ -41,8 +41,8 @@ const shots = require("node:os").tmpdir();
     await me.fill('input[name=endDate]', "");
     await me.click('button:has-text("기록하기")');
     await me.getByText("다른 생리 기록과 날짜가 겹쳐요").waitFor();
-    await me.goto(BASE + "/records");
-    await me.screenshot({ path: `${shots}/03-records.png`, fullPage: true });
+    await me.goto(BASE + "/report");
+    await me.screenshot({ path: `${shots}/03-report.png`, fullPage: true });
   });
 
   await step("홈에 예측 표시", async () => {

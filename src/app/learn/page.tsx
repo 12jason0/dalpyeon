@@ -6,10 +6,10 @@ import { Nav } from "../_components/Nav";
 export const dynamic = "force-dynamic";
 
 export default async function LearnPage() {
-  const user = await requireUser("partner");
+  const user = await requireUser();
   return (
     <>
-      <Link href="/" className="link text-sm">오늘</Link>
+      <Link href="/" className="link text-sm">홈</Link>
       <h1 className="mt-6 text-3xl font-semibold tracking-tight">알아두면 좋은 것</h1>
       <ul className="mt-6">
         {ARTICLES.map((a) => (

@@ -80,6 +80,7 @@ src/lib/services/           DB 로직 — 화면과 분리돼 있어서 테스�
 src/app/actions.ts          화면에서 부르는 서버 액션
 src/app/page.tsx            오늘 (기록자 / 파트너 화면)
 src/app/records/            지난 기록 입력·수정
+src/app/report/             주기 통계·지난 기록·통증과 기분 요약
 src/app/connect/            연결·공유 설정
 src/app/me/settings/        연결 끊기·로그아웃·회원 탈퇴
 drizzle/                    DB 마이그레이션 SQL

@@ -1,5 +1,5 @@
 import { PageSkeleton } from "../_components/PageSkeleton";
 
 export default function Loading() {
-  return <PageSkeleton active="calendar" />;
+  return <PageSkeleton active="report" />;
 }

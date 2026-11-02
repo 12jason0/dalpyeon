@@ -237,8 +237,8 @@ describe("진행 중인 생리", () => {
   it("시작일~오늘은 생리, 내일~예상 종료일은 예상, 달이 바뀌어도 이어진다", () => {
     const all = marks([open], "2026-11-02");
     expect(dates(all, "period")).toEqual(["2026-10-31", "2026-11-01", "2026-11-02"]);
-    expect(dates(all, "predicted_period").slice(0, 2)).toEqual(["2026-11-03", "2026-11-04"]); // 기본 5일: 10.31~11.4
-    expect(dates(all, "predicted_period").slice(2)[0]).toBe("2026-11-28"); // 다음은 28일 뒤
+    expect(dates(all, "remaining_period")).toEqual(["2026-11-03", "2026-11-04"]); // 기본 5일: 10.31~11.4
+    expect(dates(all, "predicted_period")[0]).toBe("2026-11-28"); // 다음은 28일 뒤
     expect(dates(marks([open], "2026-11-02", ["2026-11-01", "2026-11-30"]), "period")).toEqual(["2026-11-01", "2026-11-02"]);
   });
 

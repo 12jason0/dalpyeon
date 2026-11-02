@@ -52,7 +52,7 @@ export function PeriodForm({ initial, today }: { initial: Initial; today: string
       {state?.ok && !initial && <p className="text-sm text-muted">저장했어요.</p>}
       <div className="flex items-center gap-4 pt-2">
         <Submit>{initial ? "수정하기" : "기록하기"}</Submit>
-        {initial && <Link href="/records" className="shrink-0 px-2 text-sm link">취소</Link>}
+        {initial && <Link href="/report" className="shrink-0 px-2 text-sm link">취소</Link>}
       </div>
     </form>
   );

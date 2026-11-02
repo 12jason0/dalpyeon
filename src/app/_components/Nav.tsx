@@ -1,11 +1,11 @@
 "use client";
-import { CalendarDays, Heart, Home, MessageCircle, User } from "lucide-react";
+import { ChartColumn, Heart, Home, MessageCircle, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import type { Role } from "@/lib/db/schema";
 
-type Active = "home" | "records" | "calendar" | "community" | "connect" | "me";
+type Active = "home" | "report" | "community" | "connect" | "me";
 
 // loading.tsx는 미리 만들어 두는 화면이라 역할을 모른다. 마지막으로 그린 메뉴의 역할을 기억해 쓴다.
 let lastRole: Role | null = null;
@@ -22,18 +22,15 @@ export function Nav({ role, active }: { role: Role; active: Active }) {
     lastRole = role;
   }, [role]);
   const items = [
-    { key: "home", href: "/", label: "오늘", icon: Home },
+    { key: "home", href: "/", label: "홈", icon: Home },
     ...(role === "recorder"
-      ? [{ key: "records", href: "/records", label: "기록", icon: CalendarDays }]
-      : [
-          { key: "calendar", href: "/calendar", label: "달력", icon: CalendarDays },
-          { key: "community", href: "/community", label: "이야기", icon: MessageCircle },
-        ]),
+      ? [{ key: "report", href: "/report", label: "리포트", icon: ChartColumn }]
+      : [{ key: "community", href: "/community", label: "이야기", icon: MessageCircle }]),
     { key: "connect", href: "/connect", label: "연결", icon: Heart },
     { key: "me", href: "/me", label: "마이", icon: User },
   ];
   return (
-    <nav className="fixed inset-x-0 bottom-0 border-t border-line bg-paper/90 backdrop-blur pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper/90 backdrop-blur pb-[env(safe-area-inset-bottom)]">
       <ul className="mx-auto flex max-w-md px-2">
         {items.map(({ key, href, label, icon: Icon }) => (
           <li key={key} className="flex-1">

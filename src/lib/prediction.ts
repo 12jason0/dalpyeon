@@ -236,7 +236,7 @@ export function predictionError(periods: PeriodInput[], usualCycle: number | nul
 
 export type CalendarEvent = {
   date: string;
-  type: "period" | "predicted_period" | "estimated_fertile_window" | "estimated_ovulation";
+  type: "period" | "remaining_period" | "predicted_period" | "estimated_fertile_window" | "estimated_ovulation";
   estimated: boolean;
   recordId: string | null;
 };
@@ -260,7 +260,7 @@ export function calendarEvents(
     }
   };
   for (const p of periods) span(p.startDate, p.endDate, "period", false, p.id ?? null);
-  if (prediction.ongoing) span(prediction.ongoing.startDate, prediction.ongoing.endDate, "predicted_period", true);
+  if (prediction.ongoing) span(prediction.ongoing.startDate, prediction.ongoing.endDate, "remaining_period", true);
   if (prediction.period) span(prediction.period.startDate, prediction.period.endDate, "predicted_period", true);
   if (prediction.fertileWindow) span(prediction.fertileWindow.startDate, prediction.fertileWindow.endDate, "estimated_fertile_window", true);
   if (prediction.ovulation) span(prediction.ovulation.estimatedDate, prediction.ovulation.estimatedDate, "estimated_ovulation", true);
