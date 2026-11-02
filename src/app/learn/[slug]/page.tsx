@@ -7,7 +7,7 @@ import { Nav } from "../../_components/Nav";
 export const dynamic = "force-dynamic";
 
 export default async function ArticlePage({ params }: { params: Promise<{ slug: string }> }) {
-  const user = await requireUser();
+  const user = await requireUser("partner");
   const article = findArticle((await params).slug);
   if (!article) notFound();
   return (

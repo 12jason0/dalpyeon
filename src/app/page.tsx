@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { calendarWindow } from "@/lib/calendar";
 import { articleFor } from "@/lib/content/articles";
+import { tipFor } from "@/lib/content/phases";
 import { getDb, type DB } from "@/lib/db";
 import { monthDay, todaySeoul } from "@/lib/dates";
 import { todayBodyLine } from "@/lib/daylog";
@@ -69,6 +70,18 @@ function ArticleLine({ phase, today }: { phase: Phase | null; today: string }) {
       <span className="min-w-0 truncate">{article.title}</span>
       <ChevronRight size={18} className="shrink-0 text-muted" aria-hidden />
     </Link>
+  );
+}
+
+/** 기록자 홈의 한 줄. 오늘 시기에 챙기면 좋은 것 하나. 시기를 모르면 그리지 않는다. */
+function TipLine({ phase, today }: { phase: Phase | null; today: string }) {
+  const tip = tipFor(phase, today);
+  if (!tip) return null;
+  return (
+    <p className={LINE_CARD}>
+      <span className="min-w-0 truncate">{tip.text}</span>
+      <tip.icon size={18} className="shrink-0 text-muted" aria-hidden />
+    </p>
   );
 }
 
@@ -143,7 +156,7 @@ async function RecorderHome({ user }: { user: User }) {
           moon={moonShape(prediction, today)} {...recorderStatus(prediction, current, today)}
           aside={<Suspense><News db={db} user={user} today={today} pick="replies" /></Suspense>}
         />
-        <ArticleLine phase={phaseFrom(Boolean(current), prediction.fertileWindow, today)} today={today} />
+        <TipLine phase={phaseFrom(Boolean(current), prediction.fertileWindow, today)} today={today} />
         {question && (
           <LineSheet title={`${question.day}일째(${monthDay(question.date)})에 끝났나요?`} summary={`${question.day}일째(${monthDay(question.date)})에 끝났나요?`}>
             <EndQuestion question={question} today={today} />

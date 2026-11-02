@@ -1,6 +1,7 @@
 import {
   Bath, Bed, CupSoda, Droplets, Flower2, Footprints, HeartHandshake, Moon, Salad, Soup, Sun, Wind, type LucideIcon,
 } from "lucide-react";
+import { diffDays } from "../dates";
 import type { Phase } from "../phase";
 
 export type PhaseContent = { title: string; symptoms: [string, string, string]; tips: { icon: LucideIcon; text: string }[] };
@@ -44,3 +45,10 @@ export const PHASES: Record<Phase, PhaseContent> = {
     ],
   },
 };
+
+/** 오늘 챙기면 좋은 것 하나. 같은 날에는 같은 팁이고, 날이 바뀌면 다음 팁으로 넘어간다. 시기를 모르면 없다. */
+export function tipFor(phase: Phase | null, today: string) {
+  if (!phase) return null;
+  const { tips } = PHASES[phase];
+  return tips[diffDays(today, "2026-01-01") % tips.length];
+}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { exampleHome, EXAMPLE_DAYS_UNTIL } from "@/lib/content/example";
-import { PHASES } from "@/lib/content/phases";
+import { PHASES, tipFor } from "@/lib/content/phases";
 import { diffDays, monthGrid } from "@/lib/dates";
 import { phaseOn, type Phase } from "@/lib/phase";
 import { calendarMarks, estimate } from "@/lib/prediction";
@@ -65,5 +65,17 @@ describe("시기 문구", () => {
       expect(tips).toHaveLength(3);
       for (const text of [...symptoms, ...tips.map((t) => t.text)]) expect(text).toContain("수 있어요");
     }
+  });
+});
+
+describe("오늘 챙기면 좋은 것", () => {
+  it("그 시기의 팁을 고르고, 날이 바뀌면 다음 팁으로 넘어간다", () => {
+    const shown = ["2026-11-02", "2026-11-03", "2026-11-04"].map((day) => tipFor("menstrual", day)?.text);
+    expect(new Set(shown)).toEqual(new Set(PHASES.menstrual.tips.map((t) => t.text)));
+    expect(tipFor("menstrual", "2026-11-02")).toBe(tipFor("menstrual", "2026-11-02"));
+  });
+
+  it("시기를 모르면 없다", () => {
+    expect(tipFor(null, "2026-11-02")).toBeNull();
   });
 });

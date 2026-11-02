@@ -6,7 +6,7 @@ import { Nav } from "../_components/Nav";
 export const dynamic = "force-dynamic";
 
 export default async function LearnPage() {
-  const user = await requireUser();
+  const user = await requireUser("partner");
   return (
     <>
       <Link href="/" className="link text-sm">홈</Link>
