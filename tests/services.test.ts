@@ -1782,17 +1782,25 @@ describe("통증·기분", () => {
 
 describe("알아두면 좋은 것", () => {
   it("글마다 주소가 다르고 단정·진단 표현이 없다", () => {
-    expect(ARTICLES).toHaveLength(9);
+    expect(ARTICLES).toHaveLength(8);
     expect(findArticle("prediction-misses")).toBeUndefined();
-    expect(new Set(ARTICLES.map((a) => a.slug)).size).toBe(9);
+    expect(findArticle("cycle-differs")).toBeUndefined();
+    expect(ARTICLES.map((a) => a.title)).not.toContain("주기는 사람마다 달라요");
+    expect(new Set(ARTICLES.map((a) => a.slug)).size).toBe(8);
     for (const { body } of ARTICLES) expect(body.join(" ")).not.toMatch(/100%|진단|치료|처방|진통제/);
     expect(findArticle("pms")?.title).toBe("PMS란");
     expect(findArticle("없는글")).toBeUndefined();
   });
 
-  it("시기마다 맞는 글을 고르고, 시기를 모르면 일반 글을 고른다", () => {
+  it("시기마다 맞는 글을 고른다", () => {
     for (const phase of ["menstrual", "follicular", "fertile", "luteal"] as const) expect(articleFor(phase, TODAY).phases).toContain(phase);
-    expect(articleFor(null, TODAY).phases).toEqual([]);
+  });
+
+  it("시기를 모르면 같은 날은 같은 글이고, 날마다 다음 글로 넘어가 전체 글을 돈다", () => {
+    expect(articleFor(null, TODAY)).toBe(articleFor(null, TODAY));
+    const days = ARTICLES.map((_, i) => articleFor(null, addDays(TODAY, i)));
+    expect(new Set(days).size).toBe(ARTICLES.length);
+    expect(articleFor(null, addDays(TODAY, ARTICLES.length))).toBe(days[0]);
   });
 
   it("파트너 화면에 오늘 시기가 내려가고, 잠시 멈추면 내려가지 않는다", async () => {

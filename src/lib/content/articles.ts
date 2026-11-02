@@ -6,7 +6,7 @@ export type Article = {
   title: string;
   /** 목록과 카드에 보이는 한 줄. */
   line: string;
-  /** 이 시기에 먼저 보여준다. 비어 있으면 시기를 모를 때 보여준다. */
+  /** 이 시기에 보여준다. */
   phases: Phase[];
   body: string[];
 };
@@ -107,23 +107,12 @@ export const ARTICLES: Article[] = [
       "그래도 컨디션은 날마다 달라요. 오늘은 어떤지 먼저 물어보세요.",
     ],
   },
-  {
-    slug: "cycle-differs",
-    title: "주기는 사람마다 달라요",
-    line: "28일이 아니어도 이상한 것이 아닐 수 있어요.",
-    phases: [],
-    body: [
-      "주기는 생리 시작일부터 다음 생리 시작일 전날까지의 기간을 말해요. 흔히 28일로 이야기하지만 사람마다 달라요.",
-      "같은 사람도 달마다 며칠씩 달라질 수 있어요. 스트레스, 잠, 체중 변화, 여행이 영향을 줄 수 있어요.",
-      "그래서 “왜 아직 안 해?” 같은 말은 부담이 될 수 있어요. 궁금하면 편하게 물어볼 수 있는 분위기를 만들어 주세요.",
-    ],
-  },
 ];
 
 export const findArticle = (slug: string) => ARTICLES.find((a) => a.slug === slug);
 
-/** 오늘 시기에 맞는 글 하나. 같은 날에는 같은 글이고, 날이 바뀌면 다음 글로 넘어간다. */
+/** 오늘 시기에 맞는 글 하나. 시기를 모르면 전체 글에서 고른다. 같은 날에는 같은 글이고, 날이 바뀌면 다음 글로 넘어간다. */
 export function articleFor(phase: Phase | null, today: string) {
-  const list = ARTICLES.filter((a) => (phase ? a.phases.includes(phase) : a.phases.length === 0));
+  const list = phase ? ARTICLES.filter((a) => a.phases.includes(phase)) : ARTICLES;
   return list[diffDays(today, "2026-01-01") % list.length];
 }
