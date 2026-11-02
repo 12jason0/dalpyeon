@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, ne } from "drizzle-orm";
+import { and, asc, eq, isNull, lte, ne } from "drizzle-orm";
 import type { DB } from "../db";
 import { periods, users } from "../db/schema";
-import { isDay, todaySeoul } from "../dates";
+import { addDays, isDay, todaySeoul } from "../dates";
 import { fail } from "../errors";
-import { currentPeriod, estimate, type Prediction } from "../prediction";
+import { autoEndDate, currentPeriod, estimate, isOverdue, type Prediction } from "../prediction";
 import type { User } from "./auth";
 import { requireRole } from "./couples";
 
@@ -20,7 +20,7 @@ export type PeriodInput = { id?: string | null; startDate: unknown; endDate?: un
 
 export async function savePeriod(db: DB, ownerId: string, input: PeriodInput, today = todaySeoul()): Promise<Period> {
   const startDate = String(input.startDate ?? "");
-  const endDate = input.endDate ? String(input.endDate) : null;
+  let endDate = input.endDate ? String(input.endDate) : null;
   const excluded = Boolean(input.excluded);
   const excludeReason = excluded ? String(input.excludeReason ?? "").trim().slice(0, 200) : null;
   if (!isDay(startDate) || startDate > today || startDate < "1900-01-01") fail("시작일은 오늘이나 그 이전 날짜로 적어 주세요");
@@ -35,14 +35,18 @@ export async function savePeriod(db: DB, ownerId: string, input: PeriodInput, to
 
     const others = await tx.select().from(periods)
       .where(existing ? and(eq(periods.ownerId, ownerId), ne(periods.id, existing.id)) : eq(periods.ownerId, ownerId));
+    // 오래전 날짜를 종료일 없이 넣으면 크론을 기다리지 않고 바로 끝낸다. "생리 90일째"가 되지 않게 한다.
+    const autoEnded = isOverdue({ startDate, endDate }, today);
+    if (autoEnded) endDate = autoEndDate(others, startDate, today);
     const myEnd = endDate ?? startDate;
     for (const p of others) {
       // 진행 중인 기록은 오늘까지 이어진 것으로 본다. 안 그러면 한 번의 생리가 두 기록으로 쪼개져 주기 간격이 망가진다.
-      const theirEnd = p.endDate ?? (currentPeriod([p], today)?.open ? today : p.startDate);
+      // 크론이 아직 끝내지 않은 오래된 기록이 새 기록을 막지는 않는다.
+      const theirEnd = p.endDate ?? (isOverdue(p, today) || p.startDate > today ? p.startDate : today);
       if (startDate <= theirEnd && p.startDate <= myEnd) fail("다른 생리 기록과 날짜가 겹쳐요", 409);
     }
 
-    const values = { startDate, endDate, excluded, excludeReason, updatedAt: new Date() };
+    const values = { startDate, endDate, excluded, excludeReason, autoEnded, updatedAt: new Date() };
     if (existing) {
       const [row] = await tx.update(periods).set(values).where(eq(periods.id, existing.id)).returning();
       return row;
@@ -55,6 +59,23 @@ export async function savePeriod(db: DB, ownerId: string, input: PeriodInput, to
 export async function deletePeriod(db: DB, ownerId: string, id: string) {
   const deleted = await db.delete(periods).where(and(eq(periods.id, id), eq(periods.ownerId, ownerId))).returning({ id: periods.id });
   if (!deleted.length) fail("기록을 찾을 수 없어요", 404);
+}
+
+/** "아직 하고 있어요". 오늘과 내일은 묻지 않는다. */
+export async function snoozeEndQuestion(db: DB, ownerId: string, id: string, today = todaySeoul()) {
+  const updated = await db.update(periods).set({ askEndAgainOn: addDays(today, 2) })
+    .where(and(eq(periods.id, id), eq(periods.ownerId, ownerId), isNull(periods.endDate))).returning({ id: periods.id });
+  if (!updated.length) fail("기록을 찾을 수 없어요", 404);
+}
+
+/** 크론: 시작 후 10일이 지나도 종료일이 없는 기록을 끝낸다. 끝낸 개수를 돌려준다. */
+export async function autoEndPeriods(db: DB, today = todaySeoul()) {
+  const overdue = await db.select().from(periods).where(and(isNull(periods.endDate), lte(periods.startDate, addDays(today, -10))));
+  for (const p of overdue) {
+    const endDate = autoEndDate(await listPeriods(db, p.ownerId), p.startDate, today);
+    await db.update(periods).set({ endDate, autoEnded: true, updatedAt: new Date() }).where(and(eq(periods.id, p.id), isNull(periods.endDate)));
+  }
+  return overdue.length;
 }
 
 export async function usualCycle(db: DB, ownerId: string): Promise<number | null> {

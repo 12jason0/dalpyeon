@@ -37,6 +37,11 @@ function DayPanel({ day, month, today, periods, marks }: { day: string; month: s
           ? `${dayRange(record.startDate, record.endDate)} · ${diffDays(record.endDate, record.startDate) + 1}일`
           : `${monthDay(record.startDate)} · 종료일 없음`}
       </p>
+      {record.autoEnded && (
+        <p className="mt-2 text-[15px]">
+          <Link href={`/records?month=${month}&day=${day}&edit=${record.id}#direct`} className="link">자동으로 끝낸 기록 · 날짜 확인하기</Link>
+        </p>
+      )}
       <div className="mt-5"><EndTodayButton id={record.id} day={day} /></div>
       <div className="mt-4 flex items-start justify-center gap-8 text-sm">
         <Link href={`/records?month=${month}&day=${day}&edit=${record.id}#direct`} className="link leading-11">수정</Link>
@@ -134,6 +139,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
                   <span className="text-[17px]">
                     {formatDay(p.startDate)}
                     {p.excluded && <span className="ml-2 text-[13px] text-muted">예측 제외</span>}
+                    {p.autoEnded && <span className="mt-1 block text-[13px] text-muted">자동으로 끝낸 기록 · 날짜 확인하기</span>}
                   </span>
                   <span className="text-[15px] text-muted">
                     {p.endDate ? `~ ${shortDay(p.endDate)} · ${diffDays(p.endDate, p.startDate) + 1}일` : "종료일 없음"}

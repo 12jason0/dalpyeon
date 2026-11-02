@@ -1,10 +1,10 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { and, count, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import type { DB } from "../db";
-import { careRequests, careResponses, pushSubscriptions, users } from "../db/schema";
+import { careRequests, careResponses, periods, pushSubscriptions, users } from "../db/schema";
 import { diffDays, todaySeoul } from "../dates";
 import { fail } from "../errors";
-import { estimate } from "../prediction";
+import { endQuestion, estimate } from "../prediction";
 import type { User } from "./auth";
 import { sharedCare } from "./care";
 import { activeCouple } from "./couples";
@@ -116,7 +116,7 @@ export async function setReminder(db: DB, user: User, on: boolean) {
   await db.update(users).set({ reminderEnabled: on }).where(eq(users.id, user.id));
 }
 
-/** 하루 한 번: 예정일 3일 전인 기록자 본인에게만 보낸다. 같은 예정일로는 한 번만 보낸다. */
+/** 하루 한 번, 기록자 본인에게만: 예정일 3일 전 알림(예정일마다 한 번), 예상 종료일이 지난 생리 확인(기록마다 한 번). */
 export async function sendReminders(db: DB, today = todaySeoul(), sender?: Sender) {
   const rows = await db.selectDistinct({ id: users.id, usual: users.usualCycleDays }).from(users)
     .innerJoin(pushSubscriptions, eq(pushSubscriptions.userId, users.id))
@@ -132,6 +132,15 @@ export async function sendReminders(db: DB, today = todaySeoul(), sender?: Sende
         .returning({ id: users.id });
       if (!claimed.length) return;
       await sendPush(db, id, { body: "오늘 확인할 소식이 있어요", url: "/" }, sender);
+      sent++;
+    });
+    await quietly(async () => {
+      const question = endQuestion(await listPeriods(db, id), today);
+      if (!question?.id) return;
+      const claimed = await db.update(periods).set({ endAskSent: true })
+        .where(and(eq(periods.id, question.id), eq(periods.endAskSent, false))).returning({ id: periods.id });
+      if (!claimed.length) return;
+      await sendPush(db, id, { body: "오늘 기록을 확인해 주세요", url: "/" }, sender);
       sent++;
     });
   }

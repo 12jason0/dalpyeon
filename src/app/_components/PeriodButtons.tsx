@@ -1,6 +1,7 @@
 "use client";
 import { useActionState } from "react";
-import { endTodayAction, startTodayAction, type FormState } from "../actions";
+import { monthDay } from "@/lib/dates";
+import { endTodayAction, snoozeEndAction, startTodayAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
 export function StartTodayButton() {
@@ -10,6 +11,40 @@ export function StartTodayButton() {
       <Submit>오늘 시작했어요</Submit>
       <ErrorText message={state?.error} />
     </form>
+  );
+}
+
+/** 예상 종료일이 지났는데 종료일이 없을 때 기록자 홈 맨 위에 묻는다. */
+export function EndQuestion({ question: { id, startDate, date, day }, today }: {
+  question: { id: string; startDate: string; date: string; day: number }; today: string;
+}) {
+  const [ended, end] = useActionState<FormState, FormData>(endTodayAction, null);
+  const [snoozed, snooze] = useActionState<FormState, FormData>(snoozeEndAction, null);
+  return (
+    <section className="card mb-4">
+      <h2 className="text-[17px] font-medium">{day}일째({monthDay(date)})에 끝났나요?</h2>
+      <form action={end} className="mt-4">
+        <input type="hidden" name="id" value={id} />
+        <input type="hidden" name="day" value={date} />
+        <Submit>네, 그날 끝났어요</Submit>
+      </form>
+      <form action={snooze} className="mt-2 text-center">
+        <input type="hidden" name="id" value={id} />
+        <Submit className="link h-11 text-[15px]">아직 하고 있어요</Submit>
+      </form>
+      <details className="text-center">
+        <summary className="link h-11 cursor-pointer list-none text-[15px] leading-11">다른 날 끝났어요</summary>
+        <form action={end} className="mt-2 text-left">
+          <input type="hidden" name="id" value={id} />
+          <label className="block">
+            <span className="text-sm text-muted">끝난 날</span>
+            <input type="date" name="day" className="field" min={startDate} max={today} defaultValue={date} required />
+          </label>
+          <div className="mt-4"><Submit>이날로 저장</Submit></div>
+        </form>
+      </details>
+      <ErrorText message={ended?.error ?? snoozed?.error} />
+    </section>
   );
 }
 

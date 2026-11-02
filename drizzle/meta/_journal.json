@@ -36,6 +36,13 @@
       "when": 1793576942087,
       "tag": "0004_prediction_sharing_replies",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793579367888,
+      "tag": "0005_period_auto_end",
+      "breakpoints": true
     }
   ]
 }

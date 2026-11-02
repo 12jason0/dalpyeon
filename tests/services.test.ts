@@ -6,7 +6,7 @@ import {
 } from "@/lib/db/schema";
 import { addDays } from "@/lib/dates";
 import { CRESCENT, moonShape } from "@/lib/moon";
-import { calendarMarks, estimate, predictionError } from "@/lib/prediction";
+import { calendarMarks, endQuestion, estimate, predictionError } from "@/lib/prediction";
 import { AppError } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
 import { createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
@@ -19,7 +19,9 @@ import {
   listReports, myPosts, report, updateComment, updatePost,
 } from "@/lib/services/community";
 import { kakaoAuthorizeUrl, kakaoEnabled, kakaoLanding, signInWithKakao } from "@/lib/services/kakao";
-import { currentPeriod, deletePeriod, listPeriods, predictionFor, savePeriod, setUsualCycle, usualCycle } from "@/lib/services/periods";
+import {
+  autoEndPeriods, currentPeriod, deletePeriod, listPeriods, predictionFor, savePeriod, setUsualCycle, snoozeEndQuestion, usualCycle,
+} from "@/lib/services/periods";
 import { partnerView } from "@/lib/services/partner";
 import {
   cronAuthorized, markNewsSeen, newsFor, notifyCare, notifyConnected, notifyReply, reminderEnabled, removeSubscription, saveSubscription,
@@ -144,7 +146,7 @@ describe("생리 기록", () => {
     expect(prediction.period?.startDate).toBe("2026-10-30");
     await savePeriod(db, me.id, { startDate: "2026-10-28" }, TODAY);
     expect(currentPeriod(await listPeriods(db, me.id), TODAY)).toMatchObject({ day: 3, open: true });
-    expect(currentPeriod(await listPeriods(db, me.id), "2026-11-10")).toBeNull(); // 종료일 없어도 10일 넘으면 진행 중 아님
+    expect(currentPeriod(await listPeriods(db, me.id), "2026-11-10")).toMatchObject({ day: 14, open: true }); // 끝낼 때까지 진행 중
   });
 });
 
@@ -908,7 +910,7 @@ describe("알림", () => {
     expect(await sendReminders(db, "2026-10-26", sender)).toBe(0); // 4일 전
     expect(await sendReminders(db, "2026-10-27", sender)).toBe(1);
     expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, body: "오늘 확인할 소식이 있어요" }]);
-    expect(JSON.stringify(sent)).not.toContain("생리"); // 잠금 화면에 보이는 문구
+    expect(JSON.stringify(sent)).not.toContain("생리"); // 예정일 알림은 잠금 화면에 건강 정보를 쓰지 않는다
     expect(await sendReminders(db, "2026-10-27", sender)).toBe(0); // 크론이 두 번 돌아도 한 번
     expect(sent).toHaveLength(1);
     expect(partner.role).toBe("partner");
@@ -1202,6 +1204,105 @@ describe("기록 → 화면 시나리오", () => {
     await deletePeriod(db, me.id, open.id);
     const { code } = await createInvite(db, me);
     expect((await claimInvite(db, you, code, NOW)).shareFrom).toBe(NOW);
+  });
+});
+
+describe("끝나지 않은 생리", () => {
+  const START = "2026-10-20";
+  const recorded = async () => {
+    const { me, you } = await pair();
+    const record = await savePeriod(db, me.id, { startDate: START }, START);
+    return { me, you, record };
+  };
+
+  it("네, 그날 끝났어요: 물어본 날짜로 저장한다", async () => {
+    const { me, record } = await recorded();
+    const asOf = "2026-10-25";
+    const question = endQuestion(await listPeriods(db, me.id), asOf);
+    expect(question).toMatchObject({ id: record.id, date: "2026-10-24", day: 5 });
+    await savePeriod(db, me.id, { ...record, endDate: question!.date }, asOf);
+    expect((await listPeriods(db, me.id))[0]).toMatchObject({ endDate: "2026-10-24", autoEnded: false });
+    expect(endQuestion(await listPeriods(db, me.id), asOf)).toBeNull();
+  });
+
+  it("아직 하고 있어요: 2일 숨겼다가 다시 묻고, 남의 기록이나 끝난 기록은 못 건드린다", async () => {
+    const { me, you, record } = await recorded();
+    await snoozeEndQuestion(db, me.id, record.id, "2026-10-25");
+    const list = await listPeriods(db, me.id);
+    expect(endQuestion(list, "2026-10-25")).toBeNull();
+    expect(endQuestion(list, "2026-10-26")).toBeNull();
+    expect(endQuestion(list, "2026-10-27")).toMatchObject({ date: "2026-10-26", day: 7 });
+    await expectFail(snoozeEndQuestion(db, you.id, record.id, "2026-10-25"), 404);
+    await savePeriod(db, me.id, { ...record, endDate: "2026-10-25" }, "2026-10-25");
+    await expectFail(snoozeEndQuestion(db, me.id, record.id, "2026-10-25"), 404);
+  });
+
+  it("다른 날 끝났어요: 시작일~오늘 사이만 저장한다", async () => {
+    const { me, record } = await recorded();
+    const asOf = "2026-10-26";
+    await expectFail(savePeriod(db, me.id, { ...record, endDate: "2026-10-19" }, asOf));
+    await expectFail(savePeriod(db, me.id, { ...record, endDate: "2026-10-27" }, asOf));
+    await savePeriod(db, me.id, { ...record, endDate: "2026-10-22" }, asOf);
+    expect((await listPeriods(db, me.id))[0].endDate).toBe("2026-10-22");
+  });
+
+  it("10일이 지나면 크론이 끝내고, 파트너에게는 일반 종료처럼 보이며, 수정하면 표시가 풀린다", async () => {
+    const { me, you, record } = await recorded();
+    await connect(me, you);
+    expect(await autoEndPeriods(db, "2026-10-29")).toBe(0); // 10일째까지는 그대로
+    expect((await listPeriods(db, me.id))[0].endDate).toBeNull();
+
+    const asOf = "2026-10-30";
+    expect(await autoEndPeriods(db, asOf)).toBe(1);
+    expect(await autoEndPeriods(db, asOf)).toBe(0); // 두 번 돌아도 한 번
+    const [ended] = await listPeriods(db, me.id);
+    expect(ended).toMatchObject({ startDate: START, endDate: "2026-10-24", autoEnded: true });
+
+    await updateSharing(db, me, { permissions: { periods: true }, shareFrom: START, paused: false }, asOf);
+    const view = (await partnerView(db, await reload(you), asOf, "2026-10"))!;
+    expect(view.recentPeriods).toEqual([{ startDate: START, endDate: "2026-10-24" }]);
+    expect(view.calendar.map((m) => m.date)).toEqual(["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24"]);
+    expect(JSON.stringify(view)).not.toContain("autoEnded");
+
+    await savePeriod(db, me.id, { ...ended, id: record.id, endDate: "2026-10-23" }, asOf);
+    expect((await listPeriods(db, me.id))[0]).toMatchObject({ endDate: "2026-10-23", autoEnded: false });
+  });
+
+  it("자동 종료일은 사람이 끝낸 기록의 평균을 쓰고, 자동 종료 기록은 평균에서 빠진다", async () => {
+    const { me } = await pair();
+    await savePeriod(db, me.id, { startDate: "2026-08-01", endDate: "2026-08-07" }, TODAY); // 7일
+    await savePeriod(db, me.id, { startDate: "2026-09-01" }, "2026-09-01");
+    await autoEndPeriods(db, "2026-09-11");
+    expect((await listPeriods(db, me.id))[1]).toMatchObject({ endDate: "2026-09-07", autoEnded: true });
+    await db.update(periods).set({ endDate: "2026-09-20" }).where(eq(periods.startDate, "2026-09-01"));
+    expect((await predictionFor(db, me.id, "2026-09-25")).typicalPeriodDays).toBe(7);
+  });
+
+  it("오래전 날짜를 종료일 없이 넣으면 바로 자동 종료하고, 오래된 진행 중 기록이 새 기록을 막지 않는다", async () => {
+    const { me } = await pair();
+    const saved = await savePeriod(db, me.id, { startDate: "2026-07-01" }, TODAY);
+    expect(saved).toMatchObject({ endDate: "2026-07-05", autoEnded: true });
+    await db.update(periods).set({ endDate: null, autoEnded: false }).where(eq(periods.id, saved.id));
+    await savePeriod(db, me.id, { startDate: "2026-10-28" }, TODAY);
+    expect(await listPeriods(db, me.id)).toHaveLength(2);
+  });
+
+  it("끝났는지 묻는 푸시는 예상 종료일 다음 날 기록마다 한 번만, 알림을 끈 사람에게는 가지 않는다", async () => {
+    const { me, record } = await recorded();
+    const sent: string[] = [];
+    const sender: Sender = async (_, payload) => { sent.push(JSON.parse(payload).body); };
+    await saveSubscription(db, me, { endpoint: "https://fcm.googleapis.com/fcm/send/end", p256dh: "k", auth: "a" });
+
+    expect(await sendReminders(db, "2026-10-24", sender)).toBe(0);
+    expect(await sendReminders(db, "2026-10-25", sender)).toBe(1);
+    expect(sent).toEqual(["오늘 기록을 확인해 주세요"]);
+    expect(await sendReminders(db, "2026-10-25", sender)).toBe(0);
+    expect(await sendReminders(db, "2026-10-26", sender)).toBe(0);
+
+    await db.update(periods).set({ endAskSent: false }).where(eq(periods.id, record.id));
+    await setReminder(db, me, false);
+    expect(await sendReminders(db, "2026-10-26", sender)).toBe(0);
+    expect(sent).toHaveLength(1);
   });
 });
 

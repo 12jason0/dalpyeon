@@ -6,7 +6,7 @@ import { getDb, type DB } from "@/lib/db";
 import { diffDays, formatDay, isMonth, monthGrid, shortDay, todaySeoul } from "@/lib/dates";
 import { CRESCENT, cycleLine, MOON_WAITING, moonShape, nextRange } from "@/lib/moon";
 import { phaseOn } from "@/lib/phase";
-import { calendarMarks, DISCLAIMER, estimate } from "@/lib/prediction";
+import { calendarMarks, DISCLAIMER, endQuestion, estimate } from "@/lib/prediction";
 import type { User } from "@/lib/services/auth";
 import { CARE_PRESETS, getCare, RESPONSES } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
@@ -21,7 +21,7 @@ import { Landing } from "./_components/Landing";
 import { MonthCalendar } from "./_components/MonthCalendar";
 import { Nav } from "./_components/Nav";
 import { BLOCK } from "./_components/PageSkeleton";
-import { EndTodayButton, StartTodayButton } from "./_components/PeriodButtons";
+import { EndQuestion, EndTodayButton, StartTodayButton } from "./_components/PeriodButtons";
 import { Row, Section } from "./_components/Section";
 
 export const dynamic = "force-dynamic";
@@ -111,10 +111,12 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
   const data = careAndPartner(db, user, today);
   const prediction = estimate(periods, [], today, usual);
   const current = currentPeriod(periods, today);
+  const question = endQuestion(periods, today);
   const { first, last } = monthGrid(month);
 
   return (
     <>
+      {question && <EndQuestion question={question} today={today} />}
       <div className="flex items-center justify-between">
         <Logo />
         <Suspense><News db={db} user={user} today={today} pick="replies" /></Suspense>

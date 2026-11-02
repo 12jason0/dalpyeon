@@ -46,6 +46,12 @@ export const periods = pgTable("periods", {
   endDate: date("end_date", { mode: "string" }),
   excluded: boolean("excluded").notNull().default(false),
   excludeReason: text("exclude_reason"),
+  /** 끝났다는 입력 없이 앱이 끝낸 기록. 사람이 저장하면 false가 된다. */
+  autoEnded: boolean("auto_ended").notNull().default(false),
+  /** "아직 하고 있어요"를 누르면 이 날부터 다시 묻는다. */
+  askEndAgainOn: date("ask_end_again_on", { mode: "string" }),
+  /** 끝났는지 묻는 푸시는 기록마다 한 번만 보낸다. */
+  endAskSent: boolean("end_ask_sent").notNull().default(false),
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("periods_owner_start").on(t.ownerId, t.startDate)]);

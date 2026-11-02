@@ -1,7 +1,7 @@
 // 원본 Python 테스트(tests/test_prediction.py)를 그대로 옮긴 것 + 경계 케이스 몇 개
 import { describe, expect, it } from "vitest";
 import { addDays, addMonths, dayRange, isMonth, monthGrid, monthLabel } from "@/lib/dates";
-import { calendarEvents, calendarMarks, estimate, predictionError, type PeriodInput } from "@/lib/prediction";
+import { autoEndDate, calendarEvents, calendarMarks, endQuestion, estimate, isOverdue, predictionError, type PeriodInput } from "@/lib/prediction";
 
 function periods(lengths: number[], first = "2026-01-01"): PeriodInput[] {
   const result: PeriodInput[] = [];
@@ -250,10 +250,10 @@ describe("진행 중인 생리", () => {
     expect(estimate([...past, open], [], "2026-11-02").ongoing).toEqual({ startDate: "2026-11-03", endDate: "2026-11-05" });
   });
 
-  it("예상 종료일이 지나면 오늘까지 칠하고 예상은 없다, 10일이 넘으면 시작일만 남긴다", () => {
+  it("예상 종료일이 지나면 오늘까지 칠하고 예상은 없다, 10일이 넘어도 시작일만 남기지 않는다", () => {
     expect(estimate([open], [], "2026-11-04").ongoing).toBeNull();
     expect(dates(marks([open], "2026-11-06"), "period")).toHaveLength(7);
-    expect(dates(marks([open], "2026-11-10"), "period")).toEqual(["2026-10-31"]); // 11일째
+    expect(dates(marks([open], "2026-11-10"), "period")).toHaveLength(11);
   });
 
   it("끝난 기록에는 남은 예상이 없다", () => {
@@ -262,6 +262,64 @@ describe("진행 중인 생리", () => {
     const all = marks(ended, "2026-11-02");
     expect(dates(all, "period")).toEqual(["2026-10-31", "2026-11-01", "2026-11-02"]);
     expect(dates(all, "predicted_period")[0]).toBe("2026-11-28");
+  });
+});
+
+describe("끝났는지 묻기", () => {
+  const open = { id: "o", startDate: "2026-10-01", endDate: null };
+  const past = { id: "p", startDate: "2026-09-01", endDate: "2026-09-07" }; // 7일
+
+  it("예상 종료일 다음 날부터, 평균 기간이 없으면 5일 기준으로 묻는다", () => {
+    expect(endQuestion([open], "2026-10-05")).toBeNull();
+    expect(endQuestion([open], "2026-10-06")).toEqual({ id: "o", startDate: "2026-10-01", date: "2026-10-05", day: 5 });
+    expect(endQuestion([open], "2026-10-09")?.date).toBe("2026-10-05");
+  });
+
+  it("평균 기간을 쓰고, 자동 종료 기록은 평균에서 뺀다", () => {
+    expect(endQuestion([past, open], "2026-10-07")).toBeNull();
+    expect(endQuestion([past, open], "2026-10-08")?.day).toBe(7);
+    const auto = { id: "a", startDate: "2026-08-01", endDate: "2026-08-20", autoEnded: true };
+    expect(endQuestion([auto, past, open], "2026-10-08")?.day).toBe(7);
+    expect(endQuestion([auto, open], "2026-10-06")?.day).toBe(5);
+  });
+
+  it("아직 하고 있어요를 누르면 2일 숨기고, 이미 지난 날을 다시 묻지 않는다", () => {
+    const snoozed = { ...open, askEndAgainOn: "2026-10-08" }; // 10.6에 누름
+    expect(endQuestion([snoozed], "2026-10-06")).toBeNull();
+    expect(endQuestion([snoozed], "2026-10-07")).toBeNull();
+    expect(endQuestion([snoozed], "2026-10-08")).toMatchObject({ date: "2026-10-07", day: 7 });
+  });
+
+  it("끝난 기록은 묻지 않는다", () => {
+    expect(endQuestion([{ ...open, endDate: "2026-10-06" }], "2026-10-06")).toBeNull();
+  });
+});
+
+describe("자동 종료 날짜", () => {
+  it("시작 후 10일이 지나면 대상이고, 종료일은 시작일 + 평균 기간 - 1", () => {
+    const open = { startDate: "2026-10-01", endDate: null };
+    expect(isOverdue(open, "2026-10-10")).toBe(false);
+    expect(isOverdue(open, "2026-10-11")).toBe(true);
+    expect(autoEndDate([open], open.startDate, "2026-10-11")).toBe("2026-10-05");
+    const past = { startDate: "2026-09-01", endDate: "2026-09-07" };
+    expect(autoEndDate([past, open], open.startDate, "2026-10-11")).toBe("2026-10-07");
+  });
+
+  it("오늘이나 다음 기록을 넘지 않는다", () => {
+    const long = { startDate: "2026-09-01", endDate: "2026-09-20" }; // 20일
+    const open = { startDate: "2026-10-01", endDate: null };
+    expect(autoEndDate([long, open], open.startDate, "2026-10-11")).toBe("2026-10-11");
+    const next = { startDate: "2026-10-03", endDate: null };
+    expect(autoEndDate([open, next], open.startDate, "2026-10-20")).toBe("2026-10-02");
+  });
+
+  it("자동 종료 기록은 기간 평균에서 빠지고 주기 간격에는 쓰인다", () => {
+    const records = periods([28, 28, 28]);
+    records[3] = { ...records[3], endDate: addDays(records[3].startDate, 19), autoEnded: true };
+    const result = estimate(records, [], lastStart(records));
+    expect(result.typicalPeriodDays).toBe(5);
+    expect(result.sampleSize).toBe(3);
+    expect(result.period?.startDate).toBe(addDays(lastStart(records), 28));
   });
 });
 

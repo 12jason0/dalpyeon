@@ -16,10 +16,12 @@ const MIN_CYCLE_DAYS = 18;
 const MAX_CYCLE_DAYS = 50;
 const MAX_FROM_MEDIAN = 10;
 const MIN_MARGIN_DAYS = 2;
-/** 종료일 없는 기록을 진행 중으로 보는 최대 일수. 넘으면 끝내기를 잊은 것으로 본다. */
-const OPEN_PERIOD_MAX_DAYS = 10;
+/** 시작 후 이만큼 지나도 종료일이 없으면 자동으로 끝낸다. */
+const AUTO_END_AFTER_DAYS = 10;
 
-export type PeriodInput = { id?: string; startDate: string; endDate?: string | null; excluded?: boolean };
+export type PeriodInput = {
+  id?: string; startDate: string; endDate?: string | null; excluded?: boolean; autoEnded?: boolean; askEndAgainOn?: string | null;
+};
 export type FactorInput = { startDate: string; endDate?: string | null };
 export type Interval = { from: string; to: string; days: number };
 export type PredictionStatus =
@@ -85,13 +87,46 @@ function marginDays(lengths: number[]) {
   return Math.max(MIN_MARGIN_DAYS, Math.ceil(Math.sqrt(mean(lengths.map((x) => (x - m) ** 2)))));
 }
 
+/** 최근 기록 6개 중 사람이 끝낸 기록의 평균 기간. 자동 종료는 앱이 정한 날짜라 뺀다. */
+function averagePeriodDays(periods: PeriodInput[]) {
+  const durations = [...periods].sort((a, b) => a.startDate.localeCompare(b.startDate)).slice(-6)
+    .filter((p) => p.endDate && !p.excluded && !p.autoEnded)
+    .map((p) => diffDays(p.endDate as string, p.startDate) + 1);
+  return durations.length ? roundHalfUp(mean(durations)) : null;
+}
+
+const expectedPeriodDays = (periods: PeriodInput[]) => averagePeriodDays(periods) ?? DEFAULT_PERIOD_DAYS;
+
+/** 종료일 없이 시작 후 10일이 지난 기록인지. */
+export const isOverdue = (p: Pick<PeriodInput, "startDate" | "endDate">, today: string) =>
+  !p.endDate && diffDays(today, p.startDate) >= AUTO_END_AFTER_DAYS;
+
+/** 자동 종료일: 시작일 + 평균 기간 - 1. 오늘이나 다음 기록을 넘지 않는다. */
+export function autoEndDate(periods: PeriodInput[], startDate: string, today: string) {
+  const next = periods.map((p) => p.startDate).filter((d) => d > startDate).sort()[0];
+  return [addDays(startDate, expectedPeriodDays(periods) - 1), today, ...(next ? [addDays(next, -1)] : [])].sort()[0];
+}
+
+/**
+ * 끝났는지 물어볼 때 돌려주는 값. 진행 중인 기록의 예상 종료일 다음 날부터 묻는다.
+ * "아직 하고 있어요" 뒤로는 이미 지난 날을 다시 묻지 않고 다시 묻는 날의 전날을 묻는다.
+ */
+export function endQuestion<T extends PeriodInput>(periods: T[], today: string) {
+  const current = currentPeriod(periods, today);
+  if (!current?.open) return null;
+  const again = periods.find((p) => p.startDate === current.startDate)?.askEndAgainOn;
+  const expected = addDays(current.startDate, expectedPeriodDays(periods) - 1);
+  if (today <= expected || (again && today < again)) return null;
+  const date = again && addDays(again, -1) > expected ? addDays(again, -1) : expected;
+  return { id: current.id, startDate: current.startDate, date, day: diffDays(date, current.startDate) + 1 };
+}
+
 /** 오늘 생리 중이면 며칠째인지. */
 export function currentPeriod<T extends PeriodInput>(list: T[], today = todaySeoul()) {
   const last = [...list].filter((p) => p.startDate <= today).sort((a, b) => b.startDate.localeCompare(a.startDate))[0];
   if (!last) return null;
-  const day = diffDays(today, last.startDate) + 1;
-  const ongoing = last.endDate ? last.endDate >= today : day <= OPEN_PERIOD_MAX_DAYS;
-  return ongoing ? { id: last.id as T["id"], startDate: last.startDate, day, open: !last.endDate } : null;
+  if (last.endDate && last.endDate < today) return null;
+  return { id: last.id as T["id"], startDate: last.startDate, day: diffDays(today, last.startDate) + 1, open: !last.endDate };
 }
 
 export function estimate(periods: PeriodInput[], factors: FactorInput[], asOf: string, usualCycle: number | null = null): Prediction {
@@ -111,11 +146,8 @@ export function estimate(periods: PeriodInput[], factors: FactorInput[], asOf: s
     .filter((p) => cutoff < p.startDate && p.startDate <= asOf)
     .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
-  // 종료일을 기록한 최근 월경의 평균 지속일. 없으면 실제 기록인 척하지 않고 null로 두고, 날짜 계산에만 5일을 쓴다.
-  const durations = ordered.slice(-6)
-    .filter((p) => p.endDate && !p.excluded)
-    .map((p) => diffDays(p.endDate as string, p.startDate) + 1);
-  const duration = durations.length ? roundHalfUp(mean(durations)) : null;
+  // 없으면 실제 기록인 척하지 않고 null로 두고, 날짜 계산에만 5일을 쓴다.
+  const duration = averagePeriodDays(ordered);
   const periodDays = duration ?? DEFAULT_PERIOD_DAYS;
 
   const current = currentPeriod(ordered, asOf);

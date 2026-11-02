@@ -17,7 +17,7 @@ import {
   clearSharingNotice, createInvite, disconnect, setSharingItem, tryClaim, updateSharing, PERMISSION_KEYS,
   type ClaimProblem,
 } from "@/lib/services/couples";
-import { deletePeriod, listPeriods, savePeriod, setUsualCycle } from "@/lib/services/periods";
+import { deletePeriod, listPeriods, savePeriod, setUsualCycle, snoozeEndQuestion } from "@/lib/services/periods";
 import {
   markNewsSeen, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
 } from "@/lib/services/push";
@@ -177,6 +177,14 @@ export async function endTodayAction(_: FormState, form: FormData): Promise<Form
     const period = (await listPeriods(db, user.id)).find((p) => p.id === form.get("id"));
     if (!period) throw new AppError("기록을 찾을 수 없어요");
     await savePeriod(db, user.id, { ...period, endDate: dayOf(form) });
+    refresh();
+  });
+}
+
+export async function snoozeEndAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    const user = await requireUser("recorder");
+    await snoozeEndQuestion(await getDb(), user.id, String(form.get("id")));
     refresh();
   });
 }

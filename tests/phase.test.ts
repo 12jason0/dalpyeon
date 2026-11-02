@@ -32,15 +32,14 @@ describe("주기 시기", () => {
     expect(phaseOn([], "2026-10-10")).toBeNull();
   });
 
-  it("종료일 없는 기록은 10일까지만 생리 중으로 본다", () => {
+  it("종료일 없는 기록은 끝날 때까지 생리 중으로 본다", () => {
     const open = [{ id: "1", startDate: "2026-10-01", endDate: null }];
-    expect(phaseOn(open, "2026-10-10")).toBe("menstrual");
-    expect(phaseOn(open, "2026-10-11")).toBeNull();
+    expect(phaseOn(open, "2026-10-11")).toBe("menstrual");
   });
 
   it("예상 범위가 지나거나 주기가 들쭉날쭉하면 시기를 단정하지 않는다", () => {
     expect(phaseOn(regular, "2026-10-31")).toBeNull(); // 범위는 10.26~10.30
-    const uneven = ["2026-05-01", "2026-05-26", "2026-07-05", "2026-08-02"].map((startDate, i) => ({ id: String(i), startDate, endDate: null }));
+    const uneven = ["2026-05-01", "2026-05-26", "2026-07-05", "2026-08-02"].map((startDate, i) => ({ id: String(i), startDate, endDate: startDate }));
     expect(phaseOn(uneven, "2026-08-20")).toBeNull();
   });
 });
