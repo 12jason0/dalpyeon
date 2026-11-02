@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getDb, type DB } from "@/lib/db";
 import { diffDays, formatDay, isMonth, monthGrid, shortDay, todaySeoul } from "@/lib/dates";
-import { CRESCENT, cycleLine, MOON_WAITING, moonShape } from "@/lib/moon";
+import { CRESCENT, cycleLine, MOON_WAITING, moonShape, nextRange } from "@/lib/moon";
 import { phaseOn } from "@/lib/phase";
 import { calendarMarks, DISCLAIMER, estimate } from "@/lib/prediction";
 import type { User } from "@/lib/services/auth";
@@ -12,8 +12,9 @@ import { CARE_PRESETS, getCare, RESPONSES } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { partnerView } from "@/lib/services/partner";
 import { newsFor } from "@/lib/services/push";
-import { currentPeriod, listPeriods } from "@/lib/services/periods";
+import { currentPeriod, listPeriods, usualCycle } from "@/lib/services/periods";
 import { currentUser } from "@/lib/session";
+import { checkSharingAction } from "./actions";
 import { CareForm } from "./_components/CareForm";
 import { CareCard, CareSummaryCard, Logo, MoonPhase, NewsDot, PhaseCards, recorderStatus, StatusLine } from "./_components/HomeCards";
 import { Landing } from "./_components/Landing";
@@ -70,12 +71,17 @@ async function careAndPartner(db: DB, user: User, today: string) {
 type CareAndPartner = ReturnType<typeof careAndPartner>;
 
 async function PartnerLink({ data }: { data: CareAndPartner }) {
-  const { partnerName } = await data;
+  const { partnerName, couple } = await data;
   if (!partnerName) return null;
   return (
-    <p className="mt-3 text-center text-sm text-muted">
-      {partnerName}님과 연결됨 · <Link href="/me/settings" className="link">연결 끊기</Link>
-    </p>
+    <>
+      <p className="mt-3 text-center text-sm text-muted">{partnerName}님과 연결됨</p>
+      {couple?.sharingNotice && (
+        <form action={checkSharingAction} className="text-center">
+          <button type="submit" className="link h-11 text-sm">{partnerName}님에게 보이는 항목 확인하기</button>
+        </form>
+      )}
+    </>
   );
 }
 
@@ -101,9 +107,9 @@ async function CareSlot({ data }: { data: CareAndPartner }) {
 async function RecorderHome({ user, month }: { user: User; month: string }) {
   const db = await getDb();
   const today = todaySeoul();
-  const periods = await listPeriods(db, user.id);
+  const [periods, usual] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id)]);
   const data = careAndPartner(db, user, today);
-  const prediction = estimate(periods, [], today);
+  const prediction = estimate(periods, [], today, usual);
   const current = currentPeriod(periods, today);
   const { first, last } = monthGrid(month);
 
@@ -167,7 +173,7 @@ async function PartnerHome({ user, month }: { user: User; month: string }) {
   const line = cycleLine(view.current, view.nextPeriod?.startDate ?? null, view.fertileWindow, today) ?? (p.predictions ? MOON_WAITING : null);
   const hero = view.paused ? <Hero label={`${name}님은`} big="잠시 쉬는 중" sub="지금은 공유를 잠시 멈췄어요." />
     : nothingShared ? <StatusLine main="아직 공유된 항목이 없어요" sub={`${name}님이 보여줄 항목을 고르면 여기에 나타나요.`} />
-    : line && <StatusLine main={line} />;
+    : line && <StatusLine main={line} sub={nextRange(view.current, view.nextPeriod, today)} />;
 
   // 오늘 요청이 있으면 달 바로 아래로. 지난 요청은 아래 목록에 그대로 둔다.
   const todayCare = view.care.find((c) => c.day === today);

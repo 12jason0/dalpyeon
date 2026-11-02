@@ -1,13 +1,15 @@
 import { randomInt, randomUUID } from "node:crypto";
 import { and, count, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { cache } from "react";
 import type { DB } from "../db";
-import { blocks, comments, posts, reports, users, type Board } from "../db/schema";
+import { blocks, comments, posts, reports, users } from "../db/schema";
 import { fail } from "../errors";
 import { limit, type User } from "./auth";
 import { activeCouple } from "./couples";
 
-export const BOARDS: Record<Board, string> = { question: "질문", tip: "팁" };
+export const PAGE_SIZE = 20;
+const MAX_PAGES = 50;
 export const REPORTS_TO_HIDE = 3;
 export const WRITE_LIMIT = 5;
 export const WRITE_WINDOW_SECONDS = 600;
@@ -19,10 +21,10 @@ export type Access = { admin: boolean; member: boolean; nickname: string | null 
 // 화면에 내려가는 값에는 작성자 id·이메일·앱 닉네임을 넣지 않는다. 내 글인지만 mine으로 알린다.
 // 글을 쓰려면 닉네임이 있어야 하므로, 작성자 닉네임이 비어 있으면 탈퇴한 사람이다.
 export type PostRow = {
-  id: string; board: Board; title: string; nickname: string; commentCount: number;
+  id: string; title: string; nickname: string; commentCount: number;
   createdAt: Date; hidden: boolean; mine: boolean;
 };
-export type CommentView = { id: string; body: string; nickname: string; createdAt: Date; hidden: boolean; mine: boolean };
+export type CommentView = { id: string; body: string; nickname: string; createdAt: Date; hidden: boolean; mine: boolean; replies: CommentView[] };
 export type PostView = PostRow & { body: string; comments: CommentView[] };
 
 /** 활성 연결이 있는 파트너만 회원이다. 역할과 연결을 매번 함께 확인한다. */
@@ -97,36 +99,54 @@ async function openPost(db: DB, userId: string, postId: string) {
 async function openComment(db: DB, userId: string, commentId: string) {
   const [comment] = await db.select().from(comments).where(eq(comments.id, commentId)).limit(1);
   if (!comment || comment.hidden || (await blockedIds(db, userId)).includes(comment.authorId)) fail("댓글을 찾을 수 없어요", 404);
-  await openPost(db, userId, comment.postId); // 숨긴 글의 댓글은 글과 함께 닫힌다
+  // 숨긴 글의 댓글, 보이지 않는 댓글의 답글은 함께 닫힌다
+  if (comment.parentId) await openComment(db, userId, comment.parentId);
+  else await openPost(db, userId, comment.postId);
   return comment;
 }
+
+const parent = alias(comments, "parent");
+
+/** 운영자가 아니면: 숨겨지지 않았고 차단 관계가 아닌 댓글. 답글은 원 댓글도 그래야 한다. parent를 left join해서 쓴다. */
+const visibleComments = (blocked: string[], admin: boolean) => (admin ? [] : [
+  eq(comments.hidden, false),
+  notInArray(comments.authorId, blocked),
+  or(isNull(comments.parentId), and(eq(parent.hidden, false), notInArray(parent.authorId, blocked))),
+]);
 
 async function commentCounts(db: DB, postIds: string[], blocked: string[], admin: boolean) {
   if (!postIds.length) return new Map<string, number>();
   const rows = await db.select({ postId: comments.postId, total: count() }).from(comments)
-    .where(and(inArray(comments.postId, postIds), ...(admin ? [] : [eq(comments.hidden, false), notInArray(comments.authorId, blocked)])))
+    .leftJoin(parent, eq(parent.id, comments.parentId))
+    .where(and(inArray(comments.postId, postIds), ...visibleComments(blocked, admin)))
     .groupBy(comments.postId);
   return new Map(rows.map((r) => [r.postId, r.total]));
 }
 
-export async function listPosts(db: DB, user: User, board: Board): Promise<PostRow[]> {
+/** 최신순으로 page쪽까지 모두 돌려준다. 더보기는 ?page=만 늘리면 된다. */
+export async function listPosts(db: DB, user: User, page = 1): Promise<{ posts: PostRow[]; hasMore: boolean }> {
   const { admin } = await requireReader(db, user);
   const blocked = admin ? [] : await blockedIds(db, user.id);
+  const shown = Math.min(Math.max(1, Math.floor(page) || 1), MAX_PAGES) * PAGE_SIZE;
   const rows = await db.select({
-    id: posts.id, board: posts.board, title: posts.title, nickname: users.communityNickname,
+    id: posts.id, title: posts.title, nickname: users.communityNickname,
     createdAt: posts.createdAt, hidden: posts.hidden, authorId: posts.authorId,
   }).from(posts).innerJoin(users, eq(users.id, posts.authorId))
-    .where(and(eq(posts.board, board), ...(admin ? [] : [eq(posts.hidden, false), notInArray(posts.authorId, blocked)])))
-    .orderBy(desc(posts.createdAt)).limit(50);
-  const counts = await commentCounts(db, rows.map((r) => r.id), blocked, admin);
-  return rows.map(({ authorId, nickname, ...r }) => ({
-    ...r, nickname: nickname ?? WITHDRAWN_NAME, commentCount: counts.get(r.id) ?? 0, mine: authorId === user.id,
-  }));
+    .where(admin ? undefined : and(eq(posts.hidden, false), notInArray(posts.authorId, blocked)))
+    .orderBy(desc(posts.createdAt), desc(posts.id)).limit(shown + 1);
+  const page1 = rows.slice(0, shown);
+  const counts = await commentCounts(db, page1.map((r) => r.id), blocked, admin);
+  return {
+    hasMore: rows.length > shown,
+    posts: page1.map(({ authorId, nickname, ...r }) => ({
+      ...r, nickname: nickname ?? WITHDRAWN_NAME, commentCount: counts.get(r.id) ?? 0, mine: authorId === user.id,
+    })),
+  };
 }
 
 /** 내가 쓴 글. 연결을 끊었거나 글이 숨겨져도 지울 수 있도록 접근 조건 없이 보여준다. */
-export const myPosts = cache(async (db: DB, user: User): Promise<Pick<PostRow, "id" | "title" | "board" | "createdAt" | "hidden">[]> => {
-  return db.select({ id: posts.id, title: posts.title, board: posts.board, createdAt: posts.createdAt, hidden: posts.hidden })
+export const myPosts = cache(async (db: DB, user: User): Promise<Pick<PostRow, "id" | "title" | "createdAt" | "hidden">[]> => {
+  return db.select({ id: posts.id, title: posts.title, createdAt: posts.createdAt, hidden: posts.hidden })
     .from(posts).where(eq(posts.authorId, user.id)).orderBy(desc(posts.createdAt));
 });
 
@@ -138,14 +158,17 @@ export async function getPost(db: DB, user: User, postId: string): Promise<PostV
   if (!row || (!admin && (row.post.hidden || blocked.includes(row.post.authorId)))) fail("글을 찾을 수 없어요", 404);
   const list = await db.select({ comment: comments, nickname: users.communityNickname })
     .from(comments).innerJoin(users, eq(users.id, comments.authorId))
-    .where(and(eq(comments.postId, postId), ...(admin ? [] : [eq(comments.hidden, false), notInArray(comments.authorId, blocked)])))
+    .leftJoin(parent, eq(parent.id, comments.parentId))
+    .where(and(eq(comments.postId, postId), ...visibleComments(blocked, admin)))
     .orderBy(comments.createdAt);
-  const { id, board, title, body, createdAt, hidden, authorId } = row.post;
+  const view = ({ comment: c, nickname }: (typeof list)[number]): CommentView => ({
+    id: c.id, body: c.body, createdAt: c.createdAt, hidden: c.hidden, mine: c.authorId === user.id, nickname: nickname ?? WITHDRAWN_NAME,
+    replies: list.filter((r) => r.comment.parentId === c.id).map(view),
+  });
+  const { id, title, body, createdAt, hidden, authorId } = row.post;
   return {
-    id, board, title, body, createdAt, hidden, mine: authorId === user.id, nickname: row.nickname ?? WITHDRAWN_NAME, commentCount: list.length,
-    comments: list.map(({ comment: c, nickname }) => ({
-      id: c.id, body: c.body, createdAt: c.createdAt, hidden: c.hidden, mine: c.authorId === user.id, nickname: nickname ?? WITHDRAWN_NAME,
-    })),
+    id, title, body, createdAt, hidden, mine: authorId === user.id, nickname: row.nickname ?? WITHDRAWN_NAME, commentCount: list.length,
+    comments: list.filter((c) => !c.comment.parentId).map(view),
   };
 }
 
@@ -155,19 +178,13 @@ function cleanText(value: unknown, label: string, max: number) {
   return text;
 }
 
-function cleanBoard(value: unknown): Board {
-  if (value !== "question" && value !== "tip") fail("게시판을 골라 주세요");
-  return value;
-}
-
-export async function createPost(db: DB, user: User, input: { board: unknown; title: unknown; body: unknown }) {
+export async function createPost(db: DB, user: User, input: { title: unknown; body: unknown }) {
   await requireWriter(db, user);
-  const board = cleanBoard(input.board);
   const title = cleanText(input.title, "제목", 60);
   const body = cleanText(input.body, "본문", 2000);
   await limit(db, "community-post", user.id, WRITE_LIMIT, WRITE_WINDOW_SECONDS);
   const id = randomUUID();
-  await db.insert(posts).values({ id, authorId: user.id, board, title, body });
+  await db.insert(posts).values({ id, authorId: user.id, title, body });
   return id;
 }
 
@@ -186,13 +203,18 @@ export async function deletePost(db: DB, user: User, postId: string) {
   if (!deleted.length) fail("글을 찾을 수 없어요", 404);
 }
 
-export async function createComment(db: DB, user: User, postId: string, rawBody: unknown) {
+/** parentId를 주면 답글. 답글은 댓글에 한 단계만 달 수 있다. */
+export async function createComment(db: DB, user: User, postId: string, rawBody: unknown, parentId: string | null = null) {
   await requireWriter(db, user);
   await openPost(db, user.id, postId);
+  if (parentId) {
+    const target = await openComment(db, user.id, parentId);
+    if (target.postId !== postId || target.parentId) fail("답글을 달 수 없는 댓글이에요");
+  }
   const body = cleanText(rawBody, "댓글", 500);
   await limit(db, "community-comment", user.id, WRITE_LIMIT, WRITE_WINDOW_SECONDS);
   const id = randomUUID();
-  await db.insert(comments).values({ id, postId, authorId: user.id, body });
+  await db.insert(comments).values({ id, postId, parentId, authorId: user.id, body });
   return id;
 }
 

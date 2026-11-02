@@ -4,7 +4,7 @@ import { calendarMarks, estimate, type CalendarMark } from "../prediction";
 import type { User } from "./auth";
 import { sharedCare, type CareView } from "./care";
 import { activeCouple, otherNickname, requireRole } from "./couples";
-import { currentPeriod, listPeriods } from "./periods";
+import { currentPeriod, listPeriods, usualCycle } from "./periods";
 import type { DB } from "../db";
 import type { Permissions } from "../db/schema";
 
@@ -31,8 +31,8 @@ export async function partnerView(db: DB, user: User, today = todaySeoul(), mont
   requireRole(user, "partner");
   const couple = await activeCouple(db, user.id);
   if (!couple) return null;
-  const [recorderNickname, all, care] = await Promise.all([
-    otherNickname(db, couple, user), couple.paused ? [] : listPeriods(db, couple.recorderId), sharedCare(db, couple, today),
+  const [recorderNickname, all, usual, care] = await Promise.all([
+    otherNickname(db, couple, user), couple.paused ? [] : listPeriods(db, couple.recorderId), usualCycle(db, couple.recorderId), sharedCare(db, couple, today),
   ]);
   const base: PartnerView = {
     recorderNickname,
@@ -44,13 +44,13 @@ export async function partnerView(db: DB, user: User, today = todaySeoul(), mont
   const p = couple.permissions;
   // 원본 기록: 공유 시작일 이후에 시작한 것만
   const visible = all.filter((x) => x.startDate >= couple.shareFrom);
+  const cur = p.periods ? currentPeriod(visible, today) : null;
   if (p.periods) {
-    const cur = currentPeriod(visible, today);
     base.current = cur ? { day: cur.day } : null;
     base.recentPeriods = visible.slice(-6).reverse().map((x) => ({ startDate: x.startDate, endDate: x.endDate }));
   }
   // 예측: 비공개 과거 기록까지 써서 계산하되, 결과 날짜만 보여준다
-  const full = p.predictions || p.fertility ? estimate(all, [], today) : null;
+  const full = p.predictions || p.fertility ? estimate(all, [], today, usual) : null;
   if (p.predictions && full?.period) {
     base.moon = moonShape(full, today);
     base.nextPeriod = { startDate: full.period.startDate, earliestStart: full.period.earliestStart, latestStart: full.period.latestStart };
@@ -60,7 +60,13 @@ export async function partnerView(db: DB, user: User, today = todaySeoul(), mont
   const { first, last } = monthGrid(month);
   base.calendar = calendarMarks(
     p.periods ? visible : [],
-    { period: p.predictions ? full?.period ?? null : null, fertileWindow: p.fertility ? full?.fertileWindow ?? null : null, ovulation: null },
+    {
+      period: p.predictions ? full?.period ?? null : null,
+      // 남은 예상 기간은 예측이면서 진행 중이라는 사실이기도 해서, 그 기록이 보일 때만 내려준다.
+      ongoing: p.predictions && cur?.open ? full?.ongoing ?? null : null,
+      fertileWindow: p.fertility ? full?.fertileWindow ?? null : null,
+      ovulation: null,
+    },
     first, last, today,
   );
   base.care = care;

@@ -84,7 +84,7 @@ async function quietly(work: () => Promise<void>) {
 export function notifyConnected(db: DB, partner: User, sender?: Sender) {
   return quietly(async () => {
     const couple = await activeCouple(db, partner.id);
-    if (couple?.partnerId === partner.id) await sendPush(db, couple.recorderId, { body: "파트너가 연결됐어요", url: "/connect?sharing=new" }, sender);
+    if (couple?.partnerId === partner.id) await sendPush(db, couple.recorderId, { body: "파트너가 연결됐어요", url: "/connect" }, sender);
   });
 }
 
@@ -118,13 +118,13 @@ export async function setReminder(db: DB, user: User, on: boolean) {
 
 /** 하루 한 번: 예정일 3일 전인 기록자 본인에게만 보낸다. 같은 예정일로는 한 번만 보낸다. */
 export async function sendReminders(db: DB, today = todaySeoul(), sender?: Sender) {
-  const rows = await db.selectDistinct({ id: users.id }).from(users)
+  const rows = await db.selectDistinct({ id: users.id, usual: users.usualCycleDays }).from(users)
     .innerJoin(pushSubscriptions, eq(pushSubscriptions.userId, users.id))
     .where(and(eq(users.role, "recorder"), eq(users.reminderEnabled, true)));
   let sent = 0;
-  for (const { id } of rows) {
+  for (const { id, usual } of rows) {
     await quietly(async () => {
-      const prediction = estimate(await listPeriods(db, id), [], today);
+      const prediction = estimate(await listPeriods(db, id), [], today, usual);
       const expected = prediction.period?.startDate;
       if (!expected || diffDays(expected, today) !== REMINDER_DAYS) return;
       const claimed = await db.update(users).set({ reminderSentFor: expected })

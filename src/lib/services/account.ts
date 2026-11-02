@@ -29,7 +29,7 @@ export async function withdraw(db: DB, user: User, fetcher?: typeof fetch) {
     await tx.delete(blocks).where(eq(blocks.blockerId, user.id));
     await tx.update(users).set({
       email: null, passwordHash: null, kakaoId: null, role: "recorder", nickname: WITHDRAWN_NAME, isAdmin: false, communityNickname: null,
-      healthConsentAt: null, reminderEnabled: false, reminderSentFor: null, newsSeenAt: null,
+      healthConsentAt: null, reminderEnabled: false, reminderSentFor: null, newsSeenAt: null, usualCycleDays: null,
     }).where(eq(users.id, user.id));
     return me?.kakaoId ?? null;
   });

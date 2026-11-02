@@ -14,10 +14,10 @@ import {
   type Target,
 } from "@/lib/services/community";
 import {
-  createInvite, disconnect, setSharingItem, tryClaim, updateSharing, PERMISSION_KEYS,
+  clearSharingNotice, createInvite, disconnect, setSharingItem, tryClaim, updateSharing, PERMISSION_KEYS,
   type ClaimProblem,
 } from "@/lib/services/couples";
-import { deletePeriod, listPeriods, savePeriod } from "@/lib/services/periods";
+import { deletePeriod, listPeriods, savePeriod, setUsualCycle } from "@/lib/services/periods";
 import {
   markNewsSeen, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
 } from "@/lib/services/push";
@@ -181,6 +181,13 @@ export async function endTodayAction(_: FormState, form: FormData): Promise<Form
   });
 }
 
+export async function saveUsualCycleAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    await setUsualCycle(await getDb(), await requireUser("recorder"), form.get("usualCycle"));
+    refresh();
+  });
+}
+
 export async function deletePeriodAction(form: FormData) {
   const user = await requireUser("recorder");
   await deletePeriod(await getDb(), user.id, String(form.get("id")));
@@ -219,6 +226,13 @@ export async function toggleSharingAction(key: string, on: boolean): Promise<For
     await setSharingItem(await getDb(), user, key, on);
     refresh();
   });
+}
+
+/** 홈의 확인 링크. 한 번 누르면 사라지고 공유 설정으로 간다. */
+export async function checkSharingAction() {
+  await clearSharingNotice(await getDb(), await requireUser("recorder"));
+  refresh();
+  redirect("/connect");
 }
 
 export async function disconnectAction() {
@@ -267,7 +281,7 @@ export async function agreeAction(_: FormState, form: FormData): Promise<FormSta
     refresh();
   }, form, ["nickname"]);
   if (result?.error) return result;
-  redirect(`/community/new?board=${form.get("board") === "tip" ? "tip" : "question"}`);
+  redirect("/community/new");
 }
 
 export async function savePostAction(_: FormState, form: FormData): Promise<FormState> {
@@ -277,7 +291,7 @@ export async function savePostAction(_: FormState, form: FormData): Promise<Form
     const db = await getDb();
     const input = { title: form.get("title"), body: form.get("body") };
     if (id) await updatePost(db, user, id, input);
-    else id = await createPost(db, user, { ...input, board: form.get("board") });
+    else id = await createPost(db, user, input);
     refresh();
   }, form, ["title", "body"]);
   if (result?.error) return result;
@@ -298,7 +312,7 @@ export async function saveCommentAction(_: FormState, form: FormData): Promise<F
     const user = await requireUser("partner");
     const db = await getDb();
     if (id) await updateComment(db, user, id, form.get("body"));
-    else await createComment(db, user, postId, form.get("body"));
+    else await createComment(db, user, postId, form.get("body"), (form.get("parentId") as string) || null);
     refresh();
   }, form, ["body"]);
   if (result?.error || !id) return result;

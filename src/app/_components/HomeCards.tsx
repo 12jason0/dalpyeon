@@ -1,7 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { PHASES } from "@/lib/content/phases";
 import { formatDay } from "@/lib/dates";
-import { cycleLine, MOON_WAITING, moonPath, type MoonShape } from "@/lib/moon";
+import { cycleLine, MOON_WAITING, moonPath, nextRange, type MoonShape } from "@/lib/moon";
 import type { Phase } from "@/lib/phase";
 import type { Prediction } from "@/lib/prediction";
 import { CARE_PRESETS, RESPONSES, type CareView } from "@/lib/services/care";
@@ -42,9 +42,12 @@ type Status = { main: string; sub?: string };
 /** 기록자 홈의 달 아래 문구. */
 export function recorderStatus(prediction: Prediction, current: { day: number } | null, today: string): Status {
   if (!current && prediction.status === "needs_record_review") {
-    return { main: "기록 확인 필요", sub: "간격이 15일보다 짧거나 90일보다 긴 기록이 있어요. 날짜가 맞는지 확인해 주세요." };
+    return { main: "기록 확인 필요", sub: "기간이 31일보다 긴 기록이 있어요. 날짜가 맞는지 확인해 주세요." };
   }
-  return { main: cycleLine(current, prediction.period?.startDate ?? null, prediction.fertileWindow, today) ?? MOON_WAITING };
+  return {
+    main: cycleLine(current, prediction.period?.startDate ?? null, prediction.fertileWindow, today) ?? MOON_WAITING,
+    sub: nextRange(current, prediction.period, today),
+  };
 }
 
 export function StatusLine({ main, sub }: Status) {

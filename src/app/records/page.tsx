@@ -1,14 +1,15 @@
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { dayRange, diffDays, formatDay, isDay, isMonth, monthDay, monthGrid, shortDay, todaySeoul } from "@/lib/dates";
-import { calendarMarks, estimate, type CalendarMark } from "@/lib/prediction";
-import { currentPeriod, listPeriods, type Period } from "@/lib/services/periods";
+import { nextRange } from "@/lib/moon";
+import { calendarMarks, estimate, predictionError, type CalendarMark } from "@/lib/prediction";
+import { currentPeriod, listPeriods, usualCycle, type Period } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { deletePeriodAction } from "../actions";
 import { kindOf } from "../_components/MonthCalendar";
 import { Nav } from "../_components/Nav";
 import { EndTodayButton } from "../_components/PeriodButtons";
-import { PeriodForm } from "../_components/PeriodForm";
+import { PeriodForm, UsualCycleForm } from "../_components/PeriodForm";
 import { RecordsCalendar } from "../_components/RecordsCalendar";
 import { Row, Section } from "../_components/Section";
 
@@ -60,8 +61,12 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
   const month = isMonth(params.month) ? params.month : (pickedDay ?? today).slice(0, 7);
   const day = pickedDay?.startsWith(month) ? pickedDay : null;
 
-  const periods = await listPeriods(await getDb(), user.id);
-  const prediction = estimate(periods, [], today);
+  const db = await getDb();
+  const [periods, usual] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id)]);
+  const prediction = estimate(periods, [], today, usual);
+  const enough = prediction.sampleSize >= 3;
+  const accuracy = enough ? predictionError(periods, usual) : null;
+  const range = nextRange(null, prediction.period, today);
   const { first, last, cells } = monthGrid(month);
   const marks = calendarMarks(periods, prediction, first, last, today);
   const editing = periods.find((p) => p.id === params.edit) ?? null;
@@ -84,18 +89,28 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         )}
       </RecordsCalendar>
 
-      {prediction.typicalCycleDays && (
-        <Section title="내 주기">
-          <Row label="보통 주기" value={`${prediction.typicalCycleDays}일`} />
-          {prediction.observedMinDays !== prediction.observedMaxDays && (
-            <Row label="최근 범위" value={`${prediction.observedMinDays}–${prediction.observedMaxDays}일`} />
-          )}
-          {prediction.typicalPeriodDays && <Row label="보통 기간" value={`${prediction.typicalPeriodDays}일`} />}
+      <Section title="내 주기">
+        {prediction.typicalCycleDays && <Row label="보통 주기" value={`${prediction.typicalCycleDays}일`} />}
+        {prediction.sampleSize > 0 && prediction.observedMinDays !== prediction.observedMaxDays && (
+          <Row label="최근 범위" value={`${prediction.observedMinDays}–${prediction.observedMaxDays}일`} />
+        )}
+        {prediction.typicalPeriodDays && <Row label="보통 기간" value={`${prediction.typicalPeriodDays}일`} />}
+        {range && <Row label="다음 생리 예상" value={range} />}
+        {accuracy && <Row label="예측 정확도" value={`최근 예측은 평균 ${accuracy.days}일 차이`} />}
+        {prediction.sampleSize > 0 && (
           <p className="pt-4 text-[13px] leading-relaxed text-muted">
-            최근 {prediction.sampleSize}번의 간격({prediction.intervals.map((i) => i.days).join(" · ")}일)으로 계산했어요.
+            최근 {prediction.sampleSize}번의 간격({prediction.intervals.map((i) => i.days).join(" · ")}일)으로 계산했어요. 최근 주기일수록 크게 반영해요.
           </p>
-        </Section>
-      )}
+        )}
+        {!enough && periods.length > 0 && <p className="pt-4 text-[13px] leading-relaxed text-muted">기록이 쌓일수록 정확해져요.</p>}
+        {prediction.outlierIntervals.length > 0 && (
+          <div className="pt-6">
+            <h3 className="text-[13px] font-medium text-muted">계산에서 뺀 주기</h3>
+            {prediction.outlierIntervals.map((i) => <Row key={i.from} label={dayRange(i.from, i.to)} value={`${i.days}일`} />)}
+          </div>
+        )}
+        <UsualCycleForm initial={usual} />
+      </Section>
 
       <details id="direct" className="mt-16" open={Boolean(editing)}>
         <summary className="cursor-pointer list-none text-sm text-muted underline underline-offset-4">직접 입력·전체 기록</summary>

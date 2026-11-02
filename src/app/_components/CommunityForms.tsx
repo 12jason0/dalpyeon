@@ -5,11 +5,10 @@ import { ErrorText, Submit } from "./Submit";
 
 type Action = (state: FormState, form: FormData) => Promise<FormState>;
 
-export function ConsentForm({ board }: { board: string }) {
+export function ConsentForm() {
   const [state, action] = useActionState<FormState, FormData>(agreeAction, null);
   return (
     <form action={action} className="space-y-6">
-      <input type="hidden" name="board" value={board} />
       <label className="block">
         <span className="text-sm text-muted">이야기에서 쓸 닉네임 (비워 두면 무작위로 정해져요)</span>
         <input name="nickname" className="field" maxLength={12} placeholder="예: 편-1234" defaultValue={state?.values?.nickname} />
@@ -20,11 +19,11 @@ export function ConsentForm({ board }: { board: string }) {
   );
 }
 
-export function PostForm({ board, post }: { board: string; post?: { id: string; title: string; body: string } }) {
+export function PostForm({ post }: { post?: { id: string; title: string; body: string } }) {
   const [state, action] = useActionState<FormState, FormData>(savePostAction, null);
   return (
     <form action={action} className="space-y-6">
-      {post ? <input type="hidden" name="id" value={post.id} /> : <input type="hidden" name="board" value={board} />}
+      {post && <input type="hidden" name="id" value={post.id} />}
       <label className="block">
         <span className="text-sm text-muted">제목</span>
         <input name="title" className="field" maxLength={60} required defaultValue={state?.values?.title ?? post?.title} />
@@ -39,18 +38,20 @@ export function PostForm({ board, post }: { board: string; post?: { id: string; 
   );
 }
 
-export function CommentForm({ postId, comment }: { postId: string; comment?: { id: string; body: string } }) {
+/** parentId를 주면 그 댓글의 답글을 쓴다. */
+export function CommentForm({ postId, parentId, comment }: { postId: string; parentId?: string; comment?: { id: string; body: string } }) {
   const [state, action] = useActionState<FormState, FormData>(saveCommentAction, null);
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="postId" value={postId} />
       {comment && <input type="hidden" name="id" value={comment.id} />}
+      {parentId && <input type="hidden" name="parentId" value={parentId} />}
       <textarea
-        name="body" className="field min-h-20 resize-y" maxLength={500} required aria-label="댓글"
-        placeholder="댓글을 남겨 주세요" defaultValue={state?.values?.body ?? comment?.body}
+        name="body" className="field min-h-20 resize-y" maxLength={500} required aria-label={parentId ? "답글" : "댓글"}
+        placeholder={parentId ? "답글을 남겨 주세요" : "댓글을 남겨 주세요"} defaultValue={state?.values?.body ?? comment?.body}
       />
       <ErrorText message={state?.error} />
-      <Submit>{comment ? "고치기" : "댓글 달기"}</Submit>
+      <Submit>{comment ? "고치기" : parentId ? "답글 달기" : "댓글 달기"}</Submit>
     </form>
   );
 }

@@ -2,10 +2,11 @@ import { randomInt, randomUUID } from "node:crypto";
 import { and, eq, gt, inArray, or, sql } from "drizzle-orm";
 import { cache } from "react";
 import type { DB } from "../db";
-import { couples, invitations, NO_PERMISSIONS, users, type Permissions } from "../db/schema";
+import { couples, DEFAULT_PERMISSIONS, invitations, NO_PERMISSIONS, users, type Permissions } from "../db/schema";
 import { isDay, todaySeoul } from "../dates";
 import { AppError, fail } from "../errors";
 import { limit, sha256, type User } from "./auth";
+import { currentPeriod, listPeriods } from "./periods";
 
 export type Couple = typeof couples.$inferSelect;
 export const INVITE_MINUTES = 15;
@@ -77,10 +78,11 @@ export async function claimInvite(db: DB, user: User, rawCode: unknown, today = 
     const claimed = await tx.update(invitations).set({ status: "approved", claimantId: user.id })
       .where(and(eq(invitations.id, invite.id), usable())).returning({ id: invitations.id });
     if (!claimed.length) fail("사용할 수 없는 코드예요. 만료됐을 수 있어요", 404);
-    // 연결해도 공유는 전부 꺼진 상태로 시작. 공유 시작일은 오늘.
+    // 공유 시작일은 오늘, 생리 중이면 이번 생리가 보이도록 그 시작일.
+    const current = currentPeriod(await listPeriods(tx, invite.recorderId), today);
     const [couple] = await tx.insert(couples).values({
       id: randomUUID(), recorderId: invite.recorderId, partnerId: user.id, status: "active", paused: false,
-      permissions: NO_PERMISSIONS, shareFrom: today,
+      permissions: DEFAULT_PERMISSIONS, shareFrom: current?.startDate ?? today, sharingNotice: true,
     }).returning();
     await tx.update(users).set({ role: "partner" }).where(eq(users.id, user.id));
     // 두 사람이 만든 다른 코드와 예전에 남은 대기 요청은 모두 무효
@@ -133,6 +135,11 @@ export async function setSharingItem(db: DB, user: User, key: unknown, on: unkno
   await db.update(couples)
     .set(item ? { permissions: sql`jsonb_set(${couples.permissions}, ${`{${item}}`}::text[], to_jsonb(${value}::boolean))` } : { paused: value })
     .where(and(eq(couples.id, couple.id), eq(couples.status, "active")));
+}
+
+/** 기록자가 홈의 확인 링크를 누르면 다시 띄우지 않는다. */
+export async function clearSharingNotice(db: DB, user: User) {
+  await db.update(couples).set({ sharingNotice: false }).where(and(eq(couples.recorderId, user.id), eq(couples.status, "active")));
 }
 
 /**

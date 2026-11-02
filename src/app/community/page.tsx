@@ -1,42 +1,31 @@
 import Link from "next/link";
 import { getDb } from "@/lib/db";
-import type { Board } from "@/lib/db/schema";
 import { timeAgo } from "@/lib/dates";
-import { BOARDS, communityAccess, listPosts, myPosts } from "@/lib/services/community";
+import { communityAccess, listPosts, myPosts } from "@/lib/services/community";
 import { requireUser } from "@/lib/session";
 import { Nav } from "../_components/Nav";
 import { Gate, MyPosts } from "./_shared";
 
 export const dynamic = "force-dynamic";
 
-export default async function CommunityPage({ searchParams }: { searchParams: Promise<{ board?: string }> }) {
+export default async function CommunityPage({ searchParams }: { searchParams: Promise<{ page?: string }> }) {
   const user = await requireUser();
   const db = await getDb();
   const access = await communityAccess(db, user);
   if (!access.admin && !access.member) return <Gate user={user} />;
 
-  const board: Board = (await searchParams).board === "tip" ? "tip" : "question";
+  const page = Math.max(1, Math.floor(Number((await searchParams).page)) || 1);
   // myPosts는 아래 MyPosts가 쓰는 결과를 미리 받아 둔다
-  const [list] = await Promise.all([listPosts(db, user, board), access.member && myPosts(db, user)]);
+  const [{ posts, hasMore }] = await Promise.all([listPosts(db, user, page), access.member && myPosts(db, user)]);
   return (
     <>
       <div className="flex items-baseline justify-between">
         <h1 className="text-4xl font-semibold tracking-tight">이야기</h1>
-        {access.member && <Link href={`/community/new?board=${board}`} className="link text-[15px]">글쓰기</Link>}
+        {access.member && <Link href="/community/new" className="link text-[15px]">글쓰기</Link>}
       </div>
-      <div className="mt-8 flex gap-6 border-b border-line">
-        {(Object.entries(BOARDS) as [Board, string][]).map(([key, label]) => (
-          <Link
-            key={key} href={`/community?board=${key}`} aria-current={key === board ? "page" : undefined}
-            className={`-mb-px border-b-2 py-3 text-[17px] ${key === board ? "border-ink font-semibold" : "border-transparent text-muted"}`}
-          >
-            {label}
-          </Link>
-        ))}
-      </div>
-      {list.length === 0 && <p className="mt-10 text-[17px] text-muted">아직 글이 없어요.</p>}
-      <ul>
-        {list.map((p) => (
+      {posts.length === 0 && <p className="mt-10 text-[17px] text-muted">아직 글이 없어요.</p>}
+      <ul className="mt-6 border-t border-line">
+        {posts.map((p) => (
           <li key={p.id} className="border-b border-line">
             <Link href={`/community/${p.id}`} className="block py-4">
               <span className="block text-[17px] leading-snug">{p.title}</span>
@@ -47,6 +36,7 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
           </li>
         ))}
       </ul>
+      {hasMore && <Link href={`/community?page=${page + 1}`} scroll={false} className="link mt-6 block text-center text-[15px]">더보기</Link>}
       {access.member && <MyPosts user={user} member />}
       <Nav role={user.role} active="community" />
     </>

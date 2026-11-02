@@ -1,6 +1,5 @@
 /** 오늘이 주기의 어느 시기인지. 예측이 불확실하면 지어내지 않고 null을 돌려준다. */
-import { estimate, type PeriodInput } from "./prediction";
-import { currentPeriod } from "./services/periods";
+import { currentPeriod, estimate, type PeriodInput } from "./prediction";
 
 export type Phase = "menstrual" | "follicular" | "fertile" | "luteal";
 

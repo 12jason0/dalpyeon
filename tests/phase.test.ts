@@ -39,7 +39,7 @@ describe("주기 시기", () => {
   });
 
   it("예상 범위가 지나거나 주기가 들쭉날쭉하면 시기를 단정하지 않는다", () => {
-    expect(phaseOn(regular, "2026-10-29")).toBeNull();
+    expect(phaseOn(regular, "2026-10-31")).toBeNull(); // 범위는 10.26~10.30
     const uneven = ["2026-05-01", "2026-05-26", "2026-07-05", "2026-08-02"].map((startDate, i) => ({ id: String(i), startDate, endDate: null }));
     expect(phaseOn(uneven, "2026-08-20")).toBeNull();
   });

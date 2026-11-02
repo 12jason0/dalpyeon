@@ -1,11 +1,13 @@
 import { sql } from "drizzle-orm";
 import {
-  boolean, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex,
+  boolean, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
 export type Role = "recorder" | "partner";
 export type Permissions = { periods: boolean; predictions: boolean; fertility: boolean; care: boolean };
 export const NO_PERMISSIONS: Permissions = { periods: false, predictions: false, fertility: false, care: false };
+/** 새로 연결될 때의 공유. 가임기만 기록자가 직접 켠다. */
+export const DEFAULT_PERMISSIONS: Permissions = { periods: true, predictions: true, fertility: false, care: true };
 
 const created = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
 
@@ -26,8 +28,10 @@ export const users = pgTable("users", {
   /** 마지막으로 알림을 보낸 예정일. 크론이 두 번 돌아도 한 번만 보낸다. */
   reminderSentFor: date("reminder_sent_for", { mode: "string" }),
   newsSeenAt: timestamp("news_seen_at", { withTimezone: true }),
+  /** 기록자가 직접 적는 평소 주기. 기록이 적을 때 예측에 섞는다. */
+  usualCycleDays: integer("usual_cycle_days"),
   createdAt: created(),
-});
+}, () => [check("users_usual_cycle", sql`usual_cycle_days between 21 and 45`)]);
 
 export const sessions = pgTable("sessions", {
   tokenHash: text("token_hash").primaryKey(),
@@ -63,6 +67,8 @@ export const couples = pgTable("couples", {
   paused: boolean("paused").notNull().default(false),
   permissions: jsonb("permissions").$type<Permissions>().notNull(),
   shareFrom: date("share_from", { mode: "string" }).notNull(),
+  /** 연결 후 기록자가 공유 항목을 아직 확인하지 않았으면 true. 홈에 확인 링크를 띄운다. */
+  sharingNotice: boolean("sharing_notice").notNull().default(false),
   createdAt: created(),
 }, (t) => [
   uniqueIndex("one_active_recorder").on(t.recorderId).where(sql`status = 'active'`),
@@ -91,20 +97,23 @@ export type Board = "question" | "tip";
 export const posts = pgTable("posts", {
   id: text("id").primaryKey(),
   authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
-  board: text("board").$type<Board>().notNull(),
+  /** 게시판을 하나로 합치기 전의 분류. 화면에서는 더 쓰지 않고 예전 글의 값으로만 남아 있다. */
+  board: text("board").$type<Board>().notNull().default("question"),
   title: text("title").notNull(),
   body: text("body").notNull(),
   hidden: boolean("hidden").notNull().default(false),
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
-  index("posts_board_created").on(t.board, t.createdAt),
+  index("posts_created").on(t.createdAt),
   index("posts_author").on(t.authorId),
 ]);
 
 export const comments = pgTable("comments", {
   id: text("id").primaryKey(),
   postId: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  /** 답글이면 원 댓글. 답글에는 답글을 달 수 없다. 원 댓글을 지우면 답글도 함께 지워진다. */
+  parentId: text("parent_id").references((): AnyPgColumn => comments.id, { onDelete: "cascade" }),
   authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   body: text("body").notNull(),
   hidden: boolean("hidden").notNull().default(false),
@@ -112,6 +121,7 @@ export const comments = pgTable("comments", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("comments_post").on(t.postId),
+  index("comments_parent").on(t.parentId),
   index("comments_author").on(t.authorId),
 ]);
 

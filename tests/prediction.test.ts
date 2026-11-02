@@ -1,7 +1,7 @@
 // 원본 Python 테스트(tests/test_prediction.py)를 그대로 옮긴 것 + 경계 케이스 몇 개
 import { describe, expect, it } from "vitest";
 import { addDays, addMonths, dayRange, isMonth, monthGrid, monthLabel } from "@/lib/dates";
-import { calendarEvents, calendarMarks, estimate, type PeriodInput } from "@/lib/prediction";
+import { calendarEvents, calendarMarks, estimate, predictionError, type PeriodInput } from "@/lib/prediction";
 
 function periods(lengths: number[], first = "2026-01-01"): PeriodInput[] {
   const result: PeriodInput[] = [];
@@ -14,24 +14,56 @@ function periods(lengths: number[], first = "2026-01-01"): PeriodInput[] {
 const lastStart = (records: PeriodInput[]) => records[records.length - 1].startDate;
 
 describe("주기 예측 v1", () => {
-  it("개인별 중앙값과 관측 범위", () => {
+  it("최근일수록 크게 반영한 평균과 ±범위", () => {
     const records = periods([31, 33, 32, 31]);
     const last = lastStart(records);
     const result = estimate(records, [], last);
     expect(result.typicalCycleDays).toBe(32);
-    expect(result.period?.earliestStart).toBe(addDays(last, 31));
-    expect(result.period?.latestStart).toBe(addDays(last, 33));
+    expect(result.period?.earliestStart).toBe(addDays(last, 30)); // 흩어짐이 작아 최소 ±2일
+    expect(result.period?.latestStart).toBe(addDays(last, 34));
+    expect(result.observedMinDays).toBe(31);
     expect(result.sampleSize).toBe(4);
     expect(result.ovulation?.confirmed).toBe(false);
     expect(result.typicalPeriodDays).toBe(5);
     expect(result.period?.endDate).toBe(addDays(result.period!.startDate, 4));
   });
 
-  it("기록 부족이면 예측 없음, 이상한 간격은 몰래 빼지 않고 보류", () => {
-    expect(estimate(periods([28, 28]), [], "2026-03-01").period).toBeNull();
-    const result = estimate(periods([28, 28, 120]), [], "2026-08-01");
-    expect(result.status).toBe("needs_record_review");
-    expect(result.intervals[result.intervals.length - 1].days).toBe(120);
+  it("간격이 3개 되기 전엔 있는 간격으로 다음 생리만 예상하고, 가임기는 만들지 않는다", () => {
+    const records = periods([30, 32]); // 1.1, 1.31, 3.4 (기간 5일)
+    const result = estimate(records, [], "2026-03-10");
+    expect(result.status).toBe("insufficient_data");
+    expect(result.typicalCycleDays).toBe(31);
+    expect(result.period).toMatchObject({ startDate: "2026-04-04", endDate: "2026-04-08" });
+    expect(result.fertileWindow).toBeNull();
+    expect(result.ovulation).toBeNull();
+  });
+
+  it("기록 1번이면 28일 주기로 가정하고, 그 예정일도 지난 옛 기록이면 말을 아낀다", () => {
+    const one = [{ id: "1", startDate: "2026-10-31", endDate: null }];
+    expect(estimate(one, [], "2026-11-02").period).toMatchObject({ startDate: "2026-11-28", endDate: "2026-12-02" });
+    expect(estimate(one, [], "2026-11-02").sampleSize).toBe(0);
+    expect(estimate(one, [], "2026-11-30").period?.startDate).toBe("2026-11-28"); // 범위 끝까지는 기다린다
+    expect(estimate(one, [], "2026-12-01").period).toBeNull();
+  });
+
+  it("기간이 너무 긴 기록은 예측을 보류한다", () => {
+    const records = periods([28, 28, 28]);
+    for (const r of records) r.endDate = addDays(r.startDate, 40); // 기간 평균 41일
+    expect(estimate(records, [], "2026-03-30").status).toBe("needs_record_review");
+  });
+
+  it("튀는 간격은 계산에서 빼고 알려 준다", () => {
+    const records = periods([28, 28, 120, 28, 17, 28, 28]);
+    const result = estimate(records, [], lastStart(records));
+    expect(result.outlierIntervals.map((x) => x.days)).toEqual([120, 17]); // 50일 초과, 18일 미만
+    expect(result.intervals.map((x) => x.days)).toEqual([28, 28, 28, 28]);
+    expect(result.typicalCycleDays).toBe(28);
+    expect(result.status).toBe("estimated");
+
+    const far = estimate(periods([28, 28, 39, 28]), [], "2026-05-01"); // 범위 안이지만 중앙값과 11일 차이
+    expect(far.outlierIntervals.map((x) => x.days)).toEqual([39]);
+    const near = estimate(periods([28, 28, 38, 28]), [], "2026-05-01"); // 10일 차이까지는 쓴다
+    expect(near.outlierIntervals).toEqual([]);
   });
 
   it("제외한 기록은 양옆 간격을 합쳐 가짜 긴 주기를 만들지 않는다", () => {
@@ -44,7 +76,7 @@ describe("주기 예측 v1", () => {
   });
 
   it("들쭉날쭉하거나 예상일이 지나면 가임기를 숨긴다", () => {
-    const records = periods([25, 40, 28]);
+    const records = periods([22, 30, 34, 26]);
     const result = estimate(records, [], lastStart(records));
     expect(result.status).toBe("variable_cycles");
     expect(result.ovulation).toBeNull();
@@ -68,8 +100,8 @@ describe("주기 예측 v1", () => {
     expect(records).toHaveLength(4);
   });
 
-  it("짝수 개 중앙값은 반올림, 배란은 예상일 14일 전, 가임기는 -5~+1일", () => {
-    const records = periods([28, 29, 28, 29]); // 중앙값 28.5 → 29
+  it("평균은 반올림, 배란은 예상일 14일 전, 가임기는 -5~+1일", () => {
+    const records = periods([28, 29, 28, 29]); // 가중 평균 28.56 → 29
     const result = estimate(records, [], lastStart(records));
     expect(result.typicalCycleDays).toBe(29);
     const expected = addDays(lastStart(records), 29);
@@ -78,11 +110,11 @@ describe("주기 예측 v1", () => {
     expect(result.fertileWindow).toEqual({ startDate: addDays(expected, -19), endDate: addDays(expected, -13) });
   });
 
-  it("종료일 기록이 없으면 지속일을 지어내지 않는다", () => {
+  it("종료일 기록이 없으면 보통 기간은 비워 두고, 달력용 예상 종료는 5일로 잡는다", () => {
     const records = periods([28, 28, 28]).map((p) => ({ ...p, endDate: null }));
     const result = estimate(records, [], lastStart(records));
     expect(result.typicalPeriodDays).toBeNull();
-    expect(result.period?.endDate).toBeNull();
+    expect(result.period?.endDate).toBe(addDays(result.period!.startDate, 4));
   });
 
   it("최근 6개 간격만 쓴다", () => {
@@ -105,6 +137,131 @@ describe("주기 예측 v1", () => {
     expect(beforeExpected.some((m) => m.type === "estimated_fertile_window")).toBe(false);
     expect(beforeExpected.some((m) => m.type === "period" && m.date === last)).toBe(true);
     expect(beforeExpected[0]).toEqual({ date: expect.any(String), type: expect.any(String) }); // 기록 id는 내보내지 않는다
+  });
+});
+
+describe("기록 수별 예측", () => {
+  const counted = (n: number) => periods(Array(n - 1).fill(30));
+  const at = (records: PeriodInput[]) => addDays(lastStart(records), 1);
+
+  it("기록 1번: 평소 주기, 없으면 28일", () => {
+    const records = counted(1);
+    expect(estimate(records, [], at(records)).typicalCycleDays).toBe(28);
+    expect(estimate(records, [], at(records), 35).typicalCycleDays).toBe(35);
+    expect(estimate(records, [], at(records), 35).fertileWindow).toBeNull();
+  });
+
+  it("기록 2번: 평소 주기와 반반, 없으면 실제 간격", () => {
+    const records = counted(2);
+    expect(estimate(records, [], at(records)).typicalCycleDays).toBe(30);
+    expect(estimate(records, [], at(records), 40).typicalCycleDays).toBe(35);
+    expect(estimate(records, [], at(records), 40).fertileWindow).toBeNull();
+  });
+
+  it("기록 3번: 실제 간격 비중이 2/3로 커진다", () => {
+    const records = counted(3);
+    expect(estimate(records, [], at(records), 39).typicalCycleDays).toBe(33);
+    expect(estimate(records, [], at(records), 39).fertileWindow).toBeNull();
+  });
+
+  it("기록 4번: 평소 주기를 적어도 실제 간격만 쓰고 가임기가 나온다", () => {
+    const records = counted(4);
+    const result = estimate(records, [], at(records), 40);
+    expect(result.typicalCycleDays).toBe(30);
+    expect(result.status).toBe("estimated");
+    expect(result.fertileWindow).not.toBeNull();
+  });
+
+  it("기록 8번: 최근 6개에 6~1 가중치", () => {
+    const records = periods([40, 40, 26, 26, 26, 30, 30, 30]);
+    const result = estimate(records, [], at(records));
+    expect(result.sampleSize).toBe(6);
+    expect(result.intervals[0].days).toBe(26);
+    expect(result.typicalCycleDays).toBe(29); // (26×(1+2+3) + 30×(4+5+6)) / 21 = 28.86
+    expect(result.period?.startDate).toBe(addDays(lastStart(records), 29));
+  });
+
+  it("흩어진 만큼 예상 범위가 넓어진다", () => {
+    const records = periods([24, 32, 24, 32]); // 표준편차 4
+    const result = estimate(records, [], at(records));
+    expect(result.period?.earliestStart).toBe(addDays(result.period!.startDate, -4));
+    expect(result.period?.latestStart).toBe(addDays(result.period!.startDate, 4));
+  });
+
+  it("평소 주기로 잡은 예상도 범위가 지나면 말을 아낀다", () => {
+    const one = [{ id: "1", startDate: "2026-10-01", endDate: null }];
+    expect(estimate(one, [], "2026-11-06", 35).period?.startDate).toBe("2026-11-05");
+    expect(estimate(one, [], "2026-11-08", 35).period).toBeNull();
+  });
+
+  it("생리 기간은 지난 기록 평균, 없으면 5일", () => {
+    const records = periods([28, 28, 28]);
+    records[0].endDate = addDays(records[0].startDate, 2); // 3일
+    records[1].endDate = addDays(records[1].startDate, 5); // 6일
+    records[2].endDate = null;
+    records[3].endDate = null;
+    const result = estimate(records, [], lastStart(records));
+    expect(result.typicalPeriodDays).toBe(5); // 4.5 → 5
+    expect(result.period?.endDate).toBe(addDays(result.period!.startDate, 4));
+  });
+});
+
+describe("예측 정확도", () => {
+  it("규칙적이면 0일, 그 전 기록만으로 예측한 오차를 평균한다", () => {
+    expect(predictionError(periods([28, 28, 28, 28]))).toEqual({ days: 0, samples: 4 });
+    // 28일 가정 → 실제 30(2일 차이), 30일 예측 → 실제 34(4일 차이)
+    expect(predictionError(periods([30, 34]))).toEqual({ days: 3, samples: 2 });
+    expect(predictionError(periods([]))).toBeNull();
+  });
+
+  it("평소 주기도 예측에 쓰인다", () => {
+    expect(predictionError(periods([30]), 30)).toEqual({ days: 0, samples: 1 });
+    expect(predictionError(periods([30]))).toEqual({ days: 2, samples: 1 });
+  });
+
+  it("제외한 기록과 주기로 볼 수 없는 간격은 세지 않고, 최근 6번만 본다", () => {
+    const records = periods([28, 28, 28]);
+    records[2].excluded = true;
+    expect(predictionError(records)?.samples).toBe(1);
+    expect(predictionError(periods([28, 90, 28]))?.samples).toBe(2);
+    expect(predictionError(periods(Array(9).fill(28)))?.samples).toBe(6);
+  });
+});
+
+describe("진행 중인 생리", () => {
+  const open = { id: "o", startDate: "2026-10-31", endDate: null };
+  const marks = (list: PeriodInput[], today: string, month = ["2026-10-01", "2026-12-31"]) =>
+    calendarMarks(list, estimate(list, [], today), month[0], month[1], today);
+  const dates = (all: ReturnType<typeof marks>, type: string) => all.filter((m) => m.type === type).map((m) => m.date);
+
+  it("시작일~오늘은 생리, 내일~예상 종료일은 예상, 달이 바뀌어도 이어진다", () => {
+    const all = marks([open], "2026-11-02");
+    expect(dates(all, "period")).toEqual(["2026-10-31", "2026-11-01", "2026-11-02"]);
+    expect(dates(all, "predicted_period").slice(0, 2)).toEqual(["2026-11-03", "2026-11-04"]); // 기본 5일: 10.31~11.4
+    expect(dates(all, "predicted_period").slice(2)[0]).toBe("2026-11-28"); // 다음은 28일 뒤
+    expect(dates(marks([open], "2026-11-02", ["2026-11-01", "2026-11-30"]), "period")).toEqual(["2026-11-01", "2026-11-02"]);
+  });
+
+  it("예상 기간은 지난 기록의 평균이다", () => {
+    const past = [
+      { id: "a", startDate: "2026-08-01", endDate: "2026-08-03" }, // 3일
+      { id: "b", startDate: "2026-09-01", endDate: "2026-09-08" }, // 8일. 중앙값이 아니라 평균(5.5 → 6일)
+    ];
+    expect(estimate([...past, open], [], "2026-11-02").ongoing).toEqual({ startDate: "2026-11-03", endDate: "2026-11-05" });
+  });
+
+  it("예상 종료일이 지나면 오늘까지 칠하고 예상은 없다, 10일이 넘으면 시작일만 남긴다", () => {
+    expect(estimate([open], [], "2026-11-04").ongoing).toBeNull();
+    expect(dates(marks([open], "2026-11-06"), "period")).toHaveLength(7);
+    expect(dates(marks([open], "2026-11-10"), "period")).toEqual(["2026-10-31"]); // 11일째
+  });
+
+  it("끝난 기록에는 남은 예상이 없다", () => {
+    const ended = [{ ...open, endDate: "2026-11-02" }];
+    expect(estimate(ended, [], "2026-11-02").ongoing).toBeNull();
+    const all = marks(ended, "2026-11-02");
+    expect(dates(all, "period")).toEqual(["2026-10-31", "2026-11-01", "2026-11-02"]);
+    expect(dates(all, "predicted_period")[0]).toBe("2026-11-28");
   });
 });
 

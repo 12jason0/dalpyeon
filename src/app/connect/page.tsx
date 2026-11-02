@@ -20,33 +20,27 @@ const CLAIM_NOTICES: Record<string, string> = {
 
 type Claim = { code?: string; notice?: string };
 
-export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string; sharing?: string }> }) {
+export default async function ConnectPage({ searchParams }: { searchParams: Promise<{ claim?: string; code?: string }> }) {
   const user = await requireUser();
-  const { claim, code, sharing } = await searchParams;
+  const { claim, code } = await searchParams;
   const notice = claim ? CLAIM_NOTICES[claim] : undefined;
   const sent: Claim = { code: typeof code === "string" ? code.slice(0, 12) : undefined, notice };
   return (
     <>
       <h1 className="text-4xl font-semibold tracking-tight">연결</h1>
-      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} justConnected={sharing === "new"} /> : <PartnerConnect user={user} claim={sent} />}
+      {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} /> : <PartnerConnect user={user} claim={sent} />}
       <Nav role={user.role} active="connect" />
     </>
   );
 }
 
-async function RecorderConnect({ user, claim, justConnected }: { user: User; claim: Claim; justConnected: boolean }) {
+async function RecorderConnect({ user, claim }: { user: User; claim: Claim }) {
   const db = await getDb();
   const couple = await activeCouple(db, user.id);
   if (couple) {
     const name = await otherNickname(db, couple, user);
-    const nothingShared = Object.values(couple.permissions).every((on) => !on);
     return (
       <>
-        {justConnected && nothingShared && (
-          <p role="status" className="mt-6 rounded-[18px] bg-period px-4 py-3 text-[15px] leading-relaxed text-period-ink">
-            {name}님에게 보여줄 것을 골라 주세요. 지금은 아무것도 안 보여요
-          </p>
-        )}
         <p className="mt-10 text-2xl font-medium">{name}님과 연결됨</p>
         <Section title={`${name}님에게 보여줄 것`}>
           <SharingForm today={todaySeoul()} initial={{ permissions: couple.permissions, shareFrom: couple.shareFrom, paused: couple.paused }} />
@@ -59,7 +53,7 @@ async function RecorderConnect({ user, claim, justConnected }: { user: User; cla
       <Section title="내 주기를 기록하는 사람">
         <p className="mb-8 text-[17px] leading-relaxed text-muted">
           코드를 만들어 파트너에게 보내 주세요. 15분 동안 쓸 수 있고, 입력하면 바로 연결되니 믿는 사람에게만 보내 주세요.
-          연결해도 처음엔 아무것도 보이지 않고, 보여줄 항목은 직접 고를 수 있어요.
+          연결되면 생리 기록·다음 생리 예상·배려 요청이 바로 보이고, 가임기는 꺼져 있어요. 보여줄 항목은 언제든 바꿀 수 있어요.
         </p>
         <InviteBox origin={await siteOrigin()} />
         <p className="mt-6 text-center text-sm">

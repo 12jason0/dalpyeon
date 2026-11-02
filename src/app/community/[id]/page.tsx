@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { timeAgo } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
-import { BOARDS, communityAccess, getPost, type PostView } from "@/lib/services/community";
+import { communityAccess, getPost, type CommentView, type PostView } from "@/lib/services/community";
 import { requireUser } from "@/lib/session";
 import { blockAction, deleteCommentAction, deletePostAction, reportAction } from "../../actions";
 import { CommentForm, PostForm, TargetButton } from "../../_components/CommunityForms";
@@ -41,13 +41,34 @@ export default async function PostPage({ params, searchParams }: { params: Promi
     throw e;
   }
   const canAct = access.member && !post.hidden; // 운영자가 보는 숨긴 글에는 쓰기 동작을 내주지 않는다
-  const editingComment = post.comments.find((c) => c.id === edit && c.mine && !c.hidden);
+  const editingComment = post.comments.flatMap((c) => [c, ...c.replies]).find((c) => c.id === edit && c.mine && !c.hidden);
+
+  const item = (c: CommentView, reply: boolean) => editingComment?.id === c.id ? <CommentForm postId={post.id} comment={c} /> : (
+    <>
+      <p className="text-[13px] text-muted">{c.nickname} · {timeAgo(c.createdAt)}{c.hidden && " · 숨겨짐"}</p>
+      <p className="mt-2 whitespace-pre-wrap text-[17px] leading-relaxed">{c.body}</p>
+      <div className="mt-1 flex items-start gap-6">
+        {c.mine ? (
+          <>
+            {canAct && !c.hidden && <Link href={`/community/${post.id}?edit=${c.id}`} className="link text-sm leading-11">수정</Link>}
+            <Confirm label="삭제" confirm="정말 지울게요" action={deleteCommentAction} fields={{ id: c.id }} />
+          </>
+        ) : canAct && !c.hidden && <Others kind="comment" id={c.id} />}
+      </div>
+      {!reply && canAct && !c.hidden && access.nickname && (
+        <details>
+          <summary className="link cursor-pointer list-none text-sm leading-11">답글</summary>
+          <div className="mt-2"><CommentForm postId={post.id} parentId={c.id} /></div>
+        </details>
+      )}
+    </>
+  );
 
   return (
     <>
-      <Link href={`/community?board=${post.board}`} className="link text-sm">{BOARDS[post.board]}</Link>
+      <Link href="/community" className="link text-sm">이야기로</Link>
       {edit === "post" && post.mine && canAct ? (
-        <div className="mt-6"><PostForm board={post.board} post={post} /></div>
+        <div className="mt-6"><PostForm post={post} /></div>
       ) : (
         <article className="mt-6">
           <h1 className="text-3xl font-semibold leading-snug tracking-tight">{post.title}</h1>
@@ -69,17 +90,11 @@ export default async function PostPage({ params, searchParams }: { params: Promi
         <ul>
           {post.comments.map((c) => (
             <li key={c.id} className="border-b border-line py-4">
-              {editingComment?.id === c.id ? <CommentForm postId={post.id} comment={c} /> : (
-                <>
-                  <p className="text-[13px] text-muted">{c.nickname} · {timeAgo(c.createdAt)}{c.hidden && " · 숨겨짐"}</p>
-                  <p className="mt-2 whitespace-pre-wrap text-[17px] leading-relaxed">{c.body}</p>
-                  {c.mine ? (
-                    <div className="mt-1 flex items-start gap-6">
-                      {canAct && !c.hidden && <Link href={`/community/${post.id}?edit=${c.id}`} className="link text-sm leading-11">수정</Link>}
-                      <Confirm label="삭제" confirm="정말 지울게요" action={deleteCommentAction} fields={{ id: c.id }} />
-                    </div>
-                  ) : canAct && !c.hidden && <div className="mt-1"><Others kind="comment" id={c.id} /></div>}
-                </>
+              {item(c, false)}
+              {c.replies.length > 0 && (
+                <ul className="mt-3 border-l-2 border-line pl-4">
+                  {c.replies.map((r) => <li key={r.id} className="py-3">{item(r, true)}</li>)}
+                </ul>
               )}
             </li>
           ))}
@@ -88,7 +103,7 @@ export default async function PostPage({ params, searchParams }: { params: Promi
           <div className="mt-8">
             {access.nickname
               ? <CommentForm postId={post.id} />
-              : <Link href={`/community/new?board=${post.board}`} className="link text-[15px]">이용 규칙에 동의하면 댓글을 달 수 있어요</Link>}
+              : <Link href="/community/new" className="link text-[15px]">이용 규칙에 동의하면 댓글을 달 수 있어요</Link>}
           </div>
         )}
       </section>

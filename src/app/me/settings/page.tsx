@@ -2,10 +2,12 @@ import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
+import { usualCycle } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { disconnectAction } from "../../actions";
 import { Nav } from "../../_components/Nav";
 import { LogoutButton, WithdrawForm } from "../../_components/NotificationSettings";
+import { UsualCycleForm } from "../../_components/PeriodForm";
 
 export const dynamic = "force-dynamic";
 
@@ -32,15 +34,17 @@ export default async function SettingsPage() {
   const db = await getDb();
   const couple = await activeCouple(db, user.id);
   const name = couple ? await otherNickname(db, couple, user) : null;
+  const usual = user.role === "recorder" ? await usualCycle(db, user.id) : null;
   return (
     <>
       <Link href="/me" className="link text-sm">마이</Link>
       <h1 className="mt-6 text-3xl font-semibold tracking-tight">설정</h1>
       <ul className="card mt-6">
+        {user.role === "recorder" && <li className={`${ROW} pb-4`}><UsualCycleForm initial={usual} /></li>}
         {name && (
           <ConfirmRow label="연결 끊기">
             <p className="text-[15px] leading-relaxed text-muted">
-              끊으면 {name}님은 바로 아무것도 볼 수 없어요. 다시 연결하면 공유 설정은 처음부터 다시 정해요.
+              끊으면 {name}님은 바로 아무것도 볼 수 없어요. 다시 연결하면 공유 설정은 기본값으로 돌아가요.
               이미 본 내용까지 지울 수는 없어요.
             </p>
             <form action={disconnectAction} className="mt-4">

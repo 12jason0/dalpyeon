@@ -1,5 +1,5 @@
 /** 홈의 달. 주기 위치를 밝은 부분의 비율로 바꾼다. 시작일이 그믐, 예상 주기의 가운데가 보름이다. */
-import { diffDays } from "./dates";
+import { dayRange, diffDays } from "./dates";
 import type { Prediction } from "./prediction";
 
 export type MoonShape = { lit: number; waxing: boolean };
@@ -33,6 +33,11 @@ export function cycleLine(
   if (days < 0) return `예정일이 ${-days}일 지났어요`;
   const until = days ? `다음 생리까지 ${days}일` : "오늘이 생리 예정일이에요";
   return fertileNow ? `가임기 예상 · ${until}` : until;
+}
+
+/** 다음 생리 예상 범위. 생리 중이거나 범위가 지났으면 말하지 않는다. */
+export function nextRange(current: unknown, next: { earliestStart: string; latestStart: string } | null, today: string) {
+  return !current && next && today <= next.latestStart ? `${dayRange(next.earliestStart, next.latestStart)} 사이` : undefined;
 }
 
 /** 원의 왼쪽 위를 (0,0)으로 둔 밝은 부분. 바깥 반원 + 타원 호(명암 경계)로 그린다. */

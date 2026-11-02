@@ -29,6 +29,13 @@
       "when": 1793437758752,
       "tag": "0003_kakao_login",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793576942087,
+      "tag": "0004_prediction_sharing_replies",
+      "breakpoints": true
     }
   ]
 }

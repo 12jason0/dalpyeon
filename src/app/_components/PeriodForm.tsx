@@ -1,10 +1,26 @@
 "use client";
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { savePeriodAction, type FormState } from "../actions";
+import { savePeriodAction, saveUsualCycleAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
 type Initial = { id: string; startDate: string; endDate: string | null; excluded: boolean; excludeReason: string | null } | null;
+
+/** 기록이 적을 때 예측에 섞는 평소 주기. 비워 두고 저장하면 지운다. */
+export function UsualCycleForm({ initial }: { initial: number | null }) {
+  const [state, action] = useActionState<FormState, FormData>(saveUsualCycleAction, null);
+  return (
+    <form action={action} className="mt-6">
+      <label className="block">
+        <span className="text-sm text-muted">평소 주기 (21~45일, 비워 둬도 돼요)</span>
+        <input type="number" name="usualCycle" className="field" min={21} max={45} inputMode="numeric" defaultValue={initial ?? ""} />
+      </label>
+      <ErrorText message={state?.error} />
+      {state?.ok && <p className="mt-3 text-sm text-muted">저장했어요.</p>}
+      <div className="mt-4"><Submit>평소 주기 저장</Submit></div>
+    </form>
+  );
+}
 
 export function PeriodForm({ initial, today }: { initial: Initial; today: string }) {
   const [state, action] = useActionState<FormState, FormData>(savePeriodAction, null);
