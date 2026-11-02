@@ -29,18 +29,15 @@ function Labels({ marks, day }: { marks: CalendarMark[]; day: string }) {
   );
 }
 
-/** 기록자의 날짜 시트. 지난 날은 시작을, 생리 중인 날은 끝·수정·통증과 기분을 남긴다. */
-function RecorderDay({ day, today, marks, data }: { day: string; today: string; marks: CalendarMark[]; data: RecorderData }) {
-  if (day > today) {
-    return dayLabels(marks, day).length ? <Labels marks={marks} day={day} /> : <p className="text-[17px] text-muted">아직 오지 않은 날이에요</p>;
-  }
+/** 기록자의 지난 날짜 시트. 시작을 남기거나, 생리 중이었던 날의 끝·수정·통증과 기분을 고친다. */
+function RecorderDay({ day, marks, data }: { day: string; marks: CalendarMark[]; data: RecorderData }) {
   const inPeriod = currentPeriod(data.periods, day);
   const record = inPeriod && data.periods.find((p) => p.id === inPeriod.id);
   if (!record) {
     return (
       <>
         <Labels marks={marks} day={day} />
-        <div className="mt-4"><StartTodayButton day={day === today ? undefined : day} /></div>
+        <div className="mt-4"><StartTodayButton day={day} /></div>
         <p className="mt-4 text-center text-sm"><Link href="/report#direct" className="link">기간을 한 번에 입력하기</Link></p>
       </>
     );
@@ -52,7 +49,7 @@ function RecorderDay({ day, today, marks, data }: { day: string; today: string; 
         {record.endDate ? `${dayRange(record.startDate, record.endDate)} · ${diffDays(record.endDate, record.startDate) + 1}일` : `${monthDay(record.startDate)}부터 진행 중`}
       </p>
       {record.autoEnded && <p className="mt-2 text-[15px]"><Link href={edit} className="link">자동으로 끝낸 기록 · 날짜 확인하기</Link></p>}
-      <div className="mt-4"><EndTodayButton id={record.id} day={day === today ? undefined : day} /></div>
+      <div className="mt-4"><EndTodayButton id={record.id} day={day} /></div>
       <DayLogForm key={day} day={day} initial={data.logs.find((l) => l.day === day) ?? null} />
       <div className="mt-4 flex items-start justify-center gap-8 text-sm">
         <Link href={edit} className="link leading-11">수정</Link>
@@ -69,18 +66,6 @@ function RecorderDay({ day, today, marks, data }: { day: string; today: string; 
   );
 }
 
-/** 파트너의 날짜 시트. 그날 표시와, 오늘이면 통증·기분을 보여준다. */
-function PartnerDay({ day, today, marks, body }: { day: string; today: string; marks: CalendarMark[]; body: string | null }) {
-  const shownBody = day === today ? body : null;
-  if (!dayLabels(marks, day).length && !shownBody) return <p className="text-[17px] text-muted">표시된 내용이 없어요</p>;
-  return (
-    <>
-      <Labels marks={marks} day={day} />
-      {shownBody && <p className="mt-2 text-[17px]">{shownBody}</p>}
-    </>
-  );
-}
-
 /** 상단 고정 영역과 떠 있는 메뉴·버튼을 뺀, 달력이 실제로 보이는 영역. */
 function visibleArea() {
   const floating = [...document.querySelectorAll("[data-floating]")].map((el) => el.getBoundingClientRect().top);
@@ -92,15 +77,15 @@ const todayCell = (today: string) => document.querySelector(`[data-day="${today}
 /** 오늘이 화면 밖으로 나가면 나타나고, 누르면 오늘로 돌아가는 칩. 화살표는 오늘이 있는 쪽을 가리킨다. */
 function TodayChip({ today }: { today: string }) {
   const [direction, setDirection] = useState<TodayDirection | null>(null);
-  const [top, setTop] = useState(0);
+  const [view, setView] = useState({ top: 0, bottom: 0 });
 
   useEffect(() => {
     const update = () => {
       const cell = todayCell(today);
       if (!cell) return;
-      const view = visibleArea();
-      setDirection(todayDirection(cell.getBoundingClientRect(), view));
-      setTop(view.top);
+      const area = visibleArea();
+      setDirection(todayDirection(cell.getBoundingClientRect(), area));
+      setView(area);
     };
     update();
     window.addEventListener("scroll", update, { passive: true });
@@ -124,7 +109,7 @@ function TodayChip({ today }: { today: string }) {
   const Arrow = direction === "up" ? ArrowUp : ArrowDown;
   return (
     <button
-      type="button" onClick={goToday} style={{ top: top + 8 }}
+      type="button" onClick={goToday} style={{ top: direction === "up" ? view.top + 8 : view.bottom - 40 }}
       className="fixed left-1/2 z-20 flex h-8 -translate-x-1/2 items-center gap-1 rounded-full border-[0.5px] border-line bg-card px-3 text-[13px] font-medium text-accent shadow-[0_2px_10px_rgb(63_58_61/0.14)]"
     >
       <Arrow size={14} aria-hidden />
@@ -133,12 +118,12 @@ function TodayChip({ today }: { today: string }) {
   );
 }
 
-/** 이번 달에서 시작하는 세로 달력. 위로 지난 6개월, 아래로 앞으로 6개월이다. children은 이번 달 바로 아래에 둔다. */
-export function HomeCalendar({ today, marks, recorder, partnerBody, children }: {
+/** 이번 달에서 시작하는 세로 달력. 위로 지난 6개월, 아래로 앞으로 6개월이다. quick은 이번 달 바로 위, children은 바로 아래에 둔다. 날짜 시트는 기록자의 지난 날짜에만 열린다. */
+export function HomeCalendar({ today, marks, recorder, quick, children }: {
   today: string;
   marks: CalendarMark[];
   recorder?: RecorderData;
-  partnerBody?: string | null;
+  quick?: React.ReactNode;
   children?: React.ReactNode;
 }) {
   const { month, months } = calendarWindow(today);
@@ -154,20 +139,32 @@ export function HomeCalendar({ today, marks, recorder, partnerBody, children }: 
     setPlaced(true);
   }, []);
 
+  // 달마다 있는 요일 줄이 맨 위 카드 바로 아래에 붙게 한다
+  useLayoutEffect(() => {
+    const top = document.getElementById(HOME_TOP_ID);
+    if (!top) return;
+    const update = () => document.documentElement.style.setProperty("--home-top", `${top.offsetHeight}px`);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(top);
+    return () => observer.disconnect();
+  }, []);
+
   return (
     <div className={placed ? "" : "invisible"}>
       {placed && <TodayChip today={today} />}
       {months.map((m) => (
         <div key={m} ref={m === month ? thisMonth : undefined}>
-          <CalendarMonth month={m} marks={marks} today={today} onPick={setPicked} />
+          {m === month && quick}
+          <CalendarMonth month={m} marks={marks} today={today} onPick={recorder ? setPicked : undefined} />
           {m === month && children}
         </div>
       ))}
-      <Sheet open={picked !== null} title={picked ? formatDay(picked) : ""} onClose={() => setPicked(null)}>
-        {picked && (recorder
-          ? <RecorderDay day={picked} today={today} marks={marks} data={recorder} />
-          : <PartnerDay day={picked} today={today} marks={marks} body={partnerBody ?? null} />)}
-      </Sheet>
+      {recorder && (
+        <Sheet open={picked !== null} title={picked ? formatDay(picked) : ""} onClose={() => setPicked(null)}>
+          {picked && <RecorderDay day={picked} marks={marks} data={recorder} />}
+        </Sheet>
+      )}
     </div>
   );
 }

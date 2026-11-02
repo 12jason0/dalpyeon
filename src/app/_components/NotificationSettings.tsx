@@ -1,7 +1,7 @@
 "use client";
-import { useActionState, useEffect, useState, useTransition } from "react";
-import { logoutAction, setReminderAction, subscribeAction, unsubscribeAction, withdrawAction, type FormState } from "../actions";
-import { ErrorText, Submit } from "./Submit";
+import { useEffect, useState, useTransition } from "react";
+import { logoutAction, setReminderAction, subscribeAction, unsubscribeAction, withdrawAction } from "../actions";
+import { ConfirmButton } from "./ConfirmButton";
 
 type Status = "loading" | "unsupported" | "ios-browser" | "denied" | "off" | "on";
 
@@ -114,21 +114,16 @@ export function LogoutButton({ className = "mt-10 text-center", buttonClassName 
     await logoutAction();
   };
   return (
-    <form action={logout} className={className}>
-      <button type="submit" className={buttonClassName}>로그아웃</button>
-    </form>
+    <div className={className}>
+      <ConfirmButton label="로그아웃" className={buttonClassName} title="로그아웃할까요?" confirmLabel="로그아웃" action={logout} />
+    </div>
   );
 }
 
-export function WithdrawForm({ buttonClassName }: { buttonClassName: string }) {
-  const [state, action] = useActionState<FormState, FormData>(async (prev) => {
+export function WithdrawButton({ className, note }: { className: string; note: string }) {
+  const leave = async () => {
     await leaveThisDevice();
-    return withdrawAction(prev);
-  }, null);
-  return (
-    <form action={action} className="mt-4">
-      <Submit className={buttonClassName}>탈퇴할게요</Submit>
-      <ErrorText message={state?.error} />
-    </form>
-  );
+    return withdrawAction(null);
+  };
+  return <ConfirmButton label="회원 탈퇴" className={className} title="탈퇴하면 기록이 모두 지워지고 되돌릴 수 없어요" note={note} confirmLabel="탈퇴하기" danger action={leave} />;
 }

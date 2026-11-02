@@ -31,13 +31,26 @@ export function Sheet({ open, title, onClose, children }: { open: boolean; title
   );
 }
 
+/** 글자 링크처럼 보이는 버튼. 누르면 시트가 열린다. */
+export function SheetLink({ label, title, children }: { label: string; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="link h-9" onClick={() => setOpen(true)}>{label}</button>
+      <Sheet open={open} title={title} onClose={() => setOpen(false)}>{children}</Sheet>
+    </>
+  );
+}
+
 /** 상단의 한 줄 카드. 누르면 시트가 열린다. */
-export function LineSheet({ title, summary, children }: { title: string; summary: string; children: React.ReactNode }) {
+export function LineSheet({ title, summary, icon, chip, children }: { title: string; summary: string; icon?: React.ReactNode; chip?: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button type="button" className={LINE_CARD} onClick={() => setOpen(true)}>
-        <span className="min-w-0 truncate">{summary}</span>
+        {icon}
+        <span className="min-w-0 flex-1 truncate">{summary}</span>
+        {chip}
         <ChevronRight size={18} className="shrink-0 text-muted" aria-hidden />
       </button>
       <Sheet open={open} title={title} onClose={() => setOpen(false)}>{children}</Sheet>

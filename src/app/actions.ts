@@ -7,7 +7,7 @@ import { getDb, type DB } from "@/lib/db";
 import { todaySeoul } from "@/lib/dates";
 import { AppError, errorKind } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
-import { changePassword, limit, login, recordConsents, signup } from "@/lib/services/auth";
+import { changePassword, limit, login, recordConsents, signup, updateNickname } from "@/lib/services/auth";
 import { clearCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
   agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, unblock, updateComment, updatePost,
@@ -135,6 +135,13 @@ export async function changePasswordAction(_: FormState, form: FormData): Promis
     await changePassword(await getDb(), await requireUser(), {
       current: form.get("current"), next: form.get("next"), confirm: form.get("confirm"),
     }, await sessionToken());
+  });
+}
+
+export async function saveNicknameAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    await updateNickname(await getDb(), await requireUser(), form.get("nickname"));
+    refresh();
   });
 }
 

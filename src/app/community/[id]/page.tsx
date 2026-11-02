@@ -73,7 +73,7 @@ export default async function PostPage({ params, searchParams }: { params: Promi
       ) : (
         <article className="mt-6">
           <h1 className="text-3xl font-semibold leading-snug tracking-tight">{post.title}</h1>
-          <p className="mt-2 text-[13px] text-muted">{post.nickname} · {timeAgo(post.createdAt)}{post.hidden && " · 숨겨짐"}</p>
+          <p className="mt-2 text-[13px] text-muted">{post.pinned ? `📌 ${post.nickname}` : `${post.nickname} · ${timeAgo(post.createdAt)}`}{post.hidden && " · 숨겨짐"}</p>
           <p className="mt-8 whitespace-pre-wrap text-[17px] leading-relaxed">{post.body}</p>
           <div className="mt-6 border-b border-line pb-2">
             {post.mine ? (
@@ -81,7 +81,7 @@ export default async function PostPage({ params, searchParams }: { params: Promi
                 {canAct && <Link href={`/community/${post.id}?edit=post`} className="link text-sm leading-11">수정</Link>}
                 <Confirm label="삭제" confirm="정말 지울게요" action={deletePostAction} fields={{ id: post.id }} />
               </div>
-            ) : canAct && <Others kind="post" id={post.id} />}
+            ) : canAct && !post.pinned && <Others kind="post" id={post.id} />}
           </div>
         </article>
       )}

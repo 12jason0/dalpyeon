@@ -11,11 +11,14 @@ export type DayLog = { day: string; pain: Pain | null; moods: Mood[] };
 
 const PAIN_ORDER: Pain[] = ["none", "mild", "moderate", "severe"];
 
+/** 없음 0부터 심함 3까지. */
+export const painRank = (pain: Pain) => PAIN_ORDER.indexOf(pain);
+
 /** 지난 생리 하나의 요약. 통증이 있던 날이 없으면 그 문장을 만들지 않는다. */
 export function summarizeLogs(period: { startDate: string; endDate: string | null }, logs: DayLog[]): { pain: string | null; mood: string | null } {
   const inside = logs.filter((l) => l.day >= period.startDate && (!period.endDate || l.day <= period.endDate))
     .sort((a, b) => a.day.localeCompare(b.day));
-  const rank = (l: DayLog) => (l.pain ? PAIN_ORDER.indexOf(l.pain) : 0);
+  const rank = (l: DayLog) => (l.pain ? painRank(l.pain) : 0);
   const worst = Math.max(0, ...inside.map(rank));
   const worstDay = worst > 0 ? inside.find((l) => rank(l) === worst) : undefined;
   const counts = new Map<Mood, number>();
@@ -27,11 +30,8 @@ export function summarizeLogs(period: { startDate: string; endDate: string | nul
   };
 }
 
-/** 파트너 홈의 한 줄. 예: "오늘 통증 심함 · 기분 피곤, 예민" */
-export function todayBodyLine(log: Pick<DayLog, "pain" | "moods">) {
-  const parts = [
-    log.pain && `오늘 통증 ${PAINS[log.pain]}`,
-    log.moods.length > 0 && `${log.pain ? "" : "오늘 "}기분 ${log.moods.map((m) => MOODS[m]).join(", ")}`,
-  ];
-  return parts.filter(Boolean).join(" · ");
-}
+/** 홈 맨 위 칩의 글자. 남기지 않은 것은 null이다. */
+export const bodyChips = (log: Pick<DayLog, "pain" | "moods">) => ({
+  pain: log.pain && `통증 ${PAINS[log.pain]}`,
+  mood: log.moods.length > 0 ? log.moods.map((m) => MOODS[m]).join(", ") : null,
+});

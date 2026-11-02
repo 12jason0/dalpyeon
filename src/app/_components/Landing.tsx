@@ -5,7 +5,7 @@ import { monthGrid, todaySeoul } from "@/lib/dates";
 import { moonShape } from "@/lib/moon";
 import { calendarMarks, DISCLAIMER, ESTIMATE_NOTE, estimate } from "@/lib/prediction";
 import { CARE_PRESETS, RESPONSES } from "@/lib/services/care";
-import { CalendarMonth, WeekdayRow } from "./CalendarMonth";
+import { CalendarMonth } from "./CalendarMonth";
 import { CareCard, Logo, recorderStatus, TopBar } from "./HomeCards";
 import { LINE_CARD } from "./Sheet";
 
@@ -25,7 +25,6 @@ function HomePreview({ today }: { today: string }) {
     <div inert className="pointer-events-none mx-auto select-none overflow-hidden rounded-[2.25rem] border-4 border-line bg-paper px-3 pb-6 pt-6">
       <TopBar moon={moonShape(prediction, today)} {...recorderStatus(prediction, null, today)} />
       <p className={`${LINE_CARD} mt-3`}>오늘 필요한 배려 · 도윤 · 도와줄게요</p>
-      <WeekdayRow />
       <CalendarMonth month={month} marks={calendarMarks(periods, prediction, first, last, today)} today={today} />
     </div>
   );

@@ -62,3 +62,6 @@ export function weekBars(week: (string | null)[], marks: CalendarMark[]): Bar[] 
   });
   return bars;
 }
+
+/** 달력에서 누를 수 있는 날. 오늘은 홈에서 바로 남기고, 시트는 지난 날짜를 고칠 때만 쓴다. */
+export const pickable = (day: string, today: string) => day < today;

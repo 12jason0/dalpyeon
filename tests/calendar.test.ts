@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { barOn, calendarWindow, dayLabels, ovulationOn, todayDirection, weekBars, weeksOf } from "@/lib/calendar";
-import { monthGrid } from "@/lib/dates";
+import { barOn, calendarWindow, dayLabels, ovulationOn, pickable, todayDirection, weekBars, weeksOf } from "@/lib/calendar";
+import { addDays, monthGrid } from "@/lib/dates";
 import { nextLine } from "@/lib/moon";
+import { bodyChips, type DayLog } from "@/lib/daylog";
 import { navFor } from "@/lib/nav";
 import { calendarMarks, estimate, type CalendarMark } from "@/lib/prediction";
+import { cycleBars, painTrend, periodBars } from "@/lib/report";
 
 const marks = (type: CalendarMark["type"], ...dates: string[]) => dates.map((date) => ({ date, type }));
 // 2026년 11월 1일이 일요일이라 첫째 주가 1~7일이다.
@@ -136,5 +138,53 @@ describe("하단 메뉴", () => {
 
   it("남친톡의 주소는 그대로다", () => {
     expect(navFor("partner")[1].href).toBe("/community");
+  });
+});
+
+describe("리포트 그래프", () => {
+  const starts = ["2026-01-01", "2026-01-29", "2026-02-28", "2026-03-27", "2026-04-25", "2026-05-23", "2026-06-20", "2026-07-20"];
+  const rows = starts.map((startDate) => ({ startDate, endDate: addDays(startDate, 4) }));
+
+  it("주기 길이는 최근 6번이고 오래된 것부터 놓인다", () => {
+    expect(cycleBars([...rows].reverse()).map((b) => b.days)).toEqual([30, 27, 29, 28, 28, 30]);
+    expect(cycleBars(rows)[0].day).toBe("2026-01-29"); // 간격의 시작 생리
+  });
+
+  it("예측에서 뺀 기록이 낀 간격은 그리지 않는다", () => {
+    const [a, b, c] = rows;
+    expect(cycleBars([a, { ...b, excluded: true }, c])).toEqual([]);
+    expect(cycleBars([a])).toEqual([]);
+  });
+
+  it("생리 기간은 끝난 기록만, 시작일을 1일째로 센다", () => {
+    expect(periodBars(rows)).toHaveLength(6);
+    expect(periodBars(rows)[0].days).toBe(5);
+    const [a, b, c, d] = rows;
+    expect(periodBars([a, { ...b, endDate: null }, { ...c, autoEnded: true }, { ...d, excluded: true }])).toHaveLength(1);
+  });
+
+  it("통증은 생리마다 가장 심했던 값이고, 남기지 않은 생리와 진행 중인 생리는 뺀다", () => {
+    const log = (day: string, pain: DayLog["pain"]): DayLog => ({ day, pain, moods: [] });
+    const logs = [log("2026-01-01", "mild"), log("2026-01-02", "severe"), log("2026-02-28", "none"), log("2026-02-28", null), log("2026-03-27", null)];
+    expect(painTrend(rows, logs)).toEqual([
+      { day: "2026-01-01", level: 3, label: "심함" },
+      { day: "2026-02-28", level: 0, label: "없음" },
+    ]);
+    expect(painTrend([{ startDate: "2026-01-01", endDate: null }], logs)).toEqual([]);
+  });
+});
+
+describe("오늘 칩", () => {
+  it("남긴 것만 글자가 있다", () => {
+    expect(bodyChips({ pain: "severe", moods: ["tired", "sensitive"] })).toEqual({ pain: "통증 심함", mood: "피곤, 예민" });
+    expect(bodyChips({ pain: null, moods: [] })).toEqual({ pain: null, mood: null });
+  });
+});
+
+describe("날짜 시트", () => {
+  it("지난 날만 열리고 오늘과 앞날은 열리지 않는다", () => {
+    expect(pickable("2026-11-01", "2026-11-02")).toBe(true);
+    expect(pickable("2026-11-02", "2026-11-02")).toBe(false);
+    expect(pickable("2026-11-03", "2026-11-02")).toBe(false);
   });
 });

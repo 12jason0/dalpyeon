@@ -140,16 +140,17 @@ const shots = require("node:os").tmpdir();
 
   await step("연결 끊기 → 파트너가 기록자 화면으로 돌아옴", async () => {
     await you.goto(BASE + "/me/settings");
-    await you.click('summary:has-text("연결 끊기")');
-    await you.click('button:has-text("끊을게요")');
-    await you.locator('summary:has-text("연결 끊기")').waitFor({ state: "detached" });
+    await you.click('li > button:has-text("연결 끊기")');
+    await you.click('dialog[open] button:text-is("끊기")');
+    await you.locator('li > button:has-text("연결 끊기")').waitFor({ state: "detached" });
     await you.goto(BASE + "/");
     await you.getByText("기록이 쌓이면 달이 차올라요").waitFor();
   });
 
   await step("로그아웃 → 로그인", async () => {
     await me.goto(BASE + "/me/settings");
-    await me.click('button:has-text("로그아웃")');
+    await me.click('li > div > button:has-text("로그아웃")');
+    await me.click('dialog[open] button:has-text("로그아웃")');
     await me.getByText("처음이에요").waitFor();
     if (!me.url().endsWith("/login")) throw new Error("로그인 화면으로 안 감: " + me.url());
     await me.screenshot({ path: `${shots}/10-login.png`, fullPage: true });

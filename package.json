@@ -9,6 +9,7 @@
     "test": "vitest run",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:generate": "drizzle-kit generate",
+    "db:seed:pinned": "node --env-file-if-exists=.env.local scripts/seed-pinned.mjs",
     "admin:grant": "node --env-file-if-exists=.env.local scripts/grant-admin.mjs"
   },
   "dependencies": {

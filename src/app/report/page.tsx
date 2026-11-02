@@ -4,6 +4,7 @@ import { dayRange, diffDays, formatDay, shortDay, todaySeoul } from "@/lib/dates
 import { nextRange } from "@/lib/moon";
 import { summarizeLogs } from "@/lib/daylog";
 import { estimate, predictionError } from "@/lib/prediction";
+import { cycleBars, painTrend, periodBars } from "@/lib/report";
 import { listDayLogs } from "@/lib/services/daylogs";
 import { listPeriods, usualCycle } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
@@ -11,6 +12,7 @@ import { deletePeriodAction } from "../actions";
 import { PredictionNote } from "../_components/HomeCards";
 import { Nav } from "../_components/Nav";
 import { PeriodForm, UsualCycleForm } from "../_components/PeriodForm";
+import { DayBars, PainLine } from "../_components/ReportCharts";
 import { Row, Section } from "../_components/Section";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +31,9 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const editing = periods.find((p) => p.id === params.edit) ?? null;
   const summaries = [...periods].reverse().filter((p) => p.endDate)
     .map((p) => ({ period: p, ...summarizeLogs(p, logs) })).filter((s) => s.pain || s.mood).slice(0, 6);
+  const cycles = cycleBars(periods);
+  const lengths = periodBars(periods);
+  const pains = painTrend(periods, logs);
 
   return (
     <>
@@ -55,6 +60,19 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         )}
         <UsualCycleForm initial={usual} />
       </Section>
+
+      {(cycles.length > 0 || lengths.length > 0 || pains.length > 1) && (
+        <Section title="한눈에 보기">
+          {cycles.length > 0 && <DayBars title="최근 주기 길이" bars={cycles} fill="fill-fertile-ink" />}
+          {lengths.length > 0 && <DayBars title="생리 기간" bars={lengths} fill="fill-accent" />}
+          {pains.length > 1 && (
+            <>
+              <PainLine points={pains} />
+              <p className="mt-2 text-[13px] leading-relaxed text-muted">가장 심했던 날 기준이에요. 없음 0 · 약함 1 · 보통 2 · 심함 3</p>
+            </>
+          )}
+        </Section>
+      )}
 
       {summaries.length > 0 && (
         <Section title="지난 생리 요약">

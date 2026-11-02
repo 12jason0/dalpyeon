@@ -1,10 +1,12 @@
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Link2 } from "lucide-react";
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { communityAccess, myPosts } from "@/lib/services/community";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser } from "@/lib/session";
 import { reminderEnabled } from "@/lib/services/push";
+import { IconBadge } from "../_components/Chip";
+import { NameEdit } from "../_components/NameEdit";
 import { Nav } from "../_components/Nav";
 import { NotificationSettings } from "../_components/NotificationSettings";
 
@@ -32,8 +34,9 @@ export default async function MePage() {
     <>
       <h1 className="sr-only">마이</h1>
 
-      <Link href="/connect" className="card flex items-center justify-between gap-3">
-        <span className="min-w-0">
+      <Link href="/connect" className="card flex items-center gap-3">
+        <IconBadge><Link2 size={15} /></IconBadge>
+        <span className="min-w-0 flex-1">
           <span className="block text-[15px] font-medium">연결</span>
           <span className="mt-0.5 block text-[13px] text-muted">{partnerName ? `${partnerName}님과 연결돼 있어요` : "아직 연결 전이에요"}</span>
         </span>
@@ -41,7 +44,7 @@ export default async function MePage() {
       </Link>
 
       <section className="card mt-3">
-        <p className="text-xl font-semibold tracking-tight">{user.nickname}</p>
+        <NameEdit name={user.nickname} />
         <p className="mt-1 text-[15px] text-muted">{user.email ?? "카카오 계정"}</p>
         {user.role === "partner" && (
           <p className="mt-1 text-[13px] text-muted">남친톡 닉네임 · {access.nickname ?? "아직 없어요"}</p>

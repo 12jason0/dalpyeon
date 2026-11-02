@@ -20,6 +20,13 @@ export type PresetKey = keyof typeof CARE_PRESETS;
 export const RESPONSES = { seen: "봤어요", will_help: "도와줄게요", done: "했어요" } as const;
 export type ResponseKey = keyof typeof RESPONSES;
 
+/** 기록자 홈 배려 카드의 칩 글자. 상대에게 간 것은 true다. */
+export function careChip(care: { shareWithPartner: boolean; response?: ResponseKey | null } | null, canShare: boolean) {
+  if (!care) return { label: "아직이에요", sent: false };
+  if (care.response) return { label: RESPONSES[care.response], sent: true };
+  return care.shareWithPartner && canShare ? { label: "보냈어요", sent: true } : { label: "나만 봐요", sent: false };
+}
+
 export type CareView = {
   id: string; day: string; presets: PresetKey[]; message: string | null; shareWithPartner: boolean;
   response: ResponseKey | null;

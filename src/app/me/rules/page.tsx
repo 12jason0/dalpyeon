@@ -11,7 +11,7 @@ export default async function RulesPage() {
     <>
       <BackLink href="/me" />
       <h1 className="sr-only">이용 규칙</h1>
-      <p className="mt-2 text-[15px] leading-relaxed text-muted">남친톡에는 이런 글을 올릴 수 없어요.</p>
+      <p className="mt-2 text-[15px] leading-relaxed text-muted">남친톡에서는 이것만은 지켜 주세요.</p>
       <ul className="mt-4">
         {RULES.map((rule) => <li key={rule} className="border-b border-line py-3 text-[17px]">{rule}</li>)}
       </ul>

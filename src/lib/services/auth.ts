@@ -63,6 +63,12 @@ function cleanNickname(nickname: unknown): string {
   return value;
 }
 
+/** 남친톡 닉네임은 따로라 바뀌지 않는다. 상대 화면은 이 칸을 읽으므로 함께 바뀐다. */
+export async function updateNickname(db: DB, user: User, input: unknown) {
+  const nickname = cleanNickname(input);
+  await db.update(users).set({ nickname }).where(eq(users.id, user.id));
+}
+
 /** 고정 창 요청 제한. 창이 끝나면 다시 1부터 센다. */
 export async function limit(db: DB, bucket: string, identity: string, max: number, seconds: number) {
   const key = sha256(`${bucket}:${identity}`);

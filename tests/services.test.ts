@@ -6,22 +6,24 @@ import {
 } from "@/lib/db/schema";
 import { calendarWindow } from "@/lib/calendar";
 import { ARTICLES, articleFor, findArticle } from "@/lib/content/articles";
+import PINNED_POSTS from "@/lib/content/pinned-posts.json";
+import { RULES } from "@/lib/content/rules";
 import { addDays } from "@/lib/dates";
-import { summarizeLogs, todayBodyLine } from "@/lib/daylog";
+import { summarizeLogs } from "@/lib/daylog";
 import { CRESCENT, moonShape } from "@/lib/moon";
 import { calendarMarks, endQuestion, estimate, predictionError } from "@/lib/prediction";
 import { AppError, errorKind } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
 import {
-  changePassword, consentDone, createSession, deleteSession, hashPassword, limit, login, purgeExpired, recordConsents, sha256, signup, userFromToken, type User,
+  changePassword, consentDone, createSession, deleteSession, hashPassword, limit, login, purgeExpired, recordConsents, sha256, signup, updateNickname, userFromToken, type User,
 } from "@/lib/services/auth";
-import { clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
+import { careChip, clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
-  activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, setPaused, tryClaim, updateSharing,
+  activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, otherNickname, setPaused, tryClaim, updateSharing,
 } from "@/lib/services/couples";
 import {
   agreeToRules, blockAuthor, communityAccess, createComment, createPost, decideReport, deleteComment, deletePost, getPost, listPosts,
-  listBlocked, listReports, myPosts, report, unblock, updateComment, updatePost,
+  listBlocked, listReports, myPosts, report, TEAM_NAME, unblock, updateComment, updatePost,
 } from "@/lib/services/community";
 import { dayLogOn, listDayLogs, saveDayLog } from "@/lib/services/daylogs";
 import { kakaoAuthorizeUrl, kakaoEnabled, kakaoLanding, signInWithKakao } from "@/lib/services/kakao";
@@ -62,6 +64,37 @@ async function connect(me: User, you: User) {
   const { code } = await createInvite(db, me);
   return claimInvite(db, you, code.toLowerCase(), TODAY); // 소문자·하이픈 입력도 받는다
 }
+
+describe("이름 수정", () => {
+  it("앞뒤 공백을 지우고, 연결된 상대에게 바뀐 이름이 보이며, 남친톡 닉네임은 그대로다", async () => {
+    const { me, you } = await pair();
+    const { code } = await createInvite(db, me);
+    await claimInvite(db, you, code);
+    await db.update(users).set({ communityNickname: "편-1234" }).where(eq(users.id, me.id));
+    await updateNickname(db, me, "  새이름  ");
+    const couple = (await activeCouple(db, you.id))!;
+    expect(await otherNickname(db, couple, await reload(you))).toBe("새이름");
+    const [row] = await db.select().from(users).where(eq(users.id, me.id));
+    expect(row.communityNickname).toBe("편-1234");
+  });
+
+  it("1~20자만 받고, 틀리면 그대로 둔다", async () => {
+    const { me } = await pair();
+    for (const value of ["", "   ", "가".repeat(21), null]) await expectFail(updateNickname(db, me, value));
+    await updateNickname(db, me, "가".repeat(20));
+    expect((await reload(me)).nickname).toBe("가".repeat(20));
+  });
+});
+
+describe("배려 칩", () => {
+  it("상태마다 글자가 다르고, 공유가 멈추면 보낸 것으로 보이지 않는다", () => {
+    expect(careChip(null, true)).toEqual({ label: "아직이에요", sent: false });
+    expect(careChip({ shareWithPartner: false }, true)).toEqual({ label: "나만 봐요", sent: false });
+    expect(careChip({ shareWithPartner: true }, false)).toEqual({ label: "나만 봐요", sent: false });
+    expect(careChip({ shareWithPartner: true }, true)).toEqual({ label: "보냈어요", sent: true });
+    expect(careChip({ shareWithPartner: true, response: "will_help" }, true)).toEqual({ label: "도와줄게요", sent: true });
+  });
+});
 
 async function fourPeriods(user: User) {
   // 28일 간격 4번 → 예측 가능
@@ -582,6 +615,66 @@ describe("공유", () => {
   });
 });
 
+describe("고정 글", () => {
+  const pinnedPost = (id = "pinned-guide", title = "남친톡 이용 방법") => db.insert(posts).values({ id, authorId: null, title, body: "본문", pinned: true });
+
+  async function member(email: string) {
+    const recorder = await signup(db, { email: `r-${email}`, password: "password-1", nickname: "기록", ...AGREED });
+    const partner = await signup(db, { email, password: "password-2", nickname: "파트너", ...AGREED });
+    const { code } = await createInvite(db, recorder);
+    await claimInvite(db, partner, code);
+    const user = await reload(partner);
+    await agreeToRules(db, user, "");
+    return user;
+  }
+
+  it("글감 3개는 글자 수 제한 안이고 주소가 겹치지 않는다", () => {
+    expect(PINNED_POSTS.map((p) => p.id)).toEqual(["pinned-guide", "pinned-topics", "pinned-promises"]);
+    for (const p of PINNED_POSTS) {
+      expect(p.title.length).toBeLessThanOrEqual(60);
+      expect(p.body.join("\n\n").length).toBeLessThanOrEqual(2000);
+    }
+  });
+
+  it("이용 규칙은 고정 글 \"서로 지켜줄 것\"의 항목과 같다", () => {
+    const promises = PINNED_POSTS.find((p) => p.id === "pinned-promises")!;
+    expect(promises.body.join("\n").split("\n").filter((l) => l.startsWith("• ")).map((l) => l.slice(2))).toEqual(RULES);
+  });
+
+  it("최신 글보다 위에 놓이고 작성자는 운영팀이다", async () => {
+    await pinnedPost();
+    const user = await member("a@b.co");
+    await createPost(db, user, { title: "새 글", body: "본문" });
+    const { posts: list } = await listPosts(db, user);
+    expect(list.map((p) => [p.title, p.pinned, p.nickname, p.mine])).toEqual([
+      ["남친톡 이용 방법", true, TEAM_NAME, false],
+      ["새 글", false, expect.stringMatching(/^편-/), true],
+    ]);
+    expect((await getPost(db, user, "pinned-guide")).nickname).toBe(TEAM_NAME);
+  });
+
+  it("차단 관계가 있어도 보이고, 댓글은 달 수 있다", async () => {
+    await pinnedPost();
+    const user = await member("a@b.co");
+    const other = await member("c@d.co");
+    const id = await createPost(db, other, { title: "다른 사람 글", body: "본문" });
+    await blockAuthor(db, user, { kind: "post", id });
+    expect((await listPosts(db, user)).posts.map((p) => p.id)).toEqual(["pinned-guide"]);
+    await createComment(db, user, "pinned-guide", "고마워요");
+    expect((await getPost(db, user, "pinned-guide")).commentCount).toBe(1);
+  });
+
+  it("신고와 차단은 할 수 없고, 사용자도 지울 수 없다", async () => {
+    await pinnedPost();
+    const user = await member("a@b.co");
+    const target = { kind: "post" as const, id: "pinned-guide" };
+    await expectFail(report(db, user, target));
+    await expectFail(blockAuthor(db, user, target));
+    await expectFail(deletePost(db, user, "pinned-guide"), 404);
+    await expectFail(updatePost(db, user, "pinned-guide", { title: "바꿈", body: "바꿈" }), 403);
+  });
+});
+
 describe("커뮤니티", () => {
   let seq = 0;
 
@@ -628,6 +721,7 @@ describe("커뮤니티", () => {
     const third = (await member(false)).partner;
     await expectFail(agreeToRules(db, third, (await communityAccess(db, partner)).nickname), 409);
     await expectFail(agreeToRules(db, third, "운영자님"));
+    await expectFail(agreeToRules(db, third, "우리주기 운영팀"));
     await expectFail(agreeToRules(db, third, "가"));
     expect(await agreeToRules(db, third, " 든든한편 ")).toBe("든든한편");
   });
@@ -1646,7 +1740,6 @@ describe("통증·기분", () => {
     await saveDayLog(db, me, { day: TODAY, pain: "severe", moods: ["tired"] }, TODAY);
     const view = (await partnerView(db, partner, TODAY))!;
     expect(view.todayBody).toEqual({ pain: "severe", moods: ["tired"] });
-    expect(todayBodyLine(view.todayBody!)).toBe("오늘 통증 심함 · 기분 피곤");
 
     await setPaused(db, me, true);
     expect((await partnerView(db, partner, TODAY))?.todayBody).toBeNull();
@@ -1689,8 +1782,9 @@ describe("통증·기분", () => {
 
 describe("알아두면 좋은 것", () => {
   it("글마다 주소가 다르고 단정·진단 표현이 없다", () => {
-    expect(ARTICLES).toHaveLength(10);
-    expect(new Set(ARTICLES.map((a) => a.slug)).size).toBe(10);
+    expect(ARTICLES).toHaveLength(9);
+    expect(findArticle("prediction-misses")).toBeUndefined();
+    expect(new Set(ARTICLES.map((a) => a.slug)).size).toBe(9);
     for (const { body } of ARTICLES) expect(body.join(" ")).not.toMatch(/100%|진단|치료|처방|진통제/);
     expect(findArticle("pms")?.title).toBe("PMS란");
     expect(findArticle("없는글")).toBeUndefined();

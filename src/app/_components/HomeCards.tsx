@@ -2,7 +2,8 @@ import { formatDay } from "@/lib/dates";
 import { cycleLine, MOON_WAITING, moonPath, nextLine, type MoonShape } from "@/lib/moon";
 import type { Prediction } from "@/lib/prediction";
 import { CARE_PRESETS, RESPONSES, type CareView } from "@/lib/services/care";
-import { markNewsSeenAction, respondAction } from "../actions";
+import { markNewsSeenAction } from "../actions";
+import { CareReplies } from "./QuickHome";
 
 export function Logo() {
   return <p className="text-xl font-semibold tracking-tight text-accent">우리주기</p>;
@@ -47,15 +48,19 @@ export function recorderStatus(prediction: Prediction, current: { day: number } 
   };
 }
 
-export function TopBar({ moon, main, sub, aside }: Status & { moon: MoonShape; aside?: React.ReactNode }) {
+/** 홈 맨 위의 카드. children은 달과 문구 아래의 칩이다. */
+export function TopBar({ moon, main, sub, aside, children }: Status & { moon: MoonShape; aside?: React.ReactNode; children?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-3">
-      <MoonPhase moon={moon} />
-      <div className="min-w-0 flex-1">
-        <p className="text-[17px] font-semibold leading-snug tracking-tight">{main}</p>
-        {sub && <p className="text-[13px] leading-snug text-muted">{sub}</p>}
+    <div className="rounded-[18px] border-[0.5px] border-line bg-gradient-to-br from-period/40 to-fertile px-3.5 py-3 shadow-soft">
+      <div className="flex items-center gap-3">
+        <MoonPhase moon={moon} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[17px] font-semibold leading-snug tracking-tight">{main}</p>
+          {sub && <p className="text-[13px] leading-snug text-ink/80">{sub}</p>}
+        </div>
+        {aside}
       </div>
-      {aside}
+      {children && <div className="mt-2 flex flex-wrap gap-1.5">{children}</div>}
     </div>
   );
 }
@@ -77,23 +82,11 @@ export function CareCard({ care, today, featured, readOnly }: { care: CareView; 
       <p className="text-[13px] text-muted">{care.day === today ? "오늘" : formatDay(care.day)}</p>
       <ul className="mt-1 space-y-1">
         {care.presets.map((key) => (
-          <li key={key} className={`font-medium leading-snug ${featured ? "text-2xl tracking-tight" : "text-xl"}`}>{CARE_PRESETS[key]}</li>
+          <li key={key} className={`font-medium leading-snug ${featured ? "text-xl tracking-tight" : "text-[17px]"}`}>{CARE_PRESETS[key]}</li>
         ))}
       </ul>
       {care.message && <p className="mt-2 text-[15px] leading-relaxed">“{care.message}”</p>}
-      <form action={readOnly ? undefined : respondAction} className="mt-4 flex gap-2">
-        <input type="hidden" name="careId" value={care.id} />
-        {Object.entries(RESPONSES).map(([key, label]) => (
-          <button
-            key={key} name="response" value={key} type={readOnly ? "button" : "submit"}
-            className={`h-11 flex-1 rounded-full border text-[15px] transition ${
-              care.response === key ? "border-accent bg-accent font-semibold text-white" : "border-line text-muted"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </form>
+      <CareReplies careId={care.id} current={care.response} responses={RESPONSES} readOnly={readOnly} />
     </article>
   );
 }

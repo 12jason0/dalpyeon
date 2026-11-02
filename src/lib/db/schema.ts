@@ -116,12 +116,15 @@ export type Board = "question" | "tip";
 
 export const posts = pgTable("posts", {
   id: text("id").primaryKey(),
-  authorId: text("author_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  /** 운영팀의 고정 글만 비어 있다. */
+  authorId: text("author_id").references(() => users.id, { onDelete: "cascade" }),
   /** 게시판을 하나로 합치기 전의 분류. 화면에서는 더 쓰지 않고 예전 글의 값으로만 남아 있다. */
   board: text("board").$type<Board>().notNull().default("question"),
   title: text("title").notNull(),
   body: text("body").notNull(),
   hidden: boolean("hidden").notNull().default(false),
+  /** 목록 맨 위에 놓는 운영팀 글. 시드 스크립트로만 만든다. */
+  pinned: boolean("pinned").notNull().default(false),
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
