@@ -1,14 +1,14 @@
 "use client";
 import { useActionState } from "react";
-import { healthConsentAction, type FormState } from "../actions";
-import { HealthConsent } from "./AuthForm";
+import { consentAction, type FormState } from "../actions";
+import { Consents } from "./AuthForm";
 import { ErrorText, Submit } from "./Submit";
 
-export function ConsentForm() {
-  const [state, action] = useActionState<FormState, FormData>(healthConsentAction, null);
+export function ConsentForm({ health }: { health: boolean }) {
+  const [state, action] = useActionState<FormState, FormData>(consentAction, null);
   return (
     <form action={action} className="space-y-6">
-      <HealthConsent />
+      <Consents health={health} />
       <ErrorText message={state?.error} />
       <Submit>동의하고 계속하기</Submit>
     </form>

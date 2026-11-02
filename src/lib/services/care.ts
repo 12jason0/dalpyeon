@@ -67,9 +67,9 @@ export async function clearCare(db: DB, user: User, day = todaySeoul()) {
   await db.delete(careRequests).where(and(eq(careRequests.ownerId, user.id), eq(careRequests.day, day)));
 }
 
-/** 파트너가 볼 수 있는 배려 요청: 배려 공유 켜짐 + 요청별 공유 켜짐 + 공유 시작일 이후 + 최근 7일 */
+/** 파트너가 볼 수 있는 배려 요청: 일시정지 아님 + 요청별 공유 켜짐 + 공유 시작일 이후 + 최근 7일 */
 export const sharedCare = cache(async (db: DB, couple: Couple, today = todaySeoul()): Promise<CareView[]> => {
-  if (couple.paused || !couple.permissions.care) return [];
+  if (couple.paused) return [];
   const from = [couple.shareFrom, addDays(today, -6)].sort()[1];
   const rows = await db.select().from(careRequests)
     .where(and(eq(careRequests.ownerId, couple.recorderId), eq(careRequests.shareWithPartner, true), gte(careRequests.day, from)))

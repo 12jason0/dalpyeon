@@ -3,7 +3,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { getDb } from "./db";
-import { createSession, deleteSession, userFromToken, type SessionUser, type User } from "./services/auth";
+import { consentDone, createSession, deleteSession, userFromToken, type SessionUser, type User } from "./services/auth";
 
 const COOKIE = "dp_session";
 const KAKAO_STATE = "dp_kakao_state";
@@ -29,10 +29,10 @@ export const requireLogin = cache(async (): Promise<SessionUser> => {
   return user;
 });
 
-/** 페이지와 서버 액션의 관문. 건강 정보 동의 전에는 동의 화면 말고 아무것도 쓸 수 없다. */
+/** 페이지와 서버 액션의 관문. 필수 동의 전에는 동의 화면 말고 아무것도 쓸 수 없다. */
 export const requireUser = cache(async (role?: User["role"]): Promise<SessionUser> => {
   const user = await requireLogin();
-  if (!user.healthConsentAt) redirect("/consent");
+  if (!consentDone(user)) redirect("/consent");
   if (role && user.role !== role) redirect("/");
   return user;
 });

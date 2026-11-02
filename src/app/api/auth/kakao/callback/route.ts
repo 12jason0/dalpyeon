@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
+import { errorKind } from "@/lib/errors";
 import { limit } from "@/lib/services/auth";
 import { KAKAO_CALLBACK, kakaoEnabled, kakaoLanding, signInWithKakao } from "@/lib/services/kakao";
 import { clientIp, kakaoJoinCode, siteOrigin, startSession, takeJoinCode, takeKakaoState } from "@/lib/session";
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
       await startSession(user.id);
       next = kakaoLanding(user, joinCode);
     } catch (e) {
-      console.error("kakao login failed", e instanceof Error ? e.message : e);
+      console.error("kakao login failed", errorKind(e));
     }
   }
   if (next !== "/consent") await takeJoinCode();

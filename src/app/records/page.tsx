@@ -2,10 +2,14 @@ import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { dayRange, diffDays, formatDay, isDay, isMonth, monthDay, monthGrid, shortDay, todaySeoul } from "@/lib/dates";
 import { nextRange } from "@/lib/moon";
+import { summarizeLogs } from "@/lib/daylog";
 import { calendarMarks, estimate, predictionError, type CalendarMark } from "@/lib/prediction";
+import { listDayLogs } from "@/lib/services/daylogs";
 import { currentPeriod, listPeriods, usualCycle, type Period } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { deletePeriodAction } from "../actions";
+import { DayLogForm } from "../_components/DayLogForm";
+import { PredictionNote } from "../_components/HomeCards";
 import { kindOf } from "../_components/MonthCalendar";
 import { Nav } from "../_components/Nav";
 import { EndTodayButton } from "../_components/PeriodButtons";
@@ -20,7 +24,7 @@ function DayPanel({ day, month, today, periods, marks }: { day: string; month: s
     const kind = kindOf(marks, day);
     return (
       <p className="mt-2 text-[17px] text-muted">
-        {kind === "predicted" ? "예상일이에요" : kind === "fertile" ? "가임기(추정)" : "아직 오지 않은 날이에요"}
+        {kind === "predicted" ? "예상일이에요" : kind === "ovulation" ? "배란일(추정)" : kind === "fertile" ? "가임기(추정)" : "아직 오지 않은 날이에요"}
       </p>
     );
   }
@@ -67,7 +71,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
   const day = pickedDay?.startsWith(month) ? pickedDay : null;
 
   const db = await getDb();
-  const [periods, usual] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id)]);
+  const [periods, usual, logs] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id), listDayLogs(db, user.id)]);
   const prediction = estimate(periods, [], today, usual);
   const enough = prediction.sampleSize >= 3;
   const accuracy = enough ? predictionError(periods, usual) : null;
@@ -75,6 +79,8 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
   const { first, last, cells } = monthGrid(month);
   const marks = calendarMarks(periods, prediction, first, last, today);
   const editing = periods.find((p) => p.id === params.edit) ?? null;
+  const summaries = [...periods].reverse().filter((p) => p.endDate)
+    .map((p) => ({ period: p, ...summarizeLogs(p, logs) })).filter((s) => s.pain || s.mood).slice(0, 6);
 
   return (
     <>
@@ -88,6 +94,7 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
           <div key={day}>
             <h2 className="text-xl font-medium">{formatDay(day)}</h2>
             <DayPanel day={day} month={month} today={today} periods={periods} marks={marks} />
+            {day <= today && currentPeriod(periods, day) && <DayLogForm day={day} initial={logs.find((l) => l.day === day) ?? null} />}
           </div>
         ) : (
           <p className="text-[17px] text-muted">날짜를 누르면 기록할 수 있어요.</p>
@@ -101,13 +108,12 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         )}
         {prediction.typicalPeriodDays && <Row label="보통 기간" value={`${prediction.typicalPeriodDays}일`} />}
         {range && <Row label="다음 생리 예상" value={range} />}
-        {accuracy && <Row label="예측 정확도" value={`최근 예측은 평균 ${accuracy.days}일 차이`} />}
         {prediction.sampleSize > 0 && (
           <p className="pt-4 text-[13px] leading-relaxed text-muted">
             최근 {prediction.sampleSize}번의 간격({prediction.intervals.map((i) => i.days).join(" · ")}일)으로 계산했어요. 최근 주기일수록 크게 반영해요.
           </p>
         )}
-        {!enough && periods.length > 0 && <p className="pt-4 text-[13px] leading-relaxed text-muted">기록이 쌓일수록 정확해져요.</p>}
+        <PredictionNote error={accuracy} />
         {prediction.outlierIntervals.length > 0 && (
           <div className="pt-6">
             <h3 className="text-[13px] font-medium text-muted">계산에서 뺀 주기</h3>
@@ -116,6 +122,20 @@ export default async function RecordsPage({ searchParams }: { searchParams: Prom
         )}
         <UsualCycleForm initial={usual} />
       </Section>
+
+      {summaries.length > 0 && (
+        <Section title="지난 생리 요약">
+          <ul>
+            {summaries.map((s) => (
+              <li key={s.period.id} className="border-b border-line py-4">
+                <p className="text-[13px] text-muted">{formatDay(s.period.startDate)}</p>
+                {s.pain && <p className="mt-1 text-[17px]">{s.pain}</p>}
+                {s.mood && <p className="mt-1 text-[15px] text-muted">{s.mood}</p>}
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <details id="direct" className="mt-16" open={Boolean(editing)}>
         <summary className="cursor-pointer list-none text-sm text-muted underline underline-offset-4">직접 입력·전체 기록</summary>

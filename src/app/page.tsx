@@ -3,11 +3,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { getDb, type DB } from "@/lib/db";
+import { ARTICLE_FOOTER, articleFor } from "@/lib/content/articles";
 import { diffDays, formatDay, isMonth, monthGrid, shortDay, todaySeoul } from "@/lib/dates";
+import { todayBodyLine } from "@/lib/daylog";
 import { CRESCENT, cycleLine, MOON_WAITING, moonShape, nextRange } from "@/lib/moon";
-import { phaseOn } from "@/lib/phase";
-import { calendarMarks, DISCLAIMER, endQuestion, estimate } from "@/lib/prediction";
-import type { User } from "@/lib/services/auth";
+import { phaseOn, type Phase } from "@/lib/phase";
+import { calendarMarks, DISCLAIMER, endQuestion, ESTIMATE_NOTE, estimate, predictionError } from "@/lib/prediction";
+import { consentDone, type User } from "@/lib/services/auth";
 import { CARE_PRESETS, getCare, RESPONSES } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { partnerView } from "@/lib/services/partner";
@@ -16,7 +18,7 @@ import { currentPeriod, listPeriods, usualCycle } from "@/lib/services/periods";
 import { currentUser } from "@/lib/session";
 import { checkSharingAction } from "./actions";
 import { CareForm } from "./_components/CareForm";
-import { CareCard, CareSummaryCard, Logo, MoonPhase, NewsDot, PhaseCards, recorderStatus, StatusLine } from "./_components/HomeCards";
+import { CareCard, CareSummaryCard, Logo, MoonPhase, NewsDot, PhaseCards, PredictionNote, recorderStatus, StatusLine } from "./_components/HomeCards";
 import { Landing } from "./_components/Landing";
 import { MonthCalendar } from "./_components/MonthCalendar";
 import { Nav } from "./_components/Nav";
@@ -38,7 +40,7 @@ export const metadata: Metadata = {
 export default async function Home({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const user = await currentUser();
   if (!user) return <Landing />;
-  if (!user.healthConsentAt) redirect("/consent");
+  if (!consentDone(user)) redirect("/consent");
   const param = (await searchParams).month;
   const month = isMonth(param) ? param : todaySeoul().slice(0, 7);
   return (
@@ -87,11 +89,11 @@ async function PartnerLink({ data }: { data: CareAndPartner }) {
 
 async function CareSlot({ data }: { data: CareAndPartner }) {
   const { care, couple, partnerName } = await data;
-  const canShare = Boolean(couple && couple.permissions.care && !couple.paused);
+  const canShare = Boolean(couple && !couple.paused);
   const shareHint = !couple
     ? "파트너와 연결하면 보낼 수 있어요"
-    : !couple.permissions.care || couple.paused
-      ? "연결 화면에서 '배려 요청' 공유를 켜면 보낼 수 있어요"
+    : couple.paused
+      ? "연결 화면에서 잠시 멈추기를 끄면 보낼 수 있어요"
       : null;
   const careSummary = !care ? "아직 남기지 않았어요"
     : care.response && partnerName ? `${partnerName} · ${RESPONSES[care.response]}`
@@ -110,6 +112,7 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
   const [periods, usual] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id)]);
   const data = careAndPartner(db, user, today);
   const prediction = estimate(periods, [], today, usual);
+  const error = prediction.sampleSize >= 3 ? predictionError(periods, usual) : null;
   const current = currentPeriod(periods, today);
   const question = endQuestion(periods, today);
   const { first, last } = monthGrid(month);
@@ -137,6 +140,7 @@ async function RecorderHome({ user, month }: { user: User; month: string }) {
             dayHref={(d) => `/records?day=${d}`}
           />
           {prediction.status === "variable_cycles" && <p className="mt-2 text-center text-[13px] text-muted">주기 차이가 커서 가임기는 표시하지 않아요.</p>}
+          <PredictionNote error={error} />
         </div>
         <PhaseCards phase={phaseOn(periods, today)} />
       </div>
@@ -169,13 +173,9 @@ async function PartnerHome({ user, month }: { user: User; month: string }) {
   }
 
   const name = view.recorderNickname;
-  const p = view.permissions;
-  const nothingShared = !p.periods && !p.predictions && !p.fertility && !p.care;
-  // 예측을 허락받지 않았으면 쌓일 달도 볼 수 없으니 문구를 두지 않는다.
-  const line = cycleLine(view.current, view.nextPeriod?.startDate ?? null, view.fertileWindow, today) ?? (p.predictions ? MOON_WAITING : null);
+  const line = cycleLine(view.current, view.nextPeriod?.startDate ?? null, view.fertileWindow, today) ?? MOON_WAITING;
   const hero = view.paused ? <Hero label={`${name}님은`} big="잠시 쉬는 중" sub="지금은 공유를 잠시 멈췄어요." />
-    : nothingShared ? <StatusLine main="아직 공유된 항목이 없어요" sub={`${name}님이 보여줄 항목을 고르면 여기에 나타나요.`} />
-    : line && <StatusLine main={line} sub={nextRange(view.current, view.nextPeriod, today)} />;
+    : <StatusLine main={line} sub={nextRange(view.current, view.nextPeriod, today)} />;
 
   // 오늘 요청이 있으면 달 바로 아래로. 지난 요청은 아래 목록에 그대로 둔다.
   const todayCare = view.care.find((c) => c.day === today);
@@ -186,6 +186,7 @@ async function PartnerHome({ user, month }: { user: User; month: string }) {
       {date}
       <MoonPhase moon={view.moon} />
       {hero}
+      {view.todayBody && <p className="mt-3 text-center text-[15px]">{todayBodyLine(view.todayBody)}</p>}
 
       {todayCare && (
         <section className="mt-6">
@@ -200,10 +201,17 @@ async function PartnerHome({ user, month }: { user: User; month: string }) {
             <span className="text-[15px] text-muted">가임기 (추정)</span>
             <span className="text-[17px] font-medium text-fertile-ink">{shortDay(view.fertileWindow.startDate)} – {shortDay(view.fertileWindow.endDate)}</span>
           </div>
+          {view.ovulation && view.ovulation >= today && (
+            <div className="mt-2 flex items-baseline justify-between gap-4">
+              <span className="text-[15px] text-muted">배란일 (추정)</span>
+              <span className="text-[17px] font-medium text-fertile-ink">{shortDay(view.ovulation)}</span>
+            </div>
+          )}
+          <p className="mt-2 text-[13px] text-muted">{ESTIMATE_NOTE}</p>
         </div>
       )}
 
-      {!view.paused && p.care && !todayCare && pastCare.length === 0 && (
+      {!view.paused && !todayCare && pastCare.length === 0 && (
         <Section title={`${name}님이 바라는 것`}>
           <p className="text-[15px] text-muted">아직 남긴 요청이 없어요.</p>
         </Section>
@@ -217,7 +225,7 @@ async function PartnerHome({ user, month }: { user: User; month: string }) {
         </Section>
       )}
 
-      {!view.paused && p.periods && view.recentPeriods.length > 0 && (
+      {!view.paused && view.recentPeriods.length > 0 && (
         <Section title="최근 기록">
           <div className="card">
             {view.recentPeriods.map((r) => (
@@ -227,13 +235,29 @@ async function PartnerHome({ user, month }: { user: User; month: string }) {
         </Section>
       )}
 
-      {!view.paused && (p.periods || p.predictions || p.fertility) && (
+      {!view.paused && (
         <Section title={`${name}님의 달력`}>
           <div className="card"><MonthCalendar month={month} marks={view.calendar} today={today} basePath="/" /></div>
         </Section>
       )}
 
+      <ArticleCard phase={view.phase} today={today} />
+
       <p className="mt-16 text-xs leading-relaxed text-muted">{DISCLAIMER}</p>
     </>
+  );
+}
+
+/** 파트너 홈 맨 아래. 잠시 멈춘 동안에는 시기가 드러나지 않게 시기와 상관없는 글을 고른다(view.phase가 null). */
+function ArticleCard({ phase, today }: { phase: Phase | null; today: string }) {
+  const article = articleFor(phase, today);
+  return (
+    <Section title="알아두면 좋은 것" aside={<Link href="/learn" className="link text-sm">전체 보기</Link>}>
+      <Link href={`/learn/${article.slug}`} className="card block">
+        <span className="block text-[17px] font-medium">{article.title}</span>
+        <span className="mt-1 block text-[15px] leading-relaxed text-muted">{article.line}</span>
+        <span className="mt-2 block text-[11px] text-muted">{ARTICLE_FOOTER}</span>
+      </Link>
+    </Section>
   );
 }

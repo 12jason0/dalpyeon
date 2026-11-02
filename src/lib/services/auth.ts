@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
-import { and, eq, gt, isNull, lt, ne, sql } from "drizzle-orm";
+import { and, eq, gt, lt, ne, sql } from "drizzle-orm";
 import type { DB } from "../db";
 import { rateLimits, sessions, users, type Role } from "../db/schema";
 import { fail } from "../errors";
@@ -7,7 +7,16 @@ import { fail } from "../errors";
 export const SESSION_DAYS = 30;
 
 export type User = { id: string; email: string | null; role: Role; nickname: string };
-export type SessionUser = User & { healthConsentAt: Date | null };
+export type Consents = { healthConsentAt: Date | null; ageConfirmedAt: Date | null; transferConsentAt: Date | null };
+export type SessionUser = User & Consents;
+
+/** 페이지와 서버 액션의 관문이 보는 값. 세 동의가 모두 있어야 앱을 쓸 수 있다. */
+export const consentDone = (user: Consents) => Boolean(user.healthConsentAt && user.ageConfirmedAt && user.transferConsentAt);
+
+export const sessionUserFields = {
+  id: users.id, email: users.email, role: users.role, nickname: users.nickname,
+  healthConsentAt: users.healthConsentAt, ageConfirmedAt: users.ageConfirmedAt, transferConsentAt: users.transferConsentAt,
+};
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
@@ -44,7 +53,7 @@ function cleanEmail(email: unknown): string {
 
 function cleanPassword(password: unknown): string {
   const value = String(password ?? "");
-  if (value.length < 8 || value.length > 128) fail("비밀번호는 8자 이상으로 정해 주세요");
+  if (value.length < 8 || value.length > 20) fail("비밀번호는 8~20자로 정해 주세요");
   return value;
 }
 
@@ -70,8 +79,12 @@ export async function limit(db: DB, bucket: string, identity: string, max: numbe
   if (row.hits > max) fail("시도가 너무 많아요. 잠시 후 다시 해 주세요", 429);
 }
 
-export async function signup(db: DB, input: { email: unknown; password: unknown; nickname: unknown; healthConsent: unknown }): Promise<User> {
-  if (input.healthConsent !== true) fail("건강 정보 저장에 동의해야 가입할 수 있어요");
+export async function signup(
+  db: DB, input: { email: unknown; password: unknown; nickname: unknown; healthConsent: unknown; ageConfirmed: unknown; transferConsent: unknown },
+): Promise<User> {
+  if (input.ageConfirmed !== true) fail("만 14세 이상만 가입할 수 있어요");
+  if (input.healthConsent !== true) fail("건강 정보 수집·이용에 동의해야 가입할 수 있어요");
+  if (input.transferConsent !== true) fail("개인정보 국외 이전에 동의해야 가입할 수 있어요");
   const email = cleanEmail(input.email);
   const password = cleanPassword(input.password);
   const nickname = cleanNickname(input.nickname);
@@ -79,7 +92,8 @@ export async function signup(db: DB, input: { email: unknown; password: unknown;
   const role: Role = "recorder";
   const passwordHash = await hashPassword(password);
   const id = randomUUID();
-  const inserted = await db.insert(users).values({ id, email, passwordHash, role, nickname, healthConsentAt: new Date() })
+  const now = new Date();
+  const inserted = await db.insert(users).values({ id, email, passwordHash, role, nickname, healthConsentAt: now, ageConfirmedAt: now, transferConsentAt: now })
     .onConflictDoNothing({ target: users.email }).returning({ id: users.id });
   if (!inserted.length) fail("이 이메일로는 가입할 수 없어요", 409);
   return { id, email, role, nickname };
@@ -123,15 +137,28 @@ export async function createSession(db: DB, userId: string): Promise<{ token: st
 
 export async function userFromToken(db: DB, token: string | undefined): Promise<SessionUser | null> {
   if (!token) return null;
-  const [row] = await db.select({ id: users.id, email: users.email, role: users.role, nickname: users.nickname, healthConsentAt: users.healthConsentAt })
-    .from(sessions).innerJoin(users, eq(users.id, sessions.userId))
+  const [row] = await db.select(sessionUserFields).from(sessions).innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, sha256(token)), gt(sessions.expiresAt, new Date()))).limit(1);
   return row ?? null;
 }
 
-/** 동의 기능 전에 가입한 계정의 동의. 처음 동의한 시각을 바꾸지 않는다. */
-export async function recordHealthConsent(db: DB, user: User) {
-  await db.update(users).set({ healthConsentAt: new Date() }).where(and(eq(users.id, user.id), isNull(users.healthConsentAt)));
+/** 카카오 가입과 예전 계정의 동의. 이미 동의한 건강 정보는 묻지 않고, 처음 동의한 시각을 바꾸지 않는다. */
+export async function recordConsents(db: DB, user: SessionUser, input: { healthConsent: unknown; ageConfirmed: unknown; transferConsent: unknown }) {
+  if (input.ageConfirmed !== true || input.transferConsent !== true || (!user.healthConsentAt && input.healthConsent !== true)) {
+    fail("필수 항목에 모두 동의해야 쓸 수 있어요");
+  }
+  await db.update(users).set({
+    healthConsentAt: sql`coalesce(${users.healthConsentAt}, now())`,
+    ageConfirmedAt: sql`coalesce(${users.ageConfirmedAt}, now())`,
+    transferConsentAt: sql`coalesce(${users.transferConsentAt}, now())`,
+  }).where(eq(users.id, user.id));
+}
+
+/** 매일 크론이 부른다. 만료된 세션과 창이 끝난 요청 제한을 지운다. */
+export async function purgeExpired(db: DB, now = new Date()) {
+  const expired = await db.delete(sessions).where(lt(sessions.expiresAt, now)).returning({ id: sessions.tokenHash });
+  const limits = await db.delete(rateLimits).where(lt(rateLimits.resetAt, now)).returning({ id: rateLimits.key });
+  return { sessions: expired.length, rateLimits: limits.length };
 }
 
 export async function deleteSession(db: DB, token: string | undefined) {

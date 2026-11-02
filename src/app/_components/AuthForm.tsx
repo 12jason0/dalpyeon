@@ -1,15 +1,47 @@
 "use client";
 import Link from "next/link";
 import { useActionState } from "react";
+import { HEALTH_NOTICE, TRANSFER_NOTICE } from "@/lib/content/consents";
 import { changePasswordAction, loginAction, signupAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
-export function HealthConsent() {
+function Notice({ rows }: { rows: readonly (readonly [string, string])[] }) {
+  return (
+    <details className="ml-8 mt-1 text-[13px] leading-relaxed text-muted">
+      <summary className="cursor-pointer">자세히 보기</summary>
+      <dl className="mt-1 space-y-1">
+        {rows.map(([label, text]) => <div key={label}><dt className="inline font-medium">{label}: </dt><dd className="inline">{text}</dd></div>)}
+      </dl>
+    </details>
+  );
+}
+
+function Check({ name, children }: { name: string; children: React.ReactNode }) {
   return (
     <label className="flex items-start gap-3 text-[15px] leading-relaxed">
-      <input type="checkbox" name="healthConsent" required className="mt-1 h-5 w-5 shrink-0 accent-accent" />
-      생리 기록 등 건강 정보를 저장하는 데 동의해요
+      <input type="checkbox" name={name} required className="mt-1 h-5 w-5 shrink-0 accent-accent" />
+      <span>{children}</span>
     </label>
+  );
+}
+
+/** 필수 동의 세 가지. 예전에 건강 정보에 동의한 계정에는 health를 끄고 나머지만 받는다. */
+export function Consents({ health = true }: { health?: boolean }) {
+  return (
+    <div className="space-y-3">
+      <Check name="ageConfirmed">만 14세 이상입니다 (필수)</Check>
+      {health && (
+        <div>
+          <Check name="healthConsent">건강정보(민감정보) 수집·이용 동의 (필수)</Check>
+          <Notice rows={HEALTH_NOTICE} />
+        </div>
+      )}
+      <div>
+        <Check name="transferConsent">개인정보 국외 이전 동의 (필수)</Check>
+        <Notice rows={TRANSFER_NOTICE} />
+      </div>
+      <p className="text-sm"><Link href="/me/privacy" target="_blank" className="link">개인정보 처리방침</Link></p>
+    </div>
   );
 }
 
@@ -22,12 +54,12 @@ export function PasswordForm() {
         <input name="current" type="password" className="field" autoComplete="current-password" required />
       </label>
       <label className="block">
-        <span className="text-sm text-muted">새 비밀번호 (8자 이상)</span>
-        <input name="next" type="password" className="field" minLength={8} autoComplete="new-password" required />
+        <span className="text-sm text-muted">새 비밀번호 (8~20자)</span>
+        <input name="next" type="password" className="field" minLength={8} maxLength={20} autoComplete="new-password" required />
       </label>
       <label className="block">
         <span className="text-sm text-muted">새 비밀번호 확인</span>
-        <input name="confirm" type="password" className="field" minLength={8} autoComplete="new-password" required />
+        <input name="confirm" type="password" className="field" minLength={8} maxLength={20} autoComplete="new-password" required />
       </label>
       <ErrorText message={state?.error} />
       {state?.ok && <p role="status" className="text-sm text-muted">바꿨어요. 다른 기기에서는 로그아웃됐어요.</p>}
@@ -51,13 +83,13 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
         <input name="email" type="email" className="field" autoComplete="email" required defaultValue={state?.values?.email} />
       </label>
       <label className="block">
-        <span className="text-sm text-muted">비밀번호{mode === "signup" && " (8자 이상)"}</span>
+        <span className="text-sm text-muted">비밀번호{mode === "signup" && " (8~20자)"}</span>
         <input
-          name="password" type="password" className="field" minLength={8} required
+          name="password" type="password" className="field" minLength={8} maxLength={mode === "signup" ? 20 : undefined} required
           autoComplete={mode === "login" ? "current-password" : "new-password"}
         />
       </label>
-      {mode === "signup" && <HealthConsent />}
+      {mode === "signup" && <Consents />}
       <ErrorText message={state?.error} />
       <div className="pt-4">
         <Submit>{mode === "login" ? "로그인" : "시작하기"}</Submit>

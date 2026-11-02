@@ -1,16 +1,27 @@
 import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { todaySeoul } from "@/lib/dates";
+import { ESTIMATE_NOTE } from "@/lib/prediction";
 import type { User } from "@/lib/services/auth";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser, siteOrigin } from "@/lib/session";
-import { ClaimForm, InviteBox, SharingForm, Toggle } from "../_components/ConnectForms";
+import { ClaimForm, InviteBox, SharingForm } from "../_components/ConnectForms";
 import { Nav } from "../_components/Nav";
 import { Section } from "../_components/Section";
 
 export const dynamic = "force-dynamic";
 
-const LABELS = { periods: "생리 기록", predictions: "다음 생리 예상", fertility: "가임기 (추정)", care: "배려 요청" } as const;
+/** 연결되면 항목 구분 없이 모두 보인다. */
+const SHARED = ["생리 기록", "다음 생리 예상", "가임기·배란일 (추정)", "오늘의 통증·기분", "배려 요청"];
+
+function SharedList() {
+  return (
+    <ul>
+      {SHARED.map((label) => <li key={label} className="border-b border-line py-3 text-[15px]">{label}</li>)}
+      <li className="pt-3 text-[13px] text-muted">가임기·배란일은 {ESTIMATE_NOTE}</li>
+    </ul>
+  );
+}
 
 const CLAIM_NOTICES: Record<string, string> = {
   code: "코드를 다시 확인해 주세요",
@@ -42,8 +53,10 @@ async function RecorderConnect({ user, claim }: { user: User; claim: Claim }) {
     return (
       <>
         <p className="mt-10 text-2xl font-medium">{name}님과 연결됨</p>
-        <Section title={`${name}님에게 보여줄 것`}>
-          <SharingForm today={todaySeoul()} initial={{ permissions: couple.permissions, shareFrom: couple.shareFrom, paused: couple.paused }} />
+        <Section title={`${name}님에게 보이는 것`}><SharedList /></Section>
+        <Section title="공유 조절">
+          <SharingForm today={todaySeoul()} initial={{ shareFrom: couple.shareFrom, paused: couple.paused }} />
+          <p className="mt-6 text-center text-sm"><Link href="/me/settings" className="link">연결 끊기는 설정에서 할 수 있어요</Link></p>
         </Section>
       </>
     );
@@ -51,9 +64,11 @@ async function RecorderConnect({ user, claim }: { user: User; claim: Claim }) {
   return (
     <>
       <Section title="내 주기를 기록하는 사람">
-        <p className="mb-8 text-[17px] leading-relaxed text-muted">
+        <p className="mb-3 text-[17px] leading-relaxed text-muted">
           코드를 만들어 파트너에게 보내 주세요. 15분 동안 쓸 수 있고, 입력하면 바로 연결되니 믿는 사람에게만 보내 주세요.
-          연결되면 생리 기록·다음 생리 예상·배려 요청이 바로 보이고, 가임기는 꺼져 있어요. 보여줄 항목은 언제든 바꿀 수 있어요.
+        </p>
+        <p className="mb-8 text-[17px] font-medium leading-relaxed">
+          연결하면 생리·가임기·배란일이 상대에게 보여요
         </p>
         <InviteBox origin={await siteOrigin()} />
         <p className="mt-6 text-center text-sm">
@@ -79,14 +94,8 @@ async function PartnerConnect({ user, claim }: { user: User; claim: Claim }) {
     return (
       <>
         <p className="mt-10 text-2xl font-medium">{name}님과 연결돼 있어요</p>
-        <Section title={`${name}님이 보여주는 것`}>
-          {Object.entries(LABELS).map(([key, label]) => (
-            <div key={key} className="flex items-center justify-between gap-4 border-b border-line py-3">
-              <span className="text-[15px]">{label}</span>
-              <Toggle on={couple.permissions[key as keyof typeof LABELS] && !couple.paused} label={label} disabled />
-            </div>
-          ))}
-          <p className="pt-4 text-[13px] text-muted">보여줄 항목은 {name}님이 정해요.</p>
+        <Section title={`${name}님과 함께 보는 것`}>
+          {couple.paused ? <p className="text-[15px] text-muted">{name}님은 잠시 쉬는 중이에요.</p> : <SharedList />}
         </Section>
       </>
     );

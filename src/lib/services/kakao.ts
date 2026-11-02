@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import type { DB } from "../db";
 import { users } from "../db/schema";
-import type { SessionUser } from "./auth";
+import { errorKind } from "../errors";
+import { consentDone, sessionUserFields, type SessionUser } from "./auth";
 
 export const KAKAO_CALLBACK = "/api/auth/kakao/callback";
 const DEFAULT_NICKNAME = "우리주기 사용자";
@@ -40,8 +41,7 @@ async function kakaoProfile(code: string, redirectUri: string, fetcher: typeof f
 export async function signInWithKakao(db: DB, code: string, redirectUri: string, fetcher: typeof fetch = fetch): Promise<SessionUser> {
   const { kakaoId, nickname } = await kakaoProfile(code, redirectUri, fetcher);
   const find = async () => {
-    const [row] = await db.select({ id: users.id, email: users.email, role: users.role, nickname: users.nickname, healthConsentAt: users.healthConsentAt })
-      .from(users).where(eq(users.kakaoId, kakaoId)).limit(1);
+    const [row] = await db.select(sessionUserFields).from(users).where(eq(users.kakaoId, kakaoId)).limit(1);
     return row;
   };
   const found = await find();
@@ -63,12 +63,12 @@ export async function unlinkKakao(kakaoId: string, fetcher: typeof fetch = fetch
     });
     if (!res.ok) console.error("kakao unlink failed", res.status);
   } catch (e) {
-    console.error("kakao unlink failed", e instanceof Error ? e.message : e);
+    console.error("kakao unlink failed", errorKind(e));
   }
 }
 
 /** 동의 전이면 코드는 쿠키에 남겨 동의 뒤 연결하고, 이미 쓰던 계정은 확인 화면에서 직접 연결하게 한다. */
 export function kakaoLanding(user: SessionUser, joinCode: string | undefined) {
-  if (!user.healthConsentAt) return "/consent";
+  if (!consentDone(user)) return "/consent";
   return joinCode ? `/join?code=${encodeURIComponent(joinCode)}` : "/";
 }

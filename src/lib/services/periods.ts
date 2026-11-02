@@ -7,6 +7,7 @@ import { fail } from "../errors";
 import { autoEndDate, currentPeriod, estimate, isOverdue, type Prediction } from "../prediction";
 import type { User } from "./auth";
 import { requireRole } from "./couples";
+import { pruneDayLogs } from "./daylogs";
 
 export { currentPeriod };
 
@@ -49,6 +50,7 @@ export async function savePeriod(db: DB, ownerId: string, input: PeriodInput, to
     const values = { startDate, endDate, excluded, excludeReason, autoEnded, updatedAt: new Date() };
     if (existing) {
       const [row] = await tx.update(periods).set(values).where(eq(periods.id, existing.id)).returning();
+      await pruneDayLogs(tx, ownerId);
       return row;
     }
     const [row] = await tx.insert(periods).values({ id: randomUUID(), ownerId, ...values }).returning();
@@ -59,6 +61,7 @@ export async function savePeriod(db: DB, ownerId: string, input: PeriodInput, to
 export async function deletePeriod(db: DB, ownerId: string, id: string) {
   const deleted = await db.delete(periods).where(and(eq(periods.id, id), eq(periods.ownerId, ownerId))).returning({ id: periods.id });
   if (!deleted.length) fail("기록을 찾을 수 없어요", 404);
+  await pruneDayLogs(db, ownerId);
 }
 
 /** "아직 하고 있어요". 오늘과 내일은 묻지 않는다. */

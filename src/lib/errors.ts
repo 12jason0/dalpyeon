@@ -9,3 +9,10 @@ export class AppError extends Error {
 export function fail(message: string, status = 400): never {
   throw new AppError(message, status);
 }
+
+/** 로그에 남기는 오류 종류. DB 오류의 message에는 쿼리 입력값이 들어 있어 쓰지 않는다. */
+export function errorKind(e: unknown) {
+  if (!(e instanceof Error)) return "unknown";
+  const code = (e.cause as { code?: unknown } | undefined)?.code;
+  return typeof code === "string" ? `${e.name} ${code}` : e.name;
+}

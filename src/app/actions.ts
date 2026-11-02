@@ -5,18 +5,19 @@ import { redirect, unstable_rethrow } from "next/navigation";
 import { after } from "next/server";
 import { getDb, type DB } from "@/lib/db";
 import { isMonth, todaySeoul } from "@/lib/dates";
-import { AppError } from "@/lib/errors";
+import { AppError, errorKind } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
-import { changePassword, limit, login, recordHealthConsent, signup } from "@/lib/services/auth";
+import { changePassword, limit, login, recordConsents, signup } from "@/lib/services/auth";
 import { clearCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
   agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, unblock, updateComment, updatePost,
   type Target,
 } from "@/lib/services/community";
 import {
-  clearSharingNotice, createInvite, disconnect, setSharingItem, tryClaim, updateSharing, PERMISSION_KEYS,
+  clearSharingNotice, createInvite, disconnect, setPaused, tryClaim, updateSharing,
   type ClaimProblem,
 } from "@/lib/services/couples";
+import { saveDayLog } from "@/lib/services/daylogs";
 import { deletePeriod, listPeriods, savePeriod, setUsualCycle, snoozeEndQuestion } from "@/lib/services/periods";
 import {
   markNewsSeen, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
@@ -37,7 +38,7 @@ async function attempt(fn: () => Promise<FormState | void>, form?: FormData, kee
     unstable_rethrow(e); // requireUser의 이동은 오류가 아니다
     const values = form ? Object.fromEntries(keep.map((k) => [k, String(form.get(k) ?? "")])) : undefined;
     if (e instanceof AppError) return { error: e.message, values };
-    console.error(e);
+    console.error("action failed", errorKind(e));
     return { error: "문제가 생겼어요. 잠시 후 다시 시도해 주세요.", values };
   }
 }
@@ -49,7 +50,7 @@ const later = (work: (db: DB) => Promise<void>) => after(async () => {
   try {
     await work(await getDb());
   } catch (e) {
-    console.error(e);
+    console.error("after failed", errorKind(e));
   }
 });
 
@@ -60,13 +61,17 @@ export async function signupAction(_: FormState, form: FormData): Promise<FormSt
     const db = await getDb();
     await limit(db, "signup", await clientIp(), 10, 3600);
     const user = await signup(db, {
-      email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"), healthConsent: form.get("healthConsent") === "on",
+      email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"), ...consentsOf(form),
     });
     await startSession(user.id);
   }, form, ["email", "nickname"]);
   if (result?.error) return result;
   redirect("/");
 }
+
+const consentsOf = (form: FormData) => ({
+  ageConfirmed: form.get("ageConfirmed") === "on", healthConsent: form.get("healthConsent") === "on", transferConsent: form.get("transferConsent") === "on",
+});
 
 const connectAfterClaim = (problem: ClaimProblem | null, code: string) =>
   problem ? `/connect?claim=${problem}&code=${encodeURIComponent(code.slice(0, 12))}` : "/connect";
@@ -80,7 +85,7 @@ export async function joinAction(_: FormState, form: FormData): Promise<FormStat
     const ip = await clientIp();
     await limit(db, "signup", ip, 10, 3600);
     const user = await signup(db, {
-      email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"), healthConsent: form.get("healthConsent") === "on",
+      email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"), ...consentsOf(form),
     });
     await startSession(user.id);
     problem = await tryClaim(db, user, code, ip);
@@ -112,11 +117,11 @@ export async function loginAction(_: FormState, form: FormData): Promise<FormSta
   redirect("/");
 }
 
-export async function healthConsentAction(_: FormState, form: FormData): Promise<FormState> {
+export async function consentAction(_: FormState, form: FormData): Promise<FormState> {
   const user = await requireLogin();
-  if (form.get("healthConsent") !== "on") return { error: "동의해야 계속 쓸 수 있어요" };
   const db = await getDb();
-  await recordHealthConsent(db, user);
+  const failed = await attempt(() => recordConsents(db, user, consentsOf(form)));
+  if (failed?.error) return failed;
   // /join에서 카카오로 가입했다면 동의가 끝난 지금 그 코드로 연결한다
   const code = await takeJoinCode();
   const problem = code ? await tryClaim(db, user, code, await clientIp()) : null;
@@ -204,6 +209,14 @@ export async function saveUsualCycleAction(_: FormState, form: FormData): Promis
   });
 }
 
+export async function saveDayLogAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    const user = await requireUser("recorder");
+    await saveDayLog(await getDb(), user, { day: form.get("day"), pain: form.get("pain"), moods: form.getAll("moods") });
+    refresh();
+  });
+}
+
 export async function deletePeriodAction(form: FormData) {
   const user = await requireUser("recorder");
   await deletePeriod(await getDb(), user.id, String(form.get("id")));
@@ -228,18 +241,16 @@ export async function sharingAction(_: FormState, form: FormData): Promise<FormS
   return attempt(async () => {
     const user = await requireUser("recorder");
     await updateSharing(await getDb(), user, {
-      permissions: Object.fromEntries(PERMISSION_KEYS.map((k) => [k, form.get(k) === "on"])),
       shareFrom: form.get("shareFrom"),
-      paused: form.get("paused") === "on",
     });
     refresh();
   });
 }
 
-export async function toggleSharingAction(key: string, on: boolean): Promise<FormState> {
+export async function pauseAction(on: boolean): Promise<FormState> {
   return attempt(async () => {
     const user = await requireUser("recorder");
-    await setSharingItem(await getDb(), user, key, on);
+    await setPaused(await getDb(), user, on);
     refresh();
   });
 }

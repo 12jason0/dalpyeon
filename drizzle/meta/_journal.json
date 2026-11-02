@@ -43,6 +43,13 @@
       "when": 1793579367888,
       "tag": "0005_period_auto_end",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793589150697,
+      "tag": "0006_day_logs_consents",
+      "breakpoints": true
     }
   ]
 }

@@ -2,22 +2,27 @@ import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLocalDb, type DB } from "@/lib/db";
 import {
-  blocks, careRequests, careResponses, comments, couples, invitations, periods, posts, pushSubscriptions, reports, sessions, users,
+  blocks, careRequests, careResponses, comments, couples, dayLogs, invitations, periods, posts, pushSubscriptions, rateLimits, reports, sessions, users,
 } from "@/lib/db/schema";
+import { ARTICLES, articleFor, findArticle } from "@/lib/content/articles";
 import { addDays } from "@/lib/dates";
+import { summarizeLogs, todayBodyLine } from "@/lib/daylog";
 import { CRESCENT, moonShape } from "@/lib/moon";
 import { calendarMarks, endQuestion, estimate, predictionError } from "@/lib/prediction";
-import { AppError } from "@/lib/errors";
+import { AppError, errorKind } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
-import { changePassword, createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
+import {
+  changePassword, consentDone, createSession, deleteSession, hashPassword, limit, login, purgeExpired, recordConsents, sha256, signup, userFromToken, type User,
+} from "@/lib/services/auth";
 import { clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
-  activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, setSharingItem, tryClaim, updateSharing,
+  activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, setPaused, tryClaim, updateSharing,
 } from "@/lib/services/couples";
 import {
   agreeToRules, blockAuthor, communityAccess, createComment, createPost, decideReport, deleteComment, deletePost, getPost, listPosts,
   listBlocked, listReports, myPosts, report, unblock, updateComment, updatePost,
 } from "@/lib/services/community";
+import { dayLogOn, listDayLogs, saveDayLog } from "@/lib/services/daylogs";
 import { kakaoAuthorizeUrl, kakaoEnabled, kakaoLanding, signInWithKakao } from "@/lib/services/kakao";
 import {
   autoEndPeriods, currentPeriod, deletePeriod, listPeriods, predictionFor, savePeriod, setUsualCycle, snoozeEndQuestion, usualCycle,
@@ -29,6 +34,7 @@ import {
 } from "@/lib/services/push";
 
 const TODAY = "2026-10-30";
+const AGREED = { healthConsent: true, ageConfirmed: true, transferConsent: true };
 let db: DB;
 
 async function expectFail(promise: Promise<unknown>, status?: number) {
@@ -38,8 +44,8 @@ async function expectFail(promise: Promise<unknown>, status?: number) {
 }
 
 async function pair(): Promise<{ me: User; you: User }> {
-  const me = await signup(db, { email: "me@example.com", password: "password-1", nickname: "나", healthConsent: true });
-  const you = await signup(db, { email: "you@example.com", password: "password-2", nickname: "너", healthConsent: true });
+  const me = await signup(db, { email: "me@example.com", password: "password-1", nickname: "나", ...AGREED });
+  const you = await signup(db, { email: "you@example.com", password: "password-2", nickname: "너", ...AGREED });
   return { me, you };
 }
 
@@ -68,9 +74,9 @@ beforeEach(async () => {
 
 describe("계정", () => {
   it("가입 → 로그인 → 세션 → 로그아웃", async () => {
-    const user = await signup(db, { email: " Me@Example.com ", password: "password-1", nickname: "나", healthConsent: true });
+    const user = await signup(db, { email: " Me@Example.com ", password: "password-1", nickname: "나", ...AGREED });
     expect(user.email).toBe("me@example.com");
-    await expectFail(signup(db, { email: "me@example.com", password: "password-1", nickname: "다른", healthConsent: true }), 409);
+    await expectFail(signup(db, { email: "me@example.com", password: "password-1", nickname: "다른", ...AGREED }), 409);
     await expectFail(login(db, { email: "me@example.com", password: "wrong-pass" }), 401);
     await expectFail(login(db, { email: "nobody@example.com", password: "password-1" }), 401);
     const logged = await login(db, { email: "ME@example.com", password: "password-1" });
@@ -82,37 +88,89 @@ describe("계정", () => {
   });
 
   it("가입하면 누구나 기록자", async () => {
-    const user = await signup(db, { email: "a@b.co", password: "password-1", nickname: "a", healthConsent: true });
+    const user = await signup(db, { email: "a@b.co", password: "password-1", nickname: "a", ...AGREED });
     expect(user.role).toBe("recorder");
     expect((await reload(user)).role).toBe("recorder");
   });
 
-  it("건강 정보 동의 없이는 가입할 수 없고, 동의 시각을 저장한다", async () => {
+  it("세 가지 필수 동의가 없으면 가입할 수 없고, 동의 시각을 저장한다", async () => {
     const input = { email: "a@b.co", password: "password-1", nickname: "a" };
-    for (const healthConsent of [false, undefined, "on", 1]) await expectFail(signup(db, { ...input, healthConsent }));
+    for (const key of ["healthConsent", "ageConfirmed", "transferConsent"]) {
+      for (const value of [false, undefined, "on", 1]) await expectFail(signup(db, { ...input, ...AGREED, [key]: value }));
+    }
     expect(await db.select().from(users)).toEqual([]);
     const before = Date.now();
-    const user = await signup(db, { ...input, healthConsent: true });
-    const [row] = await db.select({ at: users.healthConsentAt }).from(users).where(eq(users.id, user.id));
-    expect(row.at?.getTime()).toBeGreaterThanOrEqual(before - 1000);
+    const user = await signup(db, { ...input, ...AGREED });
+    const [row] = await db.select().from(users).where(eq(users.id, user.id));
+    for (const at of [row.healthConsentAt, row.ageConfirmedAt, row.transferConsentAt]) expect(at?.getTime()).toBeGreaterThanOrEqual(before - 1000);
   });
 
-  it("기존 가입자: 세션에 동의 여부가 실리고, 동의하면 기록되며 첫 동의 시각은 바뀌지 않는다", async () => {
-    const user = await signup(db, { email: "old@b.co", password: "password-1", nickname: "옛", healthConsent: true });
-    await db.update(users).set({ healthConsentAt: null }).where(eq(users.id, user.id));
+  it("기존 가입자: 건강 정보 동의는 다시 받지 않고 나이 확인과 국외 이전만 받는다. 첫 동의 시각은 바뀌지 않는다", async () => {
+    const user = await signup(db, { email: "old@b.co", password: "password-1", nickname: "옛", ...AGREED });
+    await db.update(users).set({ ageConfirmedAt: null, transferConsentAt: null }).where(eq(users.id, user.id));
     const { token } = await createSession(db, user.id);
-    expect((await userFromToken(db, token))?.healthConsentAt).toBeNull();
+    const before = (await userFromToken(db, token))!;
+    expect(consentDone(before)).toBe(false);
 
-    await recordHealthConsent(db, user);
-    const first = (await userFromToken(db, token))?.healthConsentAt;
-    expect(first).toBeInstanceOf(Date);
+    await expectFail(recordConsents(db, before, { healthConsent: false, ageConfirmed: true, transferConsent: false }));
+    await expectFail(recordConsents(db, before, { healthConsent: false, ageConfirmed: false, transferConsent: true }));
+    await recordConsents(db, before, { healthConsent: false, ageConfirmed: true, transferConsent: true });
+    const after = (await userFromToken(db, token))!;
+    expect(consentDone(after)).toBe(true);
+    expect(after.healthConsentAt).toEqual(before.healthConsentAt);
+
     await new Promise((r) => setTimeout(r, 5));
-    await recordHealthConsent(db, user);
-    expect((await userFromToken(db, token))?.healthConsentAt).toEqual(first);
+    await recordConsents(db, after, AGREED);
+    expect((await userFromToken(db, token))?.transferConsentAt).toEqual(after.transferConsentAt);
+  });
+
+  it("건강 정보 동의가 없던 계정은 셋 다 받아야 한다", async () => {
+    const user = await signup(db, { email: "older@b.co", password: "password-1", nickname: "옛", ...AGREED });
+    await db.update(users).set({ healthConsentAt: null, ageConfirmedAt: null, transferConsentAt: null }).where(eq(users.id, user.id));
+    const { token } = await createSession(db, user.id);
+    const before = (await userFromToken(db, token))!;
+    await expectFail(recordConsents(db, before, { healthConsent: false, ageConfirmed: true, transferConsent: true }));
+    await recordConsents(db, before, AGREED);
+    expect(consentDone((await userFromToken(db, token))!)).toBe(true);
+  });
+
+  it("비밀번호는 8~20자만 받고, 이미 더 긴 비밀번호는 로그인과 변경에 그대로 쓴다", async () => {
+    const input = { email: "len@b.co", nickname: "a", ...AGREED };
+    await expectFail(signup(db, { ...input, password: "x".repeat(7) }));
+    await expectFail(signup(db, { ...input, password: "x".repeat(21) }));
+    const user = await signup(db, { ...input, password: "x".repeat(20) });
+
+    const long = "긴비밀번호-".repeat(5);
+    await db.update(users).set({ passwordHash: await hashPassword(long) }).where(eq(users.id, user.id));
+    expect((await login(db, { email: "len@b.co", password: long })).id).toBe(user.id);
+    await expectFail(changePassword(db, user, { current: long, next: "y".repeat(21), confirm: "y".repeat(21) }, "t"));
+    await changePassword(db, user, { current: long, next: "y".repeat(20), confirm: "y".repeat(20) }, "t");
+    expect((await login(db, { email: "len@b.co", password: "y".repeat(20) })).id).toBe(user.id);
   });
 
   it("입력 검증: 짧은 비밀번호 거부", async () => {
-    await expectFail(signup(db, { email: "a@b.co", password: "short", nickname: "a", healthConsent: true }));
+    await expectFail(signup(db, { email: "a@b.co", password: "short", nickname: "a", ...AGREED }));
+  });
+
+  it("크론 정리: 만료된 세션과 지난 요청 제한만 지운다", async () => {
+    const user = await signup(db, { email: "purge@b.co", password: "password-1", nickname: "a", ...AGREED });
+    const live = await createSession(db, user.id);
+    const old = await createSession(db, user.id);
+    await db.update(sessions).set({ expiresAt: new Date(Date.now() - 1000) }).where(eq(sessions.tokenHash, sha256(old.token)));
+    await limit(db, "login", "1.1.1.1", 3, -1);
+    await limit(db, "login", "2.2.2.2", 3, 60);
+
+    expect(await purgeExpired(db)).toEqual({ sessions: 1, rateLimits: 1 });
+    expect(await db.select().from(sessions)).toHaveLength(1);
+    expect(await db.select().from(rateLimits)).toHaveLength(1);
+    expect((await userFromToken(db, live.token))?.id).toBe(user.id);
+  });
+
+  it("로그에는 오류 종류만 남고 쿼리 입력값은 남지 않는다", () => {
+    const cause = Object.assign(new Error("db"), { code: "23505" });
+    const e = Object.assign(new Error("Failed query: insert\nparams: secret@example.com"), { name: "DrizzleQueryError", cause });
+    expect(errorKind(e)).toBe("DrizzleQueryError 23505");
+    expect(errorKind("secret")).toBe("unknown");
   });
 
   it("요청 제한: 최대치를 넘으면 429", async () => {
@@ -176,7 +234,7 @@ describe("커플 연결", () => {
 
   it("한 번 쓴 코드는 재사용할 수 없다. 끊은 뒤에도 마찬가지", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", ...AGREED });
     const { code } = await createInvite(db, me);
     await claimInvite(db, you, code);
     await expectFail(claimInvite(db, third, code), 404);
@@ -198,7 +256,7 @@ describe("커플 연결", () => {
 
   it("같은 코드를 동시에 입력해도 한 명만 연결된다", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", ...AGREED });
     const { code } = await createInvite(db, me);
     const results = await Promise.allSettled([claimInvite(db, you, code), claimInvite(db, third, code)]);
     expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
@@ -218,7 +276,7 @@ describe("커플 연결", () => {
 
   it("DB에 남은 대기 요청은 무시된다: 코드는 못 쓰고, 다시 연결하는 데 방해되지 않는다", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", ...AGREED });
     const old = await createInvite(db, me);
     await db.update(invitations).set({ status: "pending", claimantId: you.id });
     await expectFail(claimInvite(db, third, old.code), 404);
@@ -253,7 +311,7 @@ describe("커플 연결", () => {
 
   it("입력한 사람이 만들어 둔 코드는 연결되면 무효", async () => {
     const { me, you } = await pair();
-    const late = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷", healthConsent: true });
+    const late = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷", ...AGREED });
     const yours = await createInvite(db, you);
     const mine = await createInvite(db, me);
     await claimInvite(db, you, mine.code);
@@ -271,7 +329,7 @@ describe("커플 연결", () => {
 
   it("이미 다른 연결의 기록자인 사람은 파트너가 될 수 없다", async () => {
     const { me, you } = await pair();
-    const fourth = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷", healthConsent: true });
+    const fourth = await signup(db, { email: "y@example.com", password: "password-4", nickname: "넷", ...AGREED });
     const mine = await createInvite(db, me);
     const yours = await createInvite(db, you);
     await claimInvite(db, fourth, yours.code);
@@ -281,7 +339,7 @@ describe("커플 연결", () => {
 
   it("이미 파트너가 있는 기록자의 코드로는 연결되지 않는다", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", ...AGREED });
     const mine = await createInvite(db, me);
     await claimInvite(db, you, mine.code);
     // 연결될 때 지워지지 않고 남은 코드가 있더라도 busy 검사가 막는다
@@ -299,25 +357,22 @@ describe("커플 연결", () => {
   });
 });
 
-describe("공유 토글", () => {
-  it("한 항목만 바뀌고 나머지는 그대로다. 잠시 멈추기도 같은 방식", async () => {
+describe("잠시 멈추기", () => {
+  it("기록자만 바꿀 수 있고, 켜면 파트너에게 쉬는 중만 보인다", async () => {
     const { me, you } = await pair();
+    await expectFail(setPaused(db, me, true), 404); // 연결 전
+    await fourPeriods(me);
     await connect(me, you);
-    await Promise.all([setSharingItem(db, me, "fertility", true), setSharingItem(db, me, "predictions", false)]);
-    expect((await activeCouple(db, me.id))?.permissions).toEqual({ periods: true, predictions: false, fertility: true, care: true });
-    await setSharingItem(db, me, "care", false);
-    await setSharingItem(db, me, "paused", true);
-    expect(await activeCouple(db, me.id)).toMatchObject({ paused: true, permissions: { periods: true, care: false } });
-  });
-
-  it("권한이 없거나 없는 항목이면 바뀌지 않는다", async () => {
-    const { me, you } = await pair();
-    await expectFail(setSharingItem(db, me, "care", true), 404); // 연결 전
-    await connect(me, you);
-    await expectFail(setSharingItem(db, await reload(you), "care", true), 403); // 파트너는 못 바꾼다
-    await expectFail(setSharingItem(db, me, "isAdmin", true), 400);
-    await expectFail(setSharingItem(db, me, "care}", true), 400);
-    expect((await activeCouple(db, me.id))?.permissions).toEqual({ periods: true, predictions: true, fertility: false, care: true });
+    const partner = await reload(you);
+    await expectFail(setPaused(db, partner, true), 403);
+    await setPaused(db, me, true);
+    const view = await partnerView(db, partner, TODAY);
+    expect(view).toMatchObject({
+      paused: true, current: null, nextPeriod: null, fertileWindow: null, ovulation: null, recentPeriods: [], care: [], calendar: [],
+      moon: CRESCENT, todayBody: null, phase: null,
+    });
+    await setPaused(db, me, false);
+    expect((await partnerView(db, partner, TODAY))?.paused).toBe(false);
   });
 });
 
@@ -354,7 +409,7 @@ describe("카카오 로그인", () => {
   it("처음이면 이메일 없이 기록자로 가입하고 동의 화면으로 간다", async () => {
     const { calls, fetcher } = kakao(1001, "지민");
     const user = await signInWithKakao(db, "auth-code", REDIRECT, fetcher);
-    expect(user).toMatchObject({ email: null, role: "recorder", nickname: "지민", healthConsentAt: null });
+    expect(user).toMatchObject({ email: null, role: "recorder", nickname: "지민", healthConsentAt: null, ageConfirmedAt: null, transferConsentAt: null });
     expect(kakaoLanding(user, undefined)).toBe("/consent");
     expect(kakaoLanding(user, "ABCDEFGH")).toBe("/consent"); // 코드가 있어도 동의가 먼저
 
@@ -365,7 +420,7 @@ describe("카카오 로그인", () => {
 
   it("다시 로그인하면 같은 계정이고, 이메일 없는 계정이 여럿이어도 된다", async () => {
     const first = await signInWithKakao(db, "a", REDIRECT, kakao(1001, "지민").fetcher);
-    await recordHealthConsent(db, first);
+    await recordConsents(db, first, AGREED);
     const again = await signInWithKakao(db, "b", REDIRECT, kakao(1001, "바뀐이름").fetcher);
     expect(again.id).toBe(first.id);
     expect(again.nickname).toBe("지민");
@@ -386,7 +441,7 @@ describe("카카오 로그인", () => {
     const { me } = await pair();
     const { code } = await createInvite(db, me);
     const user = await signInWithKakao(db, "a", REDIRECT, kakao(1001, "도윤").fetcher);
-    await recordHealthConsent(db, user); // healthConsentAction과 같은 순서
+    await recordConsents(db, user, AGREED); // healthConsentAction과 같은 순서
     expect(await tryClaim(db, user, code, "1.1.1.1")).toBeNull();
     expect((await reload(user)).role).toBe("partner");
     expect(await activeCouple(db, me.id)).toMatchObject({ partnerId: user.id });
@@ -406,7 +461,7 @@ describe("카카오 로그인", () => {
 });
 
 describe("코드로 시작하기", () => {
-  const newcomer = () => signup(db, { email: "new@example.com", password: "password-9", nickname: "새", healthConsent: true });
+  const newcomer = () => signup(db, { email: "new@example.com", password: "password-9", nickname: "새", ...AGREED });
   const count = async () => (await db.select({ id: users.id }).from(users)).length;
 
   it("맞는 코드: 가입하면 바로 파트너로 연결", async () => {
@@ -438,7 +493,7 @@ describe("코드로 시작하기", () => {
     const { code } = await createInvite(db, me);
     expect(await tryClaim(db, me, code, "1.1.1.1")).toBe("code");
     expect(await tryClaim(db, you, code.toLowerCase(), "1.1.1.1")).toBeNull();
-    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", healthConsent: true });
+    const third = await signup(db, { email: "x@example.com", password: "password-3", nickname: "셋", ...AGREED });
     const other = await createInvite(db, third);
     expect(await tryClaim(db, await reload(you), other.code, "1.1.1.1")).toBe("connected");
   });
@@ -453,87 +508,73 @@ describe("코드로 시작하기", () => {
 });
 
 describe("공유", () => {
-  it("모두 끄면 아무것도 안 보이고, 켠 항목만 보인다", async () => {
+  it("연결되면 모두 보이고, 계산 근거는 보내지 않는다", async () => {
     const { me, you } = await pair();
     await fourPeriods(me);
-    await connect(me, you);
-    const partner = await reload(you);
-    await updateSharing(db, me, { permissions: {}, shareFrom: TODAY, paused: false }, TODAY);
-    let view = await partnerView(db, partner, TODAY);
-    expect(view).toMatchObject({ recorderNickname: "나", current: null, nextPeriod: null, fertileWindow: null, recentPeriods: [], care: [] });
-
-    // 예측만 켬: 다음 예정일은 보이지만 과거 기록·간격은 안 보인다
-    await updateSharing(db, me, { permissions: { predictions: true }, shareFrom: TODAY, paused: false }, TODAY);
-    view = await partnerView(db, partner, TODAY);
-    expect(view?.nextPeriod?.startDate).toBe("2026-10-30");
-    expect(view?.recentPeriods).toEqual([]);
-    expect(view?.fertileWindow).toBeNull();
-    expect(JSON.stringify(view)).not.toContain("intervals");
-
-    // 기록 공유를 켜도 공유 시작일 이전 기록은 안 보인다
-    await updateSharing(db, me, { permissions: { periods: true }, shareFrom: TODAY, paused: false }, TODAY);
-    expect((await partnerView(db, partner, TODAY))?.recentPeriods).toEqual([]);
-    await updateSharing(db, me, { permissions: { periods: true }, shareFrom: "2026-09-01", paused: false }, TODAY);
-    expect((await partnerView(db, partner, TODAY))?.recentPeriods.map((p) => p.startDate)).toEqual(["2026-10-02", "2026-09-04"]);
-
-    // 일시정지하면 전부 숨김
-    await updateSharing(db, me, { permissions: { periods: true, predictions: true }, shareFrom: "2026-09-01", paused: true }, TODAY);
-    view = await partnerView(db, partner, TODAY);
-    expect(view).toMatchObject({ paused: true, recentPeriods: [], nextPeriod: null });
-
-    await expectFail(updateSharing(db, partner, { permissions: {}, shareFrom: TODAY, paused: false }, TODAY), 403);
-    await expectFail(updateSharing(db, me, { permissions: {}, shareFrom: "2026-12-01", paused: false }, TODAY));
-  });
-
-  it("파트너 달력에는 켠 항목의 날짜만 들어간다", async () => {
-    const { me, you } = await pair();
-    await fourPeriods(me);
+    await setUsualCycle(db, me, 31);
+    await savePeriod(db, me.id, { startDate: "2026-06-01", endDate: "2026-06-05", excluded: true, excludeReason: "비밀 사유" }, TODAY);
     await connect(me, you);
     const partner = await reload(you);
     const asOf = "2026-10-12"; // 예상 가임기(10.11~17)가 아직 지나지 않은 날
-    const types = async (month?: string) => [...new Set((await partnerView(db, partner, asOf, month))!.calendar.map((m) => m.type))];
-    const share = (permissions: Record<string, boolean>, shareFrom = "2026-09-01", paused = false) =>
-      updateSharing(db, me, { permissions, shareFrom, paused }, asOf);
+    await updateSharing(db, me, { shareFrom: "2026-09-01" }, asOf);
 
-    await share({});
-    expect(await types()).toEqual([]);
-
-    await share({ periods: true });
-    expect(await types()).toEqual(["period"]);
-    await share({ predictions: true });
-    expect(await types()).toEqual(["predicted_period"]);
-    await share({ fertility: true });
-    expect(await types()).toEqual(["estimated_fertile_window"]); // 예측 날짜도, 배란 추정일도 없음
-
-    // 공유 시작일 이전의 실제 기록은 안 보인다
-    await share({ periods: true }, "2026-09-01");
-    expect((await partnerView(db, partner, asOf, "2026-08"))!.calendar).toEqual([]);
-    expect((await partnerView(db, partner, asOf, "2026-09"))!.calendar.map((m) => m.date))
-      .toEqual(["2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07", "2026-09-08"]);
-    await share({ periods: true }, "2026-09-05");
-    expect((await partnerView(db, partner, asOf, "2026-09"))!.calendar).toEqual([]); // 9.4 시작 기록 전체가 숨겨짐
-
-    // 지나간 예측은 안 보이고, 달력에 기록 id도 내려가지 않는다
-    await share({ periods: true, predictions: true, fertility: true });
-    const late = await partnerView(db, partner, "2026-10-31", "2026-10");
-    expect(late!.calendar.some((m) => m.type === "predicted_period" && m.date < "2026-10-31")).toBe(false);
-    expect(JSON.stringify(late!.calendar)).not.toContain("recordId");
-
-    // 일시정지면 비어 있다
-    await share({ periods: true, predictions: true, fertility: true }, "2026-09-01", true);
-    expect((await partnerView(db, partner, asOf))!.calendar).toEqual([]);
+    const view = (await partnerView(db, partner, asOf))!;
+    expect(view.nextPeriod?.startDate).toBe("2026-10-30");
+    expect(view.fertileWindow).toEqual({ startDate: "2026-10-11", endDate: "2026-10-17" });
+    expect(view.ovulation).toBe("2026-10-16");
+    expect(view.recentPeriods.map((p) => p.startDate)).toEqual(["2026-10-02", "2026-09-04"]);
+    expect(new Set(view.calendar.map((m) => m.type))).toEqual(new Set(["period", "predicted_period", "estimated_fertile_window", "estimated_ovulation"]));
+    const sent = JSON.stringify(view);
+    for (const secret of ["intervals", "비밀 사유", "excluded", "usual", "permissions"]) expect(sent).not.toContain(secret);
   });
 
-  it("연결 해제하면 볼 수 없고, 다시 연결하면 공유는 처음부터", async () => {
+  it("예전에 꺼 둔 항목 값이 남아 있어도 더는 보지 않는다", async () => {
+    const { me, you } = await pair();
+    await fourPeriods(me);
+    const couple = await connect(me, you);
+    await db.update(couples).set({ permissions: { periods: false, predictions: false, fertility: false, care: false } }).where(eq(couples.id, couple.id));
+    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
+    const view = (await partnerView(db, await reload(you), TODAY))!;
+    expect(view.nextPeriod?.startDate).toBe("2026-10-30");
+    expect(view.care).toHaveLength(1);
+  });
+
+  it("공유 시작일 이전 기록은 숨기고, 날짜를 바꿀 수 있다", async () => {
     const { me, you } = await pair();
     await fourPeriods(me);
     await connect(me, you);
-    await updateSharing(db, me, { permissions: { periods: true, predictions: true, fertility: true, care: true }, shareFrom: "2026-01-01", paused: false }, TODAY);
+    const partner = await reload(you);
+    const asOf = "2026-10-12";
+    expect((await partnerView(db, partner, asOf))?.recentPeriods).toEqual([]);
+    await updateSharing(db, me, { shareFrom: "2026-09-01" }, asOf);
+    expect((await partnerView(db, partner, asOf, "2026-08"))!.calendar).toEqual([]);
+    expect((await partnerView(db, partner, asOf, "2026-09"))!.calendar.map((m) => m.date))
+      .toEqual(["2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07", "2026-09-08"]);
+    await updateSharing(db, me, { shareFrom: "2026-09-05" }, asOf);
+    expect((await partnerView(db, partner, asOf, "2026-09"))!.calendar).toEqual([]); // 9.4 시작 기록 전체가 숨겨짐
+
+    await expectFail(updateSharing(db, partner, { shareFrom: TODAY }, TODAY), 403);
+    await expectFail(updateSharing(db, me, { shareFrom: "2026-12-01" }, TODAY));
+  });
+
+  it("지나간 예측은 안 보이고, 달력에 기록 id도 내려가지 않는다", async () => {
+    const { me, you } = await pair();
+    await fourPeriods(me);
+    await connect(me, you);
+    const late = await partnerView(db, await reload(you), "2026-10-31", "2026-10");
+    expect(late!.calendar.some((m) => m.type === "predicted_period" && m.date < "2026-10-31")).toBe(false);
+    expect(JSON.stringify(late!.calendar)).not.toContain("recordId");
+  });
+
+  it("연결 해제하면 볼 수 없고, 다시 연결하면 공유 시작일은 처음부터", async () => {
+    const { me, you } = await pair();
+    await fourPeriods(me);
+    await connect(me, you);
+    await updateSharing(db, me, { shareFrom: "2026-01-01" }, TODAY);
     const partner = await reload(you);
     await disconnect(db, partner);
     expect(await partnerView(db, partner, TODAY)).toBeNull(); // 끊기 전에 연 화면에서도 아무것도 안 보인다
     const again = await connect(me, await reload(you));
-    expect(again.permissions).toEqual({ periods: true, predictions: true, fertility: false, care: true });
     expect(again.shareFrom).toBe(TODAY);
   });
 });
@@ -544,8 +585,8 @@ describe("커뮤니티", () => {
   /** 기록자와 연결된 파트너 한 명. agree면 이용 규칙에도 동의한다. */
   async function member(agree = true) {
     const n = ++seq;
-    const recorder = await signup(db, { email: `r${n}@example.com`, password: "password-1", nickname: `기록${n}`, healthConsent: true });
-    const joined = await signup(db, { email: `p${n}@example.com`, password: "password-1", nickname: `본명${n}`, healthConsent: true });
+    const recorder = await signup(db, { email: `r${n}@example.com`, password: "password-1", nickname: `기록${n}`, ...AGREED });
+    const joined = await signup(db, { email: `p${n}@example.com`, password: "password-1", nickname: `본명${n}`, ...AGREED });
     await connect(recorder, joined);
     const partner = await reload(joined);
     if (agree) await agreeToRules(db, partner, "");
@@ -555,7 +596,7 @@ describe("커뮤니티", () => {
 
   it("기록자·연결 없는 사람은 읽기도 쓰기도 못 한다", async () => {
     const { partner, recorder } = await member();
-    const stranger = await signup(db, { email: "s@example.com", password: "password-1", nickname: "남", healthConsent: true });
+    const stranger = await signup(db, { email: "s@example.com", password: "password-1", nickname: "남", ...AGREED });
     const id = await post(partner);
     for (const user of [recorder, stranger]) {
       await expectFail(listPosts(db, user), 403);
@@ -783,10 +824,10 @@ describe("알림", () => {
     return { sent, sender };
   }
 
-  async function shared(permissions: Record<string, boolean> = { care: true }, paused = false) {
+  async function shared(paused = false) {
     const { me, you } = await pair();
     await connect(me, you);
-    await updateSharing(db, me, { permissions, shareFrom: TODAY, paused }, TODAY);
+    await setPaused(db, me, paused);
     await saveSubscription(db, me, sub("me"));
     await saveSubscription(db, you, sub("you"));
     return { me, partner: await reload(you) };
@@ -858,15 +899,13 @@ describe("알림", () => {
     expect(partner.role).toBe("partner");
   });
 
-  it("권한이 없으면 보내지 않는다: 배려 공유 꺼짐·일시정지·연결 없음", async () => {
-    for (const [permissions, paused] of [[{ care: false }, false], [{ care: true }, true]] as const) {
-      db = await createLocalDb();
-      const { me } = await shared(permissions, paused);
-      const { sent, sender } = outbox();
-      await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
-      await notifyCare(db, me, TODAY, sender);
-      expect(sent).toEqual([]);
-    }
+  it("권한이 없으면 보내지 않는다: 일시정지·연결 없음", async () => {
+    const paused = await shared(true);
+    const box = outbox();
+    await saveCare(db, paused.me, { presets: ["rest"], message: "", share: true }, TODAY);
+    await notifyCare(db, paused.me, TODAY, box.sender);
+    expect(box.sent).toEqual([]);
+
     db = await createLocalDb();
     const { me, partner } = await shared();
     await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
@@ -877,7 +916,7 @@ describe("알림", () => {
     expect(sent).toEqual([]);
   });
 
-  it("답장은 기록자에게 파트너 이름으로, 첫 답장만. 공유를 끄면 보내지 않는다", async () => {
+  it("답장은 기록자에게 파트너 이름으로, 첫 답장만. 잠시 멈추면 보내지 않는다", async () => {
     const { me, partner } = await shared();
     const { sent, sender } = outbox();
     await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
@@ -886,7 +925,7 @@ describe("알림", () => {
     expect(await respondToCare(db, partner, care.id, "done", TODAY)).toBe(false);
     await notifyReply(db, partner, care.id, TODAY, sender);
     expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, body: "너님이 답장했어요" }]);
-    await updateSharing(db, me, { permissions: { care: false }, shareFrom: TODAY, paused: false }, TODAY);
+    await setPaused(db, me, true);
     await notifyReply(db, partner, care.id, TODAY, sender);
     expect(sent).toHaveLength(1);
   });
@@ -904,7 +943,7 @@ describe("알림", () => {
   });
 
   it("예정일 3일 전 알림: 본인에게만, 하루 한 번, 끄면 보내지 않는다", async () => {
-    const { me, partner } = await shared({ predictions: true });
+    const { me, partner } = await shared();
     await fourPeriods(me); // 다음 예정일 2026-10-30
     const { sent, sender } = outbox();
     expect(await sendReminders(db, "2026-10-26", sender)).toBe(0); // 4일 전
@@ -934,7 +973,6 @@ describe("알림", () => {
     expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0 });
 
     await connect(me, you);
-    await updateSharing(db, me, { permissions: { care: true }, shareFrom: TODAY, paused: false }, TODAY);
     const partner = await reload(you);
     await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
     expect(await newsFor(db, partner, TODAY)).toMatchObject({ care: 1 });
@@ -946,9 +984,9 @@ describe("알림", () => {
     await markNewsSeen(db, me);
     expect(await newsFor(db, me, TODAY)).toMatchObject({ replies: 0 });
 
-    await updateSharing(db, me, { permissions: { care: false }, shareFrom: TODAY, paused: false }, TODAY);
+    await setPaused(db, me, true);
     await saveCare(db, me, { presets: ["company"], message: "", share: true }, TODAY);
-    expect(await newsFor(db, partner, TODAY)).toMatchObject({ care: 0 }); // 공유를 끄면 파트너에게 소식도 없다
+    expect(await newsFor(db, partner, TODAY)).toMatchObject({ care: 0 }); // 잠시 멈추면 파트너에게 소식도 없다
   });
 });
 
@@ -957,7 +995,6 @@ describe("오늘 필요한 배려", () => {
     const { me, you } = await pair();
     await connect(me, you);
     const partner = await reload(you);
-    await updateSharing(db, me, { permissions: { care: true }, shareFrom: TODAY, paused: false }, TODAY);
 
     await expectFail(saveCare(db, me, { presets: [], message: "  ", share: true }, TODAY));
     await saveCare(db, me, { presets: ["rest", "warm_food", "bogus"], message: "", share: false }, TODAY);
@@ -977,8 +1014,8 @@ describe("오늘 필요한 배려", () => {
     await saveCare(db, me, { presets: ["company"], message: "일찍 와줘", share: true }, TODAY);
     expect((await getCare(db, me, TODAY))?.response).toBeNull();
 
-    // 배려 공유를 끄면 답장도 못 한다
-    await updateSharing(db, me, { permissions: { care: false }, shareFrom: TODAY, paused: false }, TODAY);
+    // 잠시 멈추면 답장도 못 한다
+    await setPaused(db, me, true);
     await expectFail(respondToCare(db, partner, care.id, "seen", TODAY), 404);
 
     await clearCare(db, me, TODAY);
@@ -996,7 +1033,7 @@ describe("회원 탈퇴", () => {
     await fourPeriods(me);
     await connect(me, you);
     const partner = await reload(you);
-    await updateSharing(db, me, { permissions: { care: true }, shareFrom: "2026-01-01", paused: false }, TODAY);
+    await updateSharing(db, me, { shareFrom: "2026-01-01" }, TODAY);
     await saveCare(db, me, { presets: ["rest"], message: null, share: true }, TODAY);
     const [care] = await db.select().from(careRequests);
     await respondToCare(db, partner, care.id, "seen", TODAY);
@@ -1036,7 +1073,7 @@ describe("회원 탈퇴", () => {
     expect(row).toMatchObject({
       email: null, passwordHash: null, kakaoId: null, nickname: "탈퇴한 사용자", communityNickname: null, isAdmin: false, healthConsentAt: null,
     });
-    await signup(db, { email: "me@example.com", password: "password-1", nickname: "새로", healthConsent: true });
+    await signup(db, { email: "me@example.com", password: "password-1", nickname: "새로", ...AGREED });
   });
 
   it("글·댓글과 신고는 남고 작성자만 탈퇴한 사용자로 바뀐다", async () => {
@@ -1047,8 +1084,8 @@ describe("회원 탈퇴", () => {
     const postId = await createPost(db, writer, { title: "제목", body: "본문" });
     await createComment(db, writer, postId, "댓글");
 
-    const other = await signup(db, { email: "o@b.co", password: "password-1", nickname: "다른", healthConsent: true });
-    const reader = await signup(db, { email: "r@b.co", password: "password-1", nickname: "읽는", healthConsent: true });
+    const other = await signup(db, { email: "o@b.co", password: "password-1", nickname: "다른", ...AGREED });
+    const reader = await signup(db, { email: "r@b.co", password: "password-1", nickname: "읽는", ...AGREED });
     await connect(other, reader);
     const member = await reload(reader);
     await report(db, member, { kind: "post", id: postId });
@@ -1069,7 +1106,7 @@ describe("회원 탈퇴", () => {
 
   it("내가 건 차단은 지우고, 다른 사람이 나를 차단한 기록은 남긴다", async () => {
     const { me, you } = await pair();
-    const third = await signup(db, { email: "t@b.co", password: "password-1", nickname: "셋", healthConsent: true });
+    const third = await signup(db, { email: "t@b.co", password: "password-1", nickname: "셋", ...AGREED });
     await db.insert(blocks).values([{ blockerId: me.id, blockedId: you.id }, { blockerId: third.id, blockedId: me.id }]);
     await withdraw(db, me);
     expect(await db.select().from(blocks)).toMatchObject([{ blockerId: third.id, blockedId: me.id }]);
@@ -1144,16 +1181,9 @@ describe("기록 → 화면 시나리오", () => {
     expect(couple.shareFrom).toBe("2026-10-31");
     const partner = await reload(you);
 
-    // 기록만 켜면 실제 날짜만, 예측까지 켜면 남은 예상도
-    await setSharingItem(db, me, "predictions", false);
     let view = (await partnerView(db, partner, NOW))!;
     expect(view.current).toEqual({ day: 3 });
     expect(view.recentPeriods).toEqual([{ startDate: "2026-10-31", endDate: null }]);
-    expect(days(view.calendar, "period")).toEqual(["2026-11-01", "2026-11-02"]);
-    expect(days(view.calendar, "predicted_period")).toEqual([]);
-
-    await setSharingItem(db, me, "predictions", true);
-    view = (await partnerView(db, partner, NOW))!;
     expect(view.calendar).toEqual(mine);
     expect(view.nextPeriod?.startDate).toBe("2026-11-28");
     expect(view.moon).not.toEqual(CRESCENT);
@@ -1162,9 +1192,9 @@ describe("기록 → 화면 시나리오", () => {
     expect(days((await partnerView(db, partner, NOW, "2026-10"))!.calendar, "period")).toEqual(["2026-10-31"]);
 
     // 일시정지 동안은 아무것도 없다
-    await setSharingItem(db, me, "paused", true);
+    await setPaused(db, me, true);
     expect(await partnerView(db, partner, NOW)).toMatchObject({ current: null, calendar: [], recentPeriods: [] });
-    await setSharingItem(db, me, "paused", false);
+    await setPaused(db, me, false);
 
     // 오늘 끝났어요: 종료일이 저장되고 남은 예상이 사라진다. 다음 생리 예상은 남는다.
     await savePeriod(db, me.id, { ...record, endDate: NOW }, NOW);
@@ -1179,17 +1209,14 @@ describe("기록 → 화면 시나리오", () => {
     expect(view.recentPeriods).toEqual([{ startDate: "2026-10-31", endDate: NOW }]);
   });
 
-  it("예측이 꺼져 있거나 공유 시작일 뒤로 숨긴 진행 중 기록은 예상으로도 새지 않는다", async () => {
+  it("공유 시작일 뒤로 숨긴 진행 중 기록은 예상으로도 새지 않는다", async () => {
     const { me, you } = await pair();
     await savePeriod(db, me.id, { startDate: "2026-10-31" }, NOW);
     const { code } = await createInvite(db, me);
     await claimInvite(db, you, code, NOW);
     const partner = await reload(you);
 
-    await updateSharing(db, me, { permissions: { predictions: true }, shareFrom: "2026-10-31", paused: false }, NOW);
-    expect(days((await partnerView(db, partner, NOW))!.calendar, "predicted_period")).not.toContain("2026-11-03");
-
-    await updateSharing(db, me, { permissions: { periods: true, predictions: true }, shareFrom: NOW, paused: false }, NOW);
+    await updateSharing(db, me, { shareFrom: NOW }, NOW);
     const view = (await partnerView(db, partner, NOW))!;
     expect(view.current).toBeNull();
     expect(days(view.calendar, "period")).toEqual([]);
@@ -1258,7 +1285,7 @@ describe("끝나지 않은 생리", () => {
     const [ended] = await listPeriods(db, me.id);
     expect(ended).toMatchObject({ startDate: START, endDate: "2026-10-24", autoEnded: true });
 
-    await updateSharing(db, me, { permissions: { periods: true }, shareFrom: START, paused: false }, asOf);
+    await updateSharing(db, me, { shareFrom: START }, asOf);
     const view = (await partnerView(db, await reload(you), asOf, "2026-10"))!;
     expect(view.recentPeriods).toEqual([{ startDate: START, endDate: "2026-10-24" }]);
     expect(view.calendar.map((m) => m.date)).toEqual(["2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24"]);
@@ -1308,11 +1335,11 @@ describe("끝나지 않은 생리", () => {
 
 describe("비밀번호 변경", () => {
   const OLD = "password-1", NEXT = "new-password-1";
-  const account = () => signup(db, { email: "pw@example.com", password: OLD, nickname: "나", healthConsent: true });
+  const account = () => signup(db, { email: "pw@example.com", password: OLD, nickname: "나", ...AGREED });
 
   it("지금 기기는 유지하고 다른 기기는 로그아웃하며, 다른 사람의 세션은 건드리지 않는다", async () => {
     const user = await account();
-    const other = await signup(db, { email: "other@example.com", password: OLD, nickname: "남", healthConsent: true });
+    const other = await signup(db, { email: "other@example.com", password: OLD, nickname: "남", ...AGREED });
     const here = await createSession(db, user.id);
     const there = await createSession(db, user.id);
     const theirs = await createSession(db, other.id);
@@ -1355,8 +1382,8 @@ describe("차단 풀기", () => {
   let seq = 0;
   async function member() {
     const n = ++seq;
-    const recorder = await signup(db, { email: `ur${n}@example.com`, password: "password-1", nickname: `기록${n}`, healthConsent: true });
-    const joined = await signup(db, { email: `up${n}@example.com`, password: "password-1", nickname: `본명${n}`, healthConsent: true });
+    const recorder = await signup(db, { email: `ur${n}@example.com`, password: "password-1", nickname: `기록${n}`, ...AGREED });
+    const joined = await signup(db, { email: `up${n}@example.com`, password: "password-1", nickname: `본명${n}`, ...AGREED });
     await connect(recorder, joined);
     const partner = await reload(joined);
     await agreeToRules(db, partner, `이웃${n}`);
@@ -1448,21 +1475,10 @@ describe("평소 주기", () => {
   });
 });
 
-describe("공유 기본값", () => {
-  it("연결하면 가임기만 꺼져 있고, 공유 확인 안내는 누르면 사라진다", async () => {
+describe("공유 확인 안내", () => {
+  it("연결하면 보이고, 누르면 사라진다", async () => {
     const { me, you } = await pair();
-    await fourPeriods(me);
-    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
     const couple = await connect(me, you);
-    const partner = await reload(you);
-
-    const view = (await partnerView(db, partner, TODAY))!;
-    expect(view.nextPeriod?.startDate).toBe("2026-10-30");
-    expect(view.care).toHaveLength(1);
-    expect(view.fertileWindow).toBeNull();
-    expect(view.calendar.some((m) => m.type === "estimated_fertile_window")).toBe(false);
-    expect(view.recentPeriods).toEqual([]); // 지난 기록은 공유 시작일 이후만
-
     expect((await activeCouple(db, me.id))?.sharingNotice).toBe(true);
     await clearSharingNotice(db, me);
     const [row] = await db.select().from(couples).where(eq(couples.id, couple.id));
@@ -1474,8 +1490,8 @@ describe("이야기 게시판", () => {
   let seq = 0;
   async function member() {
     const n = ++seq;
-    const recorder = await signup(db, { email: `br${n}@example.com`, password: "password-1", nickname: `기록${n}`, healthConsent: true });
-    const joined = await signup(db, { email: `bp${n}@example.com`, password: "password-1", nickname: `본명${n}`, healthConsent: true });
+    const recorder = await signup(db, { email: `br${n}@example.com`, password: "password-1", nickname: `기록${n}`, ...AGREED });
+    const joined = await signup(db, { email: `bp${n}@example.com`, password: "password-1", nickname: `본명${n}`, ...AGREED });
     await connect(recorder, joined);
     const partner = await reload(joined);
     await agreeToRules(db, partner, `닉네임${n}`);
@@ -1578,23 +1594,117 @@ describe("이야기 게시판", () => {
 });
 
 describe("파트너 홈의 달", () => {
-  it("예측 공유가 켜져 있을 때만 실제 달, 아니면 초승달", async () => {
+  it("연결되면 실제 달, 잠시 멈추면 초승달", async () => {
     const { me, you } = await pair();
     await fourPeriods(me);
     await connect(me, you);
     const partner = await reload(you);
-    const share = (permissions: Record<string, boolean>, paused = false) =>
-      updateSharing(db, me, { permissions, shareFrom: "2026-01-01", paused }, TODAY);
-
-    await share({});
-    expect((await partnerView(db, partner, TODAY))?.moon).toEqual(CRESCENT);
-    await share({ periods: true });
-    expect((await partnerView(db, partner, TODAY))?.moon).toEqual(CRESCENT);
-    await share({ predictions: true });
     const expected = moonShape(estimate(await listPeriods(db, me.id), [], TODAY), TODAY);
     expect(expected).not.toEqual(CRESCENT);
     expect((await partnerView(db, partner, TODAY))?.moon).toEqual(expected);
-    await share({ predictions: true }, true);
+    await setPaused(db, me, true);
     expect((await partnerView(db, partner, TODAY))?.moon).toEqual(CRESCENT);
+  });
+});
+
+describe("통증·기분", () => {
+  const START = "2026-10-28";
+
+  async function bleeding() {
+    const { me, you } = await pair();
+    const record = await savePeriod(db, me.id, { startDate: START }, TODAY);
+    return { me, you, record };
+  }
+
+  it("생리 중인 날만 남길 수 있고, 날짜별 하나이며 고칠 수 있고 비우면 지워진다", async () => {
+    const { me } = await bleeding();
+    await expectFail(saveDayLog(db, me, { day: "2026-10-27", pain: "mild", moods: [] }, TODAY)); // 생리 전날
+    await expectFail(saveDayLog(db, me, { day: "2026-10-31", pain: "mild", moods: [] }, TODAY)); // 내일
+    await expectFail(saveDayLog(db, me, { day: TODAY, pain: "bogus", moods: [] }, TODAY));
+
+    await saveDayLog(db, me, { day: TODAY, pain: "severe", moods: ["tired", "sensitive", "bogus"] }, TODAY);
+    expect(await dayLogOn(db, me.id, TODAY)).toEqual({ day: TODAY, pain: "severe", moods: ["sensitive", "tired"] });
+    await saveDayLog(db, me, { day: TODAY, pain: null, moods: ["calm"] }, TODAY);
+    expect(await listDayLogs(db, me.id)).toEqual([{ day: TODAY, pain: null, moods: ["calm"] }]);
+    await saveDayLog(db, me, { day: TODAY, pain: null, moods: [] }, TODAY);
+    expect(await listDayLogs(db, me.id)).toEqual([]);
+  });
+
+  it("파트너는 남길 수 없고, 오늘 것만 보며 잠시 멈추면 숨겨진다", async () => {
+    const { me, you } = await bleeding();
+    await saveDayLog(db, me, { day: "2026-10-29", pain: "mild", moods: ["down"] }, TODAY);
+    await connect(me, you);
+    const partner = await reload(you);
+    await expectFail(saveDayLog(db, partner, { day: TODAY, pain: "mild", moods: [] }, TODAY), 403);
+
+    expect((await partnerView(db, partner, TODAY))?.todayBody).toBeNull(); // 어제 것은 보내지 않는다
+    expect(JSON.stringify(await partnerView(db, partner, TODAY))).not.toContain("down");
+
+    await saveDayLog(db, me, { day: TODAY, pain: "severe", moods: ["tired"] }, TODAY);
+    const view = (await partnerView(db, partner, TODAY))!;
+    expect(view.todayBody).toEqual({ pain: "severe", moods: ["tired"] });
+    expect(todayBodyLine(view.todayBody!)).toBe("오늘 통증 심함 · 기분 피곤");
+
+    await setPaused(db, me, true);
+    expect((await partnerView(db, partner, TODAY))?.todayBody).toBeNull();
+    await setPaused(db, me, false);
+    await updateSharing(db, me, { shareFrom: TODAY }, TODAY); // 생리 시작일이 공유 시작일 전이면 그 기록처럼 숨긴다
+    expect((await partnerView(db, partner, TODAY))?.todayBody).toBeNull();
+  });
+
+  it("생리 기록을 지우거나 날짜를 줄이면 속하지 않게 된 날의 내용이 함께 지워진다", async () => {
+    const { me, record } = await bleeding();
+    await saveDayLog(db, me, { day: START, pain: "mild", moods: [] }, TODAY);
+    await saveDayLog(db, me, { day: TODAY, pain: "severe", moods: [] }, TODAY);
+    await savePeriod(db, me.id, { ...record, endDate: "2026-10-29" }, TODAY);
+    expect((await listDayLogs(db, me.id)).map((l) => l.day)).toEqual([START]);
+    await deletePeriod(db, me.id, record.id);
+    expect(await listDayLogs(db, me.id)).toEqual([]);
+  });
+
+  it("지난 생리 요약: 통증이 가장 심했던 첫날과 자주 남긴 기분", () => {
+    const period = { startDate: "2026-10-01", endDate: "2026-10-05" };
+    const logs = [
+      { day: "2026-09-30", pain: "severe" as const, moods: [] },
+      { day: "2026-10-01", pain: "mild" as const, moods: ["tired" as const] },
+      { day: "2026-10-02", pain: "severe" as const, moods: ["tired" as const, "down" as const] },
+      { day: "2026-10-03", pain: "severe" as const, moods: [] },
+    ];
+    expect(summarizeLogs(period, logs)).toEqual({ pain: "2일째 통증이 가장 심했어요", mood: "자주 남긴 기분은 피곤이에요" });
+    expect(summarizeLogs(period, [{ day: "2026-10-01", pain: "none", moods: [] }])).toEqual({ pain: null, mood: null });
+  });
+
+  it("탈퇴하면 함께 지워진다", async () => {
+    const { me } = await bleeding();
+    await saveDayLog(db, me, { day: TODAY, pain: "severe", moods: ["tired"] }, TODAY);
+    await withdraw(db, me);
+    expect(await db.select().from(dayLogs)).toEqual([]);
+    const [row] = await db.select().from(users).where(eq(users.id, me.id));
+    expect(row).toMatchObject({ healthConsentAt: null, ageConfirmedAt: null, transferConsentAt: null });
+  });
+});
+
+describe("알아두면 좋은 것", () => {
+  it("글마다 주소가 다르고 단정·진단 표현이 없다", () => {
+    expect(ARTICLES).toHaveLength(10);
+    expect(new Set(ARTICLES.map((a) => a.slug)).size).toBe(10);
+    for (const { body } of ARTICLES) expect(body.join(" ")).not.toMatch(/100%|진단|치료|처방|진통제/);
+    expect(findArticle("pms")?.title).toBe("PMS란");
+    expect(findArticle("없는글")).toBeUndefined();
+  });
+
+  it("시기마다 맞는 글을 고르고, 시기를 모르면 일반 글을 고른다", () => {
+    for (const phase of ["menstrual", "follicular", "fertile", "luteal"] as const) expect(articleFor(phase, TODAY).phases).toContain(phase);
+    expect(articleFor(null, TODAY).phases).toEqual([]);
+  });
+
+  it("파트너 화면에 오늘 시기가 내려가고, 잠시 멈추면 내려가지 않는다", async () => {
+    const { me, you } = await pair();
+    await fourPeriods(me);
+    await connect(me, you);
+    const partner = await reload(you);
+    expect((await partnerView(db, partner, "2026-10-12"))?.phase).toBe("fertile");
+    await setPaused(db, me, true);
+    expect((await partnerView(db, partner, "2026-10-12"))?.phase).toBeNull();
   });
 });

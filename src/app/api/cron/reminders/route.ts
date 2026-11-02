@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { purgeExpired } from "@/lib/services/auth";
 import { autoEndPeriods } from "@/lib/services/periods";
 import { cronAuthorized, sendReminders } from "@/lib/services/push";
 
@@ -11,6 +12,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const db = await getDb();
+  const purged = await purgeExpired(db);
   const autoEnded = await autoEndPeriods(db);
-  return NextResponse.json({ autoEnded, sent: await sendReminders(db) });
+  return NextResponse.json({ purged, autoEnded, sent: await sendReminders(db) });
 }

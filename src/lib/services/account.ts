@@ -1,6 +1,6 @@
 import { and, eq, or } from "drizzle-orm";
 import type { DB } from "../db";
-import { blocks, careRequests, couples, invitations, periods, pushSubscriptions, sessions, users } from "../db/schema";
+import { blocks, careRequests, couples, dayLogs, invitations, periods, pushSubscriptions, sessions, users } from "../db/schema";
 import type { User } from "./auth";
 import { WITHDRAWN_NAME } from "./community";
 import { endCouple, lockUsers } from "./couples";
@@ -23,13 +23,14 @@ export async function withdraw(db: DB, user: User, fetcher?: typeof fetch) {
     await tx.delete(careRequests).where(eq(careRequests.ownerId, user.id));
     await tx.delete(couples).where(mine);
     await tx.delete(periods).where(eq(periods.ownerId, user.id));
+    await tx.delete(dayLogs).where(eq(dayLogs.ownerId, user.id));
     await tx.delete(invitations).where(or(eq(invitations.recorderId, user.id), eq(invitations.claimantId, user.id)));
     await tx.delete(sessions).where(eq(sessions.userId, user.id));
     await tx.delete(pushSubscriptions).where(eq(pushSubscriptions.userId, user.id));
     await tx.delete(blocks).where(eq(blocks.blockerId, user.id));
     await tx.update(users).set({
       email: null, passwordHash: null, kakaoId: null, role: "recorder", nickname: WITHDRAWN_NAME, isAdmin: false, communityNickname: null,
-      healthConsentAt: null, reminderEnabled: false, reminderSentFor: null, newsSeenAt: null, usualCycleDays: null,
+      healthConsentAt: null, ageConfirmedAt: null, transferConsentAt: null, reminderEnabled: false, reminderSentFor: null, newsSeenAt: null, usualCycleDays: null,
     }).where(eq(users.id, user.id));
     return me?.kakaoId ?? null;
   });

@@ -1,16 +1,17 @@
 import Link from "next/link";
 import { addMonths, monthDay, monthGrid, monthLabel, WEEKDAYS } from "@/lib/dates";
-import type { CalendarMark } from "@/lib/prediction";
+import { ESTIMATE_NOTE, type CalendarMark } from "@/lib/prediction";
 
-type Kind = "period" | "predicted" | "fertile";
+type Kind = "period" | "predicted" | "ovulation" | "fertile";
 
-const LABELS: Record<Kind, string> = { period: "생리", predicted: "예상", fertile: "가임기(추정)" };
+const LABELS: Record<Kind, string> = { period: "생리", predicted: "예상", ovulation: "배란일(추정)", fertile: "가임기(추정)" };
 
-/** 하루에 표시가 겹치면 실제 기록 > 예상 > 가임기 순으로 하나만 그린다. */
+/** 하루에 표시가 겹치면 실제 기록 > 예상 > 배란일 > 가임기 순으로 하나만 그린다. */
 export function kindOf(marks: CalendarMark[], day: string): Kind | null {
   const types = marks.filter((m) => m.date === day).map((m) => m.type);
   if (types.includes("period")) return "period";
   if (types.includes("predicted_period")) return "predicted";
+  if (types.includes("estimated_ovulation")) return "ovulation";
   if (types.includes("estimated_fertile_window")) return "fertile";
   return null;
 }
@@ -18,6 +19,7 @@ export function kindOf(marks: CalendarMark[], day: string): Kind | null {
 function Day({ day, kind, today, selected, painted }: { day: string; kind: Kind | null; today: string; selected: boolean; painted: boolean }) {
   const shape = painted || kind === "period" ? "bg-period text-period-ink"
     : kind === "predicted" ? "border-2 border-dotted border-period-dash"
+    : kind === "ovulation" ? "bg-fertile-ink text-paper"
     : kind === "fertile" ? "bg-fertile text-fertile-ink"
     : "";
   return (
@@ -69,12 +71,13 @@ export function MonthCalendar({ month, marks, today, basePath, selected, dayHref
             : <div key={day} className={cell}>{inner}</div>;
         })}
       </div>
-      <p className="mt-4 flex items-center justify-center gap-5 text-[13px] text-muted">
+      <p className="mt-4 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[13px] text-muted">
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-period" />생리</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full border border-dotted border-period-dash" />예상</span>
         <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-fertile" />가임기(추정)</span>
+        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-fertile-ink" />배란일(추정)</span>
       </p>
-      <p className="mt-2 text-center text-[11px] text-muted">가임기는 추정이에요. 피임 판단에 쓸 수 없어요.</p>
+      <p className="mt-2 text-center text-[11px] text-muted">가임기·배란일은 {ESTIMATE_NOTE}</p>
     </div>
   );
 }

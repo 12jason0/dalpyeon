@@ -18,7 +18,7 @@ const shots = require("node:os").tmpdir();
     await me.fill('input[name=nickname]', "지민");
     await me.fill('input[name=email]', "jimin@example.com");
     await me.fill('input[name=password]', "password-1");
-    await me.check('input[name=healthConsent]');
+    for (const name of ["ageConfirmed", "healthConsent", "transferConsent"]) await me.check(`input[name=${name}]`);
     await me.click('button[type=submit]');
     await me.waitForURL(BASE + "/");
     await me.getByText("기록이 쌓이면 달이 차올라요").waitFor();
@@ -66,7 +66,7 @@ const shots = require("node:os").tmpdir();
     await you.fill('input[name=nickname]', "도윤");
     await you.fill('input[name=email]', "doyun@example.com");
     await you.fill('input[name=password]', "password-2");
-    await you.check('input[name=healthConsent]');
+    for (const name of ["ageConfirmed", "healthConsent", "transferConsent"]) await you.check(`input[name=${name}]`);
     await you.click('button[type=submit]');
     await you.waitForURL(BASE + "/");
     await you.getByText("기록이 쌓이면 달이 차올라요").waitFor();
@@ -83,17 +83,12 @@ const shots = require("node:os").tmpdir();
     await me.goto(BASE + "/connect");
     await me.getByText("도윤님과 연결됨").waitFor();
     await you.goto(BASE + "/");
-    await you.getByText("아직 공유된 항목이 없어요").waitFor();
   });
 
-  await step("공유 켜기 (예상·가임기·배려)", async () => {
-    for (const name of ["다음 생리 예상", "가임기 (추정)", "배려 요청"]) {
-      await me.getByRole("switch", { name }).click();
-      await me.locator(`[role=switch][aria-label="${name}"][aria-checked=true]`).waitFor();
-    }
-    await me.waitForTimeout(500); // 토글은 화면부터 바뀌므로 저장이 끝나길 기다린다
+  await step("연결 화면: 파트너에게 보이는 것", async () => {
     await you.goto(BASE + "/connect");
-    await you.locator('[role=switch][aria-label="배려 요청"][aria-checked=true]:disabled').waitFor();
+    await you.getByText("가임기·배란일 (추정)").waitFor();
+    await me.goto(BASE + "/connect");
     await me.screenshot({ path: `${shots}/06-sharing.png`, fullPage: true });
   });
 
@@ -129,8 +124,7 @@ const shots = require("node:os").tmpdir();
     await me.getByText("생리 1일째").waitFor();
     await me.screenshot({ path: `${shots}/09-home-period.png`, fullPage: true });
     await you.goto(BASE + "/");
-    const body = await you.textContent("body");
-    if (body.includes("생리 1일째")) throw new Error("기록 공유를 안 켰는데 생리 중이 보임");
+    await you.getByText("생리 1일째").waitFor();
   });
 
   await step("일시정지 → 파트너는 아무것도 안 보임", async () => {

@@ -4,7 +4,7 @@ import { exampleHome } from "@/lib/content/example";
 import { monthGrid, todaySeoul } from "@/lib/dates";
 import { moonShape } from "@/lib/moon";
 import { phaseOn } from "@/lib/phase";
-import { calendarMarks, DISCLAIMER, estimate } from "@/lib/prediction";
+import { calendarMarks, DISCLAIMER, ESTIMATE_NOTE, estimate } from "@/lib/prediction";
 import { CARE_PRESETS, RESPONSES } from "@/lib/services/care";
 import { CareCard, CareSummaryCard, Logo, MoonPhase, PhaseCards, recorderStatus, StatusLine } from "./HomeCards";
 import { MonthCalendar } from "./MonthCalendar";
@@ -14,12 +14,7 @@ const FEATURES = [
   { icon: Flower2, title: "오늘 내 몸 상태와 팁", line: "지금 시기에 흔한 변화와 챙길 것을 알려드려요." },
   { icon: CalendarDays, title: "내 주기에 맞춘 예측 달력", line: "기록이 쌓일수록 내 주기에 가까워져요." },
 ];
-const SHARING = [
-  { label: "생리 기록", on: false },
-  { label: "예상일", on: true },
-  { label: "가임기", on: false },
-  { label: "배려 요청", on: true },
-];
+const SHARED = ["생리 기록과 다음 생리 예상", "가임기·배란일 (추정)", "오늘의 통증·기분", "배려 요청"];
 
 /** 미리보기는 DB를 읽지 않고, 예시 기록을 실제 홈과 같은 계산·컴포넌트로 그린다. */
 function HomePreview({ today }: { today: string }) {
@@ -139,19 +134,20 @@ export function Landing() {
       </section>
 
       <section className="mt-16">
-        <h2 className="text-2xl font-semibold tracking-tight">보여줄 것은 내가 정해요</h2>
+        <h2 className="text-2xl font-semibold tracking-tight">연결하면 함께 봐요</h2>
         <ul inert className="card mt-5">
-          {SHARING.map(({ label, on }) => (
-            <li key={label} className="flex items-center justify-between gap-4 border-b border-line py-3 text-[15px] last:border-b-0">
-              {label}
-              <input type="checkbox" className="switch" defaultChecked={on} tabIndex={-1} aria-label={label} />
-            </li>
-          ))}
+          {SHARED.map((label) => <li key={label} className="border-b border-line py-3 text-[15px]">{label}</li>)}
+          <li className="flex items-center justify-between gap-4 py-3 text-[15px]">
+            잠시 멈추기
+            <input type="checkbox" className="switch" tabIndex={-1} aria-label="잠시 멈추기" />
+          </li>
         </ul>
+        <p className="mt-3 text-[13px] leading-relaxed text-muted">멈추고 싶은 날에는 &ldquo;잠시 쉬는 중&rdquo;만 보여요. 가임기·배란일은 {ESTIMATE_NOTE}</p>
       </section>
 
       <div className="mt-16"><StartLinks /></div>
       <p className="mt-8 text-xs leading-relaxed text-muted">{DISCLAIMER}</p>
+      <p className="mt-3 text-xs"><Link href="/me/privacy" className="link">개인정보 처리방침</Link></p>
     </>
   );
 }

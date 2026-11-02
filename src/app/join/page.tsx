@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { kakaoEnabled } from "@/lib/services/kakao";
+import { consentDone } from "@/lib/services/auth";
 import { currentUser } from "@/lib/session";
 import { JoinForm, JoinWithLink } from "../_components/JoinForms";
 import { Logo } from "../_components/HomeCards";
@@ -12,7 +13,7 @@ export default async function JoinPage({ searchParams }: { searchParams: Promise
   const user = await currentUser();
 
   if (user) {
-    if (!user.healthConsentAt) redirect("/consent");
+    if (!consentDone(user)) redirect("/consent");
     if (!code) redirect("/connect");
     return (
       <>

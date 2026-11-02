@@ -1,8 +1,8 @@
 import { randomInt, randomUUID } from "node:crypto";
-import { and, eq, gt, inArray, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, or } from "drizzle-orm";
 import { cache } from "react";
 import type { DB } from "../db";
-import { couples, DEFAULT_PERMISSIONS, invitations, NO_PERMISSIONS, users, type Permissions } from "../db/schema";
+import { couples, DEFAULT_PERMISSIONS, invitations, NO_PERMISSIONS, users } from "../db/schema";
 import { isDay, todaySeoul } from "../dates";
 import { AppError, fail } from "../errors";
 import { limit, sha256, type User } from "./auth";
@@ -10,7 +10,6 @@ import { currentPeriod, listPeriods } from "./periods";
 
 export type Couple = typeof couples.$inferSelect;
 export const INVITE_MINUTES = 15;
-export const PERMISSION_KEYS = ["periods", "predictions", "fertility", "care"] as const;
 
 // 헷갈리는 글자(0/O, 1/I/L)를 뺀 32자 → 8자리 = 약 1조 가지
 const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -112,29 +111,24 @@ export async function tryClaim(db: DB, user: User, rawCode: unknown, ip: string)
   }
 }
 
-export async function updateSharing(db: DB, user: User, input: { permissions: Partial<Record<string, unknown>>; shareFrom: unknown; paused: unknown }, today = todaySeoul()) {
+/** 공유 시작일만 저장한다. 연결되면 항목 구분 없이 모두 보인다. */
+export async function updateSharing(db: DB, user: User, input: { shareFrom: unknown }, today = todaySeoul()) {
   requireRole(user, "recorder");
   const couple = await activeCouple(db, user.id);
   if (!couple) fail("연결된 파트너가 없어요", 404);
   const shareFrom = String(input.shareFrom ?? "");
   if (!isDay(shareFrom) || shareFrom > today) fail("공유 시작일은 오늘이나 그 이전으로 정해 주세요");
-  const permissions = Object.fromEntries(PERMISSION_KEYS.map((k) => [k, input.permissions[k] === true])) as Permissions;
-  const [row] = await db.update(couples).set({ permissions, shareFrom, paused: input.paused === true })
+  const [row] = await db.update(couples).set({ shareFrom })
     .where(and(eq(couples.id, couple.id), eq(couples.status, "active"))).returning();
   return row;
 }
 
-/** 토글 하나만 바꾼다. 빠르게 여러 개를 눌러도 서로 덮어쓰지 않게 해당 키만 고친다. */
-export async function setSharingItem(db: DB, user: User, key: unknown, on: unknown) {
+/** 잠시 멈추기. 켜면 파트너에게 "잠시 쉬는 중"만 보인다. */
+export async function setPaused(db: DB, user: User, paused: unknown) {
   requireRole(user, "recorder");
-  const value = on === true;
-  const item = PERMISSION_KEYS.find((k) => k === key);
-  if (!item && key !== "paused") fail("바꿀 수 없는 항목이에요");
   const couple = await activeCouple(db, user.id);
   if (!couple) fail("연결된 파트너가 없어요", 404);
-  await db.update(couples)
-    .set(item ? { permissions: sql`jsonb_set(${couples.permissions}, ${`{${item}}`}::text[], to_jsonb(${value}::boolean))` } : { paused: value })
-    .where(and(eq(couples.id, couple.id), eq(couples.status, "active")));
+  await db.update(couples).set({ paused: paused === true }).where(and(eq(couples.id, couple.id), eq(couples.status, "active")));
 }
 
 /** 기록자가 홈의 확인 링크를 누르면 다시 띄우지 않는다. */

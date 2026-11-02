@@ -3,7 +3,7 @@ import { and, count, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import type { DB } from "../db";
 import { careRequests, careResponses, periods, pushSubscriptions, users } from "../db/schema";
 import { diffDays, todaySeoul } from "../dates";
-import { fail } from "../errors";
+import { errorKind, fail } from "../errors";
 import { endQuestion, estimate } from "../prediction";
 import type { User } from "./auth";
 import { sharedCare } from "./care";
@@ -76,7 +76,7 @@ async function quietly(work: () => Promise<void>) {
   try {
     await work();
   } catch (e) {
-    console.error("notify failed", e);
+    console.error("notify failed", errorKind(e));
   }
 }
 

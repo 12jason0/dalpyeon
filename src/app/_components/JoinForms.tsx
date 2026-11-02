@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useActionState, useState } from "react";
 import { joinAction, joinWithLinkAction, type FormState } from "../actions";
-import { HealthConsent } from "./AuthForm";
+import { Consents } from "./AuthForm";
 import { KakaoButton } from "./KakaoButton";
 import { ErrorText, Submit } from "./Submit";
 
@@ -29,10 +29,10 @@ export function JoinForm({ code, kakao, kakaoFailed }: { code: string; kakao: bo
         <input name="email" type="email" className="field" autoComplete="email" required defaultValue={state?.values?.email} />
       </label>
       <label className="block">
-        <span className="text-sm text-muted">비밀번호 (8자 이상)</span>
-        <input name="password" type="password" className="field" minLength={8} required autoComplete="new-password" />
+        <span className="text-sm text-muted">비밀번호 (8~20자)</span>
+        <input name="password" type="password" className="field" minLength={8} maxLength={20} required autoComplete="new-password" />
       </label>
-      <HealthConsent />
+      <Consents />
       <ErrorText message={state?.error} />
       <div className="pt-4"><Submit>시작하기</Submit></div>
       <p className="text-center text-sm"><Link href="/login" className="link">이미 계정이 있어요</Link></p>

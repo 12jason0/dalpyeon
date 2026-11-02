@@ -59,6 +59,16 @@ export function StatusLine({ main, sub }: Status) {
   );
 }
 
+/** 기록할수록 나아진다는 안내. 간격이 3개 이상이면 지난 예측이 며칠 차이 났는지 함께 보여준다. */
+export function PredictionNote({ error }: { error: { days: number } | null }) {
+  return (
+    <p className="mt-3 text-center text-[13px] leading-relaxed text-muted">
+      기록할수록 정확해지는 예측
+      {error && <span className="block">최근 예측은 평균 {error.days}일 차이</span>}
+    </p>
+  );
+}
+
 export function PhaseCards({ phase }: { phase: Phase | null }) {
   if (!phase) {
     return (

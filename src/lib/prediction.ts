@@ -7,6 +7,8 @@
 import { addDays, diffDays, todaySeoul } from "./dates";
 
 export const DISCLAIMER = "월경 기록 기반의 참고용 추정이며, 실제 배란 확인·피임·진단에 사용할 수 없습니다.";
+/** 가임기·배란일을 보여주는 곳마다 함께 쓴다. */
+export const ESTIMATE_NOTE = "추정이에요. 피임 목적으로 쓰지 마세요";
 
 /** 간격 기록이 없을 때 가정하는 주기, 종료일 기록이 없을 때 가정하는 생리 기간. */
 const DEFAULT_CYCLE_DAYS = 28;

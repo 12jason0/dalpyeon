@@ -2,11 +2,12 @@ import { sql } from "drizzle-orm";
 import {
   boolean, check, date, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, type AnyPgColumn,
 } from "drizzle-orm/pg-core";
+import type { Mood, Pain } from "../daylog";
 
 export type Role = "recorder" | "partner";
 export type Permissions = { periods: boolean; predictions: boolean; fertility: boolean; care: boolean };
 export const NO_PERMISSIONS: Permissions = { periods: false, predictions: false, fertility: false, care: false };
-/** 새로 연결될 때의 공유. 가임기만 기록자가 직접 켠다. */
+/** 항목별 공유를 없애면서 더 읽지 않는 값. couples.permissions가 not null이라 넣기만 한다. */
 export const DEFAULT_PERMISSIONS: Permissions = { periods: true, predictions: true, fertility: false, care: true };
 
 const created = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -24,6 +25,10 @@ export const users = pgTable("users", {
   communityNickname: text("community_nickname").unique(),
   /** 건강 정보 저장 동의 시각. 이 기능 전에 가입한 계정은 null이다. */
   healthConsentAt: timestamp("health_consent_at", { withTimezone: true }),
+  /** 만 14세 이상 확인 시각. 이 기능 전에 가입한 계정은 null이다. */
+  ageConfirmedAt: timestamp("age_confirmed_at", { withTimezone: true }),
+  /** 개인정보 국외 이전 동의 시각. 이 기능 전에 가입한 계정은 null이다. */
+  transferConsentAt: timestamp("transfer_consent_at", { withTimezone: true }),
   reminderEnabled: boolean("reminder_enabled").notNull().default(true),
   /** 마지막으로 알림을 보낸 예정일. 크론이 두 번 돌아도 한 번만 보낸다. */
   reminderSentFor: date("reminder_sent_for", { mode: "string" }),
@@ -55,6 +60,15 @@ export const periods = pgTable("periods", {
   createdAt: created(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [uniqueIndex("periods_owner_start").on(t.ownerId, t.startDate)]);
+
+/** 생리 중인 날의 통증·기분. 날짜별 하나이고, 둘 다 비우면 행을 지운다. */
+export const dayLogs = pgTable("day_logs", {
+  ownerId: text("owner_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  day: date("day", { mode: "string" }).notNull(),
+  pain: text("pain").$type<Pain>(),
+  moods: jsonb("moods").$type<Mood[]>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.ownerId, t.day] })]);
 
 export const invitations = pgTable("invitations", {
   id: text("id").primaryKey(),
