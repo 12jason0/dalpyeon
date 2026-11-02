@@ -18,7 +18,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
         {article.body.map((text) => <p key={text}>{text}</p>)}
       </div>
       <p className="mt-10 text-xs leading-relaxed text-muted">{ARTICLE_FOOTER}</p>
-      <Nav role={user.role} active="home" />
+      <Nav role={user.role} active="learn" />
     </>
   );
 }

@@ -2,7 +2,6 @@ import { calendarWindow } from "../calendar";
 import { todaySeoul } from "../dates";
 import type { DayLog } from "../daylog";
 import { CRESCENT, moonShape, type MoonShape } from "../moon";
-import { phaseFrom, type Phase } from "../phase";
 import { calendarMarks, estimate, type CalendarMark } from "../prediction";
 import type { User } from "./auth";
 import { sharedCare, type CareView } from "./care";
@@ -26,8 +25,6 @@ export type PartnerView = {
   moon: MoonShape;
   /** 오늘의 통증·기분. 지난 날의 것은 보내지 않는다. */
   todayBody: Pick<DayLog, "pain" | "moods"> | null;
-  /** 오늘 시기. 알아두면 좋은 글을 고르는 데 쓴다. */
-  phase: Phase | null;
 };
 
 /**
@@ -44,7 +41,7 @@ export async function partnerView(db: DB, user: User, today = todaySeoul()): Pro
   const base: PartnerView = {
     recorderNickname, paused: couple.paused,
     current: null, nextPeriod: null, fertileWindow: null, ovulation: null, recentPeriods: [], care: [], calendar: [], moon: CRESCENT,
-    todayBody: null, phase: null,
+    todayBody: null,
   };
   if (couple.paused) return base;
 
@@ -71,7 +68,6 @@ export async function partnerView(db: DB, user: User, today = todaySeoul()): Pro
   // 공유 시작일 이전 생리의 통증·기분은 그 기록처럼 숨긴다.
   const log = cur ? await dayLogOn(db, couple.recorderId, today) : null;
   base.todayBody = log && { pain: log.pain, moods: log.moods };
-  base.phase = phaseFrom(Boolean(cur), full.fertileWindow, today);
   base.care = care;
   return base;
 }

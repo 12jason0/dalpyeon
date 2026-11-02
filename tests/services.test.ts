@@ -5,7 +5,7 @@ import {
   blocks, careRequests, careResponses, comments, couples, dayLogs, invitations, periods, posts, pushSubscriptions, rateLimits, reports, sessions, users,
 } from "@/lib/db/schema";
 import { calendarWindow } from "@/lib/calendar";
-import { ARTICLES, articleFor, findArticle } from "@/lib/content/articles";
+import { ARTICLES, findArticle } from "@/lib/content/articles";
 import PINNED_POSTS from "@/lib/content/pinned-posts.json";
 import { RULES } from "@/lib/content/rules";
 import { addDays } from "@/lib/dates";
@@ -404,7 +404,7 @@ describe("잠시 멈추기", () => {
     const view = await partnerView(db, partner, TODAY);
     expect(view).toMatchObject({
       paused: true, current: null, nextPeriod: null, fertileWindow: null, ovulation: null, recentPeriods: [], care: [], calendar: [],
-      moon: CRESCENT, todayBody: null, phase: null,
+      moon: CRESCENT, todayBody: null,
     });
     await setPaused(db, me, false);
     expect((await partnerView(db, partner, TODAY))?.paused).toBe(false);
@@ -1790,26 +1790,5 @@ describe("알아두면 좋은 것", () => {
     for (const { body } of ARTICLES) expect(body.join(" ")).not.toMatch(/100%|진단|치료|처방|진통제/);
     expect(findArticle("pms")?.title).toBe("PMS란");
     expect(findArticle("없는글")).toBeUndefined();
-  });
-
-  it("시기마다 맞는 글을 고른다", () => {
-    for (const phase of ["menstrual", "follicular", "fertile", "luteal"] as const) expect(articleFor(phase, TODAY).phases).toContain(phase);
-  });
-
-  it("시기를 모르면 같은 날은 같은 글이고, 날마다 다음 글로 넘어가 전체 글을 돈다", () => {
-    expect(articleFor(null, TODAY)).toBe(articleFor(null, TODAY));
-    const days = ARTICLES.map((_, i) => articleFor(null, addDays(TODAY, i)));
-    expect(new Set(days).size).toBe(ARTICLES.length);
-    expect(articleFor(null, addDays(TODAY, ARTICLES.length))).toBe(days[0]);
-  });
-
-  it("파트너 화면에 오늘 시기가 내려가고, 잠시 멈추면 내려가지 않는다", async () => {
-    const { me, you } = await pair();
-    await fourPeriods(me);
-    await connect(me, you);
-    const partner = await reload(you);
-    expect((await partnerView(db, partner, "2026-10-12"))?.phase).toBe("fertile");
-    await setPaused(db, me, true);
-    expect((await partnerView(db, partner, "2026-10-12"))?.phase).toBeNull();
   });
 });

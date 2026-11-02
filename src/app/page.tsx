@@ -1,10 +1,9 @@
-import { Activity, BookOpen, ChevronRight, Eye, HeartHandshake, Link2, Smile } from "lucide-react";
+import { Activity, ChevronRight, Eye, HeartHandshake, Link2, Smile } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 import { calendarWindow } from "@/lib/calendar";
-import { articleFor } from "@/lib/content/articles";
 import { tipFor } from "@/lib/content/phases";
 import { getDb, type DB } from "@/lib/db";
 import { todaySeoul } from "@/lib/dates";
@@ -61,21 +60,6 @@ function HomeTop({ children }: { children: React.ReactNode }) {
     <div id={HOME_TOP_ID} className="sticky top-0 z-10 -mx-6 -mt-8 space-y-2 bg-paper px-6 pb-2 pt-[max(1rem,env(safe-area-inset-top))]">
       {children}
     </div>
-  );
-}
-
-/** 파트너의 상식 글. 제목과 첫 두 줄을 보여주고, 더보기로 글 전체로 간다. */
-function ArticleCard({ phase, today }: { phase: Phase | null; today: string }) {
-  const article = articleFor(phase, today);
-  return (
-    <article className="card">
-      <div className="flex items-center gap-3">
-        <IconBadge><BookOpen size={15} /></IconBadge>
-        <h2 className="min-w-0 flex-1 truncate text-[15px] font-medium">{article.title}</h2>
-      </div>
-      <p className="mt-2 line-clamp-2 text-[15px] leading-relaxed text-muted">{article.body.join(" ")}</p>
-      <Link href={`/learn/${article.slug}`} className="link mt-1 inline-block text-[13px] leading-9">더보기</Link>
-    </article>
   );
 }
 
@@ -243,7 +227,6 @@ async function PartnerHome({ user }: { user: User }) {
     return (
       <>
         <HomeTop><TopBar moon={view.moon} main={`${name}님은 잠시 쉬는 중`} sub="지금은 공유를 잠시 멈췄어요." aside={news} /></HomeTop>
-        <div className="mt-2"><ArticleCard phase={null} today={today} /></div>
       </>
     );
   }
@@ -272,7 +255,6 @@ async function PartnerHome({ user }: { user: User }) {
                   <div className="space-y-2">{others.map((c) => <CareCard key={c.id} care={c} today={today} />)}</div>
                 </details>
               )}
-              <ArticleCard phase={view.phase} today={today} />
             </div>
           )}
         >

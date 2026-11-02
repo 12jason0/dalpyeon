@@ -133,11 +133,16 @@ describe("오늘 칩", () => {
 describe("하단 메뉴", () => {
   it("연결은 메뉴에 없고 마이 안에 있다", () => {
     expect(navFor("recorder").map((n) => n.label)).toEqual(["홈", "리포트", "마이"]);
-    expect(navFor("partner").map((n) => n.label)).toEqual(["홈", "남친톡", "마이"]);
+    expect(navFor("partner").map((n) => n.label)).toEqual(["홈", "남친톡", "상식", "마이"]);
   });
 
   it("남친톡의 주소는 그대로다", () => {
     expect(navFor("partner")[1].href).toBe("/community");
+  });
+
+  it("상식 탭은 파트너에게만 있고 글 목록으로 간다", () => {
+    expect(navFor("partner")[2].href).toBe("/learn");
+    expect(navFor("recorder").map((n) => n.key)).not.toContain("learn");
   });
 });
 

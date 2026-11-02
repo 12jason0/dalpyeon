@@ -1,12 +1,12 @@
 "use client";
-import { ChartColumn, Home, MessageCircle, User } from "lucide-react";
+import { BookOpen, ChartColumn, Home, MessageCircle, User } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import type { Role } from "@/lib/db/schema";
 import { navFor, type NavKey } from "@/lib/nav";
 
-const ICONS = { home: Home, report: ChartColumn, community: MessageCircle, me: User };
+const ICONS = { home: Home, report: ChartColumn, community: MessageCircle, learn: BookOpen, me: User };
 
 // loading.tsx는 미리 만들어 두는 화면이라 역할을 모른다. 마지막으로 그린 메뉴의 역할을 기억해 쓴다.
 let lastRole: Role | null = null;

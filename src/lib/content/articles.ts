@@ -1,13 +1,8 @@
-import { diffDays } from "../dates";
-import type { Phase } from "../phase";
-
 export type Article = {
   slug: string;
   title: string;
   /** 목록과 카드에 보이는 한 줄. */
   line: string;
-  /** 이 시기에 보여준다. */
-  phases: Phase[];
   body: string[];
 };
 
@@ -19,7 +14,6 @@ export const ARTICLES: Article[] = [
     slug: "period-pain",
     title: "생리 중 통증",
     line: "아픈 곳도, 아픈 정도도 사람마다 달라요.",
-    phases: ["menstrual"],
     body: [
       "생리 중에는 아랫배가 아프거나 허리와 다리까지 뻐근할 수 있어요. 두통이나 메스꺼움을 함께 느끼는 사람도 있어요.",
       "아픈 정도는 사람마다 다르고, 같은 사람도 달마다 다를 수 있어요. 지난달에 괜찮았다고 이번 달도 괜찮은 것은 아니에요.",
@@ -31,7 +25,6 @@ export const ARTICLES: Article[] = [
     slug: "period-mood",
     title: "생리 중 피로와 기분",
     line: "몸이 지치면 마음도 함께 지칠 수 있어요.",
-    phases: ["menstrual"],
     body: [
       "생리 중에는 평소보다 쉽게 피곤할 수 있어요. 잠을 자도 개운하지 않다고 느끼는 사람도 있어요.",
       "몸이 불편하면 작은 일에도 예민해질 수 있어요. 나 때문이라고 받아들이지 않아도 괜찮을 수 있어요.",
@@ -42,7 +35,6 @@ export const ARTICLES: Article[] = [
     slug: "during-period-tips",
     title: "이럴 땐 이렇게: 생리 중",
     line: "작은 행동 하나가 큰 도움이 될 수 있어요.",
-    phases: ["menstrual"],
     body: [
       "따뜻한 음료를 건네거나 담요를 챙겨 주면 편할 수 있어요.",
       "집안일이나 심부름을 먼저 맡아 주면 쉴 시간이 생길 수 있어요.",
@@ -55,7 +47,6 @@ export const ARTICLES: Article[] = [
     slug: "pms",
     title: "PMS란",
     line: "생리 전에 몸과 마음이 달라질 수 있어요.",
-    phases: ["luteal"],
     body: [
       "PMS는 생리 전 증후군을 줄인 말이에요. 생리가 시작되기 며칠 전부터 몸과 마음에 변화를 느끼는 것을 말해요.",
       "몸이 붓거나, 가슴이 아프거나, 쉽게 피곤하거나, 식욕이 달라질 수 있어요. 기분이 오르내리거나 예민해질 수도 있어요.",
@@ -66,7 +57,6 @@ export const ARTICLES: Article[] = [
     slug: "before-period-tips",
     title: "이럴 땐 이렇게: 생리 전",
     line: "“왜 그래?”보다 좋은 말이 있을 수 있어요.",
-    phases: ["luteal"],
     body: [
       "“생리 때문에 그래?”라는 말은 감정을 가볍게 여기는 것처럼 들릴 수 있어요. 지금 느끼는 감정 그대로 들어 주세요.",
       "중요한 이야기나 다툼이 될 만한 주제는 서로 편한 때로 미뤄 보는 것도 방법일 수 있어요.",
@@ -77,7 +67,6 @@ export const ARTICLES: Article[] = [
     slug: "fertile-window",
     title: "가임기란",
     line: "임신이 될 가능성이 높다고 보는 기간이에요.",
-    phases: ["fertile"],
     body: [
       "가임기는 임신이 될 가능성이 높다고 보는 며칠을 말해요. 배란일과 그 앞뒤 며칠을 함께 묶어서 이야기해요.",
       "우리주기의 가임기는 지난 기록으로 계산한 추정이에요. 주기가 달라지면 실제와 다를 수 있어요.",
@@ -89,7 +78,6 @@ export const ARTICLES: Article[] = [
     slug: "ovulation",
     title: "배란일이란",
     line: "난소에서 난자가 나오는 날이에요.",
-    phases: ["fertile"],
     body: [
       "배란은 난소에서 난자가 나오는 일을 말해요. 보통 다음 생리 시작 2주쯤 전에 일어난다고 알려져 있어요.",
       "우리주기는 다음 생리 예상일에서 14일을 빼서 배란일을 추정해요. 실제로 배란을 확인한 날짜가 아니에요.",
@@ -100,7 +88,6 @@ export const ARTICLES: Article[] = [
     slug: "after-period",
     title: "생리가 끝난 뒤",
     line: "몸이 가벼워졌다고 느낄 수 있는 시기예요.",
-    phases: ["follicular"],
     body: [
       "생리가 끝나면 피로가 줄고 몸이 가벼워졌다고 느끼는 사람이 있어요.",
       "그동안 미뤄 둔 약속이나 함께 하고 싶던 일을 이야기해 보기 좋은 때일 수 있어요.",
@@ -110,9 +97,3 @@ export const ARTICLES: Article[] = [
 ];
 
 export const findArticle = (slug: string) => ARTICLES.find((a) => a.slug === slug);
-
-/** 오늘 시기에 맞는 글 하나. 시기를 모르면 전체 글에서 고른다. 같은 날에는 같은 글이고, 날이 바뀌면 다음 글로 넘어간다. */
-export function articleFor(phase: Phase | null, today: string) {
-  const list = phase ? ARTICLES.filter((a) => a.phases.includes(phase)) : ARTICLES;
-  return list[diffDays(today, "2026-01-01") % list.length];
-}
