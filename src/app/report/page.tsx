@@ -32,9 +32,9 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      <h1 className="text-4xl font-semibold tracking-tight">리포트</h1>
+      <h1 className="sr-only">리포트</h1>
 
-      <Section title="내 주기">
+      <Section title="내 주기" first>
         {prediction.typicalCycleDays && <Row label="보통 주기" value={`${prediction.typicalCycleDays}일`} />}
         {prediction.sampleSize > 0 && prediction.observedMinDays !== prediction.observedMaxDays && (
           <Row label="최근 범위" value={`${prediction.observedMinDays}–${prediction.observedMaxDays}일`} />

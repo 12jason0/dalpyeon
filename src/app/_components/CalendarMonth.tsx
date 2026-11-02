@@ -20,7 +20,7 @@ export function WeekdayRow() {
 function DayCell({ day, marks, today, onPick }: { day: string; marks: CalendarMark[]; today: string; onPick?: (day: string) => void }) {
   const label = [monthDay(day), ...dayLabels(marks, day), ...(day === today ? ["오늘"] : [])].join(", ");
   const number = (
-    <span className={`mt-1 flex h-7 w-7 items-center justify-center text-[15px] ${day === today ? "rounded-md bg-ink font-semibold text-paper" : ""}`}>
+    <span className={`mt-1 flex h-7 w-7 items-center justify-center text-[15px] ${day === today ? "rounded-full bg-accent font-semibold text-white" : ""}`}>
       {Number(day.slice(8))}
     </span>
   );

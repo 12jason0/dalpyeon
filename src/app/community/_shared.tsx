@@ -48,8 +48,8 @@ export async function MyPosts({ user, member }: { user: User; member: boolean })
 export async function Gate({ user }: { user: User }) {
   return (
     <>
-      <h1 className="text-4xl font-semibold tracking-tight">이야기</h1>
-      <p className="mt-10 text-[17px] leading-relaxed text-muted">이야기는 연결된 파트너만 볼 수 있어요.</p>
+      <h1 className="sr-only">남친톡</h1>
+      <p className="text-[17px] leading-relaxed text-muted">남친톡은 연결된 파트너만 볼 수 있어요.</p>
       <MyPosts user={user} member={false} />
       <Nav role={user.role} active="community" />
     </>

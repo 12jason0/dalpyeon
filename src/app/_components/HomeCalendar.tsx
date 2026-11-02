@@ -1,7 +1,8 @@
 "use client";
+import { ArrowDown, ArrowUp } from "lucide-react";
 import Link from "next/link";
-import { useLayoutEffect, useRef, useState } from "react";
-import { calendarWindow, dayLabels } from "@/lib/calendar";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { calendarWindow, dayLabels, todayDirection, type TodayDirection } from "@/lib/calendar";
 import { dayRange, diffDays, formatDay, monthDay } from "@/lib/dates";
 import type { DayLog } from "@/lib/daylog";
 import { currentPeriod, ESTIMATE_NOTE, type CalendarMark } from "@/lib/prediction";
@@ -80,6 +81,58 @@ function PartnerDay({ day, today, marks, body }: { day: string; today: string; m
   );
 }
 
+/** 상단 고정 영역과 떠 있는 메뉴·버튼을 뺀, 달력이 실제로 보이는 영역. */
+function visibleArea() {
+  const floating = [...document.querySelectorAll("[data-floating]")].map((el) => el.getBoundingClientRect().top);
+  return { top: document.getElementById(HOME_TOP_ID)?.offsetHeight ?? 0, bottom: Math.min(window.innerHeight, ...floating) };
+}
+
+const todayCell = (today: string) => document.querySelector(`[data-day="${today}"]`);
+
+/** 오늘이 화면 밖으로 나가면 나타나고, 누르면 오늘로 돌아가는 칩. 화살표는 오늘이 있는 쪽을 가리킨다. */
+function TodayChip({ today }: { today: string }) {
+  const [direction, setDirection] = useState<TodayDirection | null>(null);
+  const [top, setTop] = useState(0);
+
+  useEffect(() => {
+    const update = () => {
+      const cell = todayCell(today);
+      if (!cell) return;
+      const view = visibleArea();
+      setDirection(todayDirection(cell.getBoundingClientRect(), view));
+      setTop(view.top);
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [today]);
+
+  if (!direction) return null;
+  const goToday = () => {
+    const rect = todayCell(today)?.getBoundingClientRect();
+    if (!rect) return;
+    const view = visibleArea();
+    window.scrollTo({
+      top: window.scrollY + rect.top - view.top - (view.bottom - view.top - rect.height) / 2,
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+  };
+  const Arrow = direction === "up" ? ArrowUp : ArrowDown;
+  return (
+    <button
+      type="button" onClick={goToday} style={{ top: top + 8 }}
+      className="fixed left-1/2 z-20 flex h-8 -translate-x-1/2 items-center gap-1 rounded-full border-[0.5px] border-line bg-card px-3 text-[13px] font-medium text-accent shadow-[0_2px_10px_rgb(63_58_61/0.14)]"
+    >
+      <Arrow size={14} aria-hidden />
+      오늘
+    </button>
+  );
+}
+
 /** 이번 달에서 시작하는 세로 달력. 위로 지난 6개월, 아래로 앞으로 6개월이다. children은 이번 달 바로 아래에 둔다. */
 export function HomeCalendar({ today, marks, recorder, partnerBody, children }: {
   today: string;
@@ -103,6 +156,7 @@ export function HomeCalendar({ today, marks, recorder, partnerBody, children }: 
 
   return (
     <div className={placed ? "" : "invisible"}>
+      {placed && <TodayChip today={today} />}
       {months.map((m) => (
         <div key={m} ref={m === month ? thisMonth : undefined}>
           <CalendarMonth month={m} marks={marks} today={today} onPick={setPicked} />

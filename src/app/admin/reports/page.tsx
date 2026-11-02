@@ -4,6 +4,7 @@ import { getDb } from "@/lib/db";
 import { communityAccess, listReports } from "@/lib/services/community";
 import { requireUser } from "@/lib/session";
 import { decideReportAction } from "../../actions";
+import { BackLink } from "../../_components/BackLink";
 
 export const dynamic = "force-dynamic";
 
@@ -14,9 +15,9 @@ export default async function ReportsPage() {
   const rows = await listReports(db, user);
   return (
     <>
-      <Link href="/community" className="link text-sm">이야기로</Link>
-      <h1 className="mt-6 text-4xl font-semibold tracking-tight">신고</h1>
-      {rows.length === 0 && <p className="mt-10 text-[17px] text-muted">처리할 신고가 없어요.</p>}
+      <BackLink href="/community" />
+      <h1 className="sr-only">신고</h1>
+      {rows.length === 0 && <p className="mt-2 text-[17px] text-muted">처리할 신고가 없어요.</p>}
       <ul className="mt-6">
         {rows.map((r) => (
           <li key={`${r.kind}-${r.id}`} className="border-b border-line py-5">

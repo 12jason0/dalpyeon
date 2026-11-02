@@ -1,6 +1,7 @@
-export function Section({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
+/** first는 페이지 맨 위의 구역이다. 위에 제목이 없으니 띄우지 않는다. */
+export function Section({ title, children, aside, first }: { title: string; children: React.ReactNode; aside?: React.ReactNode; first?: boolean }) {
   return (
-    <section className="mt-16">
+    <section className={first ? "mt-2" : "mt-16"}>
       <div className="mb-5 flex items-baseline justify-between">
         <h2 className="text-sm font-medium text-muted">{title}</h2>
         {aside}

@@ -19,10 +19,8 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
   const [{ posts, hasMore }] = await Promise.all([listPosts(db, user, page), access.member && myPosts(db, user)]);
   return (
     <>
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-4xl font-semibold tracking-tight">이야기</h1>
-        {access.member && <Link href="/community/new" className="link text-[15px]">글쓰기</Link>}
-      </div>
+      <h1 className="sr-only">남친톡</h1>
+      {access.member && <p className="text-right"><Link href="/community/new" className="link text-[15px]">글쓰기</Link></p>}
       {posts.length === 0 && <p className="mt-10 text-[17px] text-muted">아직 글이 없어요.</p>}
       <ul className="mt-6 border-t border-line">
         {posts.map((p) => (

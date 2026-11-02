@@ -1489,7 +1489,7 @@ describe("공유 확인 안내", () => {
   });
 });
 
-describe("이야기 게시판", () => {
+describe("남친톡 게시판", () => {
   let seq = 0;
   async function member() {
     const n = ++seq;

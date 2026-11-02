@@ -119,6 +119,17 @@ async function SharingNotice({ data }: { data: CareAndPartner }) {
   );
 }
 
+/** 아직 연결하지 않은 기록자에게만 보인다. */
+async function ConnectLine({ data }: { data: CareAndPartner }) {
+  if ((await data).couple) return null;
+  return (
+    <Link href="/connect" className={LINE_CARD}>
+      <span className="min-w-0 truncate">파트너 연결하기</span>
+      <ChevronRight size={18} className="shrink-0 text-muted" aria-hidden />
+    </Link>
+  );
+}
+
 async function CareSlot({ data }: { data: CareAndPartner }) {
   const { care, couple, partnerName } = await data;
   const canShare = Boolean(couple && !couple.paused);
@@ -162,6 +173,7 @@ async function RecorderHome({ user }: { user: User }) {
             <EndQuestion question={question} today={today} />
           </LineSheet>
         )}
+        <Suspense><ConnectLine data={data} /></Suspense>
         <Suspense><SharingNotice data={data} /></Suspense>
         <Suspense fallback={<div className={`${BLOCK} h-11`} />}><CareSlot data={data} /></Suspense>
         <WeekdayRow />
@@ -180,7 +192,7 @@ async function RecorderHome({ user }: { user: User }) {
       </div>
 
       {(current?.open || !current) && (
-        <div className="fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] z-20 mx-auto max-w-md px-6 [&_.btn]:shadow-lg">
+        <div data-floating className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] z-20 mx-auto max-w-md px-6 [&_.btn]:shadow-lg">
           {current?.open ? <EndTodayButton id={current.id} /> : <StartTodayButton />}
         </div>
       )}

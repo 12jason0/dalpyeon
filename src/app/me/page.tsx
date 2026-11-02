@@ -30,30 +30,29 @@ export default async function MePage() {
   ]);
   return (
     <>
-      <h1 className="text-4xl font-semibold tracking-tight">마이</h1>
+      <h1 className="sr-only">마이</h1>
 
-      <section className="card mt-8">
-        <p className="text-xl font-semibold tracking-tight">{user.nickname}</p>
-        <p className="mt-1 text-[15px] text-muted">{user.email ?? "카카오 계정"}</p>
-        {user.role === "partner" && (
-          <p className="mt-1 text-[13px] text-muted">커뮤니티 닉네임 · {access.nickname ?? "아직 없어요"}</p>
-        )}
-      </section>
-
-      <Link href="/connect" className="card mt-3 flex items-center justify-between gap-3">
+      <Link href="/connect" className="card flex items-center justify-between gap-3">
         <span className="min-w-0">
-          <span className="block text-[15px] font-medium">{partnerName ?? "연결"}</span>
-          <span className="mt-0.5 block text-[13px] text-muted">{partnerName ? "연결돼 있어요" : "아직 연결 전이에요"}</span>
+          <span className="block text-[15px] font-medium">연결</span>
+          <span className="mt-0.5 block text-[13px] text-muted">{partnerName ? `${partnerName}님과 연결돼 있어요` : "아직 연결 전이에요"}</span>
         </span>
         <ChevronRight size={18} className="shrink-0 text-muted" aria-hidden />
       </Link>
 
+      <section className="card mt-3">
+        <p className="text-xl font-semibold tracking-tight">{user.nickname}</p>
+        <p className="mt-1 text-[15px] text-muted">{user.email ?? "카카오 계정"}</p>
+        {user.role === "partner" && (
+          <p className="mt-1 text-[13px] text-muted">남친톡 닉네임 · {access.nickname ?? "아직 없어요"}</p>
+        )}
+      </section>
+
       <NotificationSettings publicKey={process.env.VAPID_PUBLIC_KEY ?? null} showReminder={user.role === "recorder"} reminder={reminder} />
 
       <ul className="card mt-3">
-        {user.role === "recorder" && <SettingRow href="/connect" label="공유 설정" />}
         {access.admin && <SettingRow href="/admin/reports" label="운영자 신고 관리" />}
-        {user.role === "recorder" && posts.length > 0 && <SettingRow href="/community" label="이야기에 쓴 내 글" />}
+        {user.role === "recorder" && posts.length > 0 && <SettingRow href="/community" label="남친톡에 쓴 내 글" />}
         <SettingRow href="/me/rules" label="이용 규칙" />
         <SettingRow href="/me/privacy" label="개인정보 처리방침" />
         <SettingRow href="/me/settings" label="설정" />

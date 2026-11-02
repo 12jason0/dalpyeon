@@ -5,6 +5,7 @@ import { ESTIMATE_NOTE } from "@/lib/prediction";
 import type { User } from "@/lib/services/auth";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser, siteOrigin } from "@/lib/session";
+import { BackLink } from "../_components/BackLink";
 import { ClaimForm, InviteBox, SharingForm } from "../_components/ConnectForms";
 import { Nav } from "../_components/Nav";
 import { Section } from "../_components/Section";
@@ -38,9 +39,10 @@ export default async function ConnectPage({ searchParams }: { searchParams: Prom
   const sent: Claim = { code: typeof code === "string" ? code.slice(0, 12) : undefined, notice };
   return (
     <>
-      <h1 className="text-4xl font-semibold tracking-tight">연결</h1>
+      <BackLink href="/me" />
+      <h1 className="sr-only">연결</h1>
       {user.role === "recorder" ? <RecorderConnect user={user} claim={sent} /> : <PartnerConnect user={user} claim={sent} />}
-      <Nav role={user.role} active="connect" />
+      <Nav role={user.role} active="me" />
     </>
   );
 }
@@ -52,7 +54,7 @@ async function RecorderConnect({ user, claim }: { user: User; claim: Claim }) {
     const name = await otherNickname(db, couple, user);
     return (
       <>
-        <p className="mt-10 text-2xl font-medium">{name}님과 연결됨</p>
+        <p className="mt-4 text-2xl font-medium">{name}님과 연결됨</p>
         <Section title={`${name}님에게 보이는 것`}><SharedList /></Section>
         <Section title="공유 조절">
           <SharingForm today={todaySeoul()} initial={{ shareFrom: couple.shareFrom, paused: couple.paused }} />
@@ -63,7 +65,7 @@ async function RecorderConnect({ user, claim }: { user: User; claim: Claim }) {
   }
   return (
     <>
-      <Section title="내 주기를 기록하는 사람">
+      <Section title="내 주기를 기록하는 사람" first>
         <p className="mb-3 text-[17px] leading-relaxed text-muted">
           코드를 만들어 파트너에게 보내 주세요. 15분 동안 쓸 수 있고, 입력하면 바로 연결되니 믿는 사람에게만 보내 주세요.
         </p>
@@ -93,7 +95,7 @@ async function PartnerConnect({ user, claim }: { user: User; claim: Claim }) {
     const name = await otherNickname(db, couple, user);
     return (
       <>
-        <p className="mt-10 text-2xl font-medium">{name}님과 연결돼 있어요</p>
+        <p className="mt-4 text-2xl font-medium">{name}님과 연결돼 있어요</p>
         <Section title={`${name}님과 함께 보는 것`}>
           {couple.paused ? <p className="text-[15px] text-muted">{name}님은 잠시 쉬는 중이에요.</p> : <SharedList />}
         </Section>
@@ -102,7 +104,7 @@ async function PartnerConnect({ user, claim }: { user: User; claim: Claim }) {
   }
   return (
     <>
-      <p className="mt-10 mb-10 text-[17px] leading-relaxed text-muted">상대에게 받은 8자리 코드를 입력해 주세요.</p>
+      <p className="mt-4 mb-10 text-[17px] leading-relaxed text-muted">상대에게 받은 8자리 코드를 입력해 주세요.</p>
       <ClaimForm code={claim.code} notice={claim.notice} />
     </>
   );

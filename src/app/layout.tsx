@@ -26,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
-        <main className="mx-auto max-w-md px-6 pb-32 pt-[max(3rem,env(safe-area-inset-top))]">{children}</main>
+        <main className="mx-auto max-w-md px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[max(3rem,env(safe-area-inset-top))]">{children}</main>
         <ServiceWorker version={process.env.VERCEL_GIT_COMMIT_SHA} />
       </body>
     </html>

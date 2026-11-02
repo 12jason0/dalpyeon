@@ -6,6 +6,7 @@ import { AppError } from "@/lib/errors";
 import { communityAccess, getPost, type CommentView, type PostView } from "@/lib/services/community";
 import { requireUser } from "@/lib/session";
 import { blockAction, deleteCommentAction, deletePostAction, reportAction } from "../../actions";
+import { BackLink } from "../../_components/BackLink";
 import { CommentForm, PostForm, TargetButton } from "../../_components/CommunityForms";
 import { Nav } from "../../_components/Nav";
 import { Confirm, Gate } from "../_shared";
@@ -66,7 +67,7 @@ export default async function PostPage({ params, searchParams }: { params: Promi
 
   return (
     <>
-      <Link href="/community" className="link text-sm">이야기로</Link>
+      <BackLink href="/community" />
       {edit === "post" && post.mine && canAct ? (
         <div className="mt-6"><PostForm post={post} /></div>
       ) : (

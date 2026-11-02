@@ -10,7 +10,7 @@ export function ConsentForm() {
   return (
     <form action={action} className="space-y-6">
       <label className="block">
-        <span className="text-sm text-muted">이야기에서 쓸 닉네임 (비워 두면 무작위로 정해져요)</span>
+        <span className="text-sm text-muted">남친톡에서 쓸 닉네임 (비워 두면 무작위로 정해져요)</span>
         <input name="nickname" className="field" maxLength={12} placeholder="예: 편-1234" defaultValue={state?.values?.nickname} />
       </label>
       <ErrorText message={state?.error} />

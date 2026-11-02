@@ -42,6 +42,14 @@ export function weeksOf<T>(cells: T[]): T[][] {
   return Array.from({ length: cells.length / 7 }, (_, i) => cells.slice(i * 7, i * 7 + 7));
 }
 
+export type TodayDirection = "up" | "down";
+
+/** 오늘 칸이 보이는 영역 밖이면 어느 쪽에 있는지. 보이면 null. */
+export function todayDirection(cell: { top: number; bottom: number }, view: { top: number; bottom: number }): TodayDirection | null {
+  if (cell.bottom <= view.top) return "up";
+  return cell.top >= view.bottom ? "down" : null;
+}
+
 /** 한 주의 막대. 주가 바뀌면 끊어서 다시 그리고, 글자는 막대의 시작 칸에만 쓴다. 칩이 그 칸을 차지하면 글자를 뺀다. */
 export function weekBars(week: (string | null)[], marks: CalendarMark[]): Bar[] {
   const bars: Bar[] = [];

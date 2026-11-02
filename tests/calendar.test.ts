@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { barOn, calendarWindow, dayLabels, ovulationOn, weekBars, weeksOf } from "@/lib/calendar";
+import { barOn, calendarWindow, dayLabels, ovulationOn, todayDirection, weekBars, weeksOf } from "@/lib/calendar";
 import { monthGrid } from "@/lib/dates";
 import { nextLine } from "@/lib/moon";
+import { navFor } from "@/lib/nav";
 import { calendarMarks, estimate, type CalendarMark } from "@/lib/prediction";
 
 const marks = (type: CalendarMark["type"], ...dates: string[]) => dates.map((date) => ({ date, type }));
@@ -104,5 +105,36 @@ describe("예측과 달력", () => {
     expect(nextLine(next, today)).toBe("다음 생리 11월 25일 ~ 29일");
     expect(nextLine(next, "2026-11-30")).toBeUndefined();
     expect(nextLine(null, today)).toBeUndefined();
+  });
+});
+
+describe("오늘 칩", () => {
+  const view = { top: 200, bottom: 760 };
+
+  it("오늘이 보이면 칩이 없다", () => {
+    expect(todayDirection({ top: 300, bottom: 360 }, view)).toBeNull();
+  });
+
+  it("조금이라도 걸쳐 있으면 보이는 것으로 본다", () => {
+    expect(todayDirection({ top: 170, bottom: 230 }, view)).toBeNull();
+    expect(todayDirection({ top: 730, bottom: 790 }, view)).toBeNull();
+  });
+
+  it("아래로 스크롤해 오늘이 위로 사라지면 위쪽, 위로 스크롤해 아래로 사라지면 아래쪽이다", () => {
+    expect(todayDirection({ top: 100, bottom: 160 }, view)).toBe("up");
+    expect(todayDirection({ top: 140, bottom: 200 }, view)).toBe("up"); // 상단 고정 영역에 딱 가려진 경우
+    expect(todayDirection({ top: 800, bottom: 860 }, view)).toBe("down");
+    expect(todayDirection({ top: 760, bottom: 820 }, view)).toBe("down"); // 떠 있는 메뉴에 딱 가려진 경우
+  });
+});
+
+describe("하단 메뉴", () => {
+  it("연결은 메뉴에 없고 마이 안에 있다", () => {
+    expect(navFor("recorder").map((n) => n.label)).toEqual(["홈", "리포트", "마이"]);
+    expect(navFor("partner").map((n) => n.label)).toEqual(["홈", "남친톡", "마이"]);
+  });
+
+  it("남친톡의 주소는 그대로다", () => {
+    expect(navFor("partner")[1].href).toBe("/community");
   });
 });

@@ -1,5 +1,4 @@
 import { ChevronRight } from "lucide-react";
-import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { listBlocked } from "@/lib/services/community";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
@@ -7,6 +6,7 @@ import { usualCycle } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { disconnectAction, unblockAction } from "../../actions";
 import { PasswordForm } from "../../_components/AuthForm";
+import { BackLink } from "../../_components/BackLink";
 import { Nav } from "../../_components/Nav";
 import { LogoutButton, WithdrawForm } from "../../_components/NotificationSettings";
 import { UsualCycleForm } from "../../_components/PeriodForm";
@@ -40,9 +40,9 @@ export default async function SettingsPage() {
   const blocked = await listBlocked(db, user);
   return (
     <>
-      <Link href="/me" className="link text-sm">마이</Link>
-      <h1 className="mt-6 text-3xl font-semibold tracking-tight">설정</h1>
-      <ul className="card mt-6">
+      <BackLink href="/me" />
+      <h1 className="sr-only">설정</h1>
+      <ul className="card mt-2">
         {user.role === "recorder" && <li className={`${ROW} pb-4`}><UsualCycleForm initial={usual} /></li>}
         {user.email && (
           <ConfirmRow label="비밀번호 변경">
@@ -82,7 +82,7 @@ export default async function SettingsPage() {
         <ConfirmRow label="회원 탈퇴">
           <p className="text-[15px] leading-relaxed text-muted">탈퇴하면 기록이 모두 지워지고 되돌릴 수 없어요.</p>
           <p className="mt-2 text-[13px] leading-relaxed text-muted">
-            이야기에 쓴 글과 댓글은 &ldquo;탈퇴한 사용자&rdquo;로 남아요. 지우고 싶다면 탈퇴하기 전에 지워 주세요.
+            남친톡에 쓴 글과 댓글은 &ldquo;탈퇴한 사용자&rdquo;로 남아요. 지우고 싶다면 탈퇴하기 전에 지워 주세요.
           </p>
           <WithdrawForm buttonClassName={CONFIRM_BUTTON} />
         </ConfirmRow>

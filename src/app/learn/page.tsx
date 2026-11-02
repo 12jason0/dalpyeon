@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ARTICLE_FOOTER, ARTICLES } from "@/lib/content/articles";
 import { requireUser } from "@/lib/session";
+import { BackLink } from "../_components/BackLink";
 import { Nav } from "../_components/Nav";
 
 export const dynamic = "force-dynamic";
@@ -9,9 +10,9 @@ export default async function LearnPage() {
   const user = await requireUser("partner");
   return (
     <>
-      <Link href="/" className="link text-sm">홈</Link>
-      <h1 className="mt-6 text-3xl font-semibold tracking-tight">알아두면 좋은 것</h1>
-      <ul className="mt-6">
+      <BackLink href="/" />
+      <h1 className="sr-only">알아두면 좋은 것</h1>
+      <ul className="mt-2">
         {ARTICLES.map((a) => (
           <li key={a.slug} className="border-b border-line">
             <Link href={`/learn/${a.slug}`} className="block py-4">
