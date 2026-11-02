@@ -40,10 +40,12 @@ body {
 
 /* 앱을 처음 열 때의 로딩 링. 움직임 줄이기면 천천히 깜빡인다 */
 .open-ring {
-  transform-origin: center;
+  transform-origin: 50% 50%;
+  will-change: transform;
   animation: open-ring-spin 1.2s linear infinite;
 }
 @keyframes open-ring-spin {
+  from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 @keyframes open-ring-blink {

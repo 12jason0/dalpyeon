@@ -24,9 +24,12 @@ function OpenScreen() {
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} width={SIZE} height={SIZE} className="block" aria-hidden>
           <circle cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" strokeWidth={WIDTH} className="stroke-ring" />
+        </svg>
+        {/* iOS Safari는 SVG 안쪽 요소의 회전이 멈출 수 있어, 분홍 호만 그린 SVG 전체를 돌린다 */}
+        <svg viewBox={`0 0 ${SIZE} ${SIZE}`} width={SIZE} height={SIZE} className="open-ring absolute left-0 top-0 block" aria-hidden>
           <circle
             cx={SIZE / 2} cy={SIZE / 2} r={RADIUS} fill="none" strokeWidth={WIDTH} strokeLinecap="round"
-            strokeDasharray={`${LENGTH / 3} ${LENGTH}`} className="open-ring stroke-accent"
+            strokeDasharray={`${LENGTH / 3} ${LENGTH}`} className="stroke-accent"
           />
         </svg>
         <BrandMoon size={20} className="absolute left-[18px] top-[18px] text-accent" />
