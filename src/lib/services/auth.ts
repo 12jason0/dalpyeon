@@ -1,5 +1,5 @@
 import { createHash, randomBytes, randomUUID, scrypt, timingSafeEqual } from "node:crypto";
-import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, ne, sql } from "drizzle-orm";
 import type { DB } from "../db";
 import { rateLimits, sessions, users, type Role } from "../db/schema";
 import { fail } from "../errors";
@@ -93,6 +93,24 @@ export async function login(db: DB, input: { email: unknown; password: unknown }
   const ok = await verifyPassword(password, row?.passwordHash ?? await dummyHash);
   if (!row?.passwordHash || !ok) fail("이메일 또는 비밀번호를 확인해 주세요", 401);
   return { id: row.id, email: row.email, role: row.role, nickname: row.nickname };
+}
+
+/** 비밀번호를 바꾸면 지금 쓰는 세션만 남기고 다른 기기는 모두 로그아웃한다. */
+export async function changePassword(
+  db: DB, user: User, input: { current: unknown; next: unknown; confirm: unknown }, keepToken: string | undefined,
+) {
+  await limit(db, "password", user.id, 5, 900);
+  const [row] = await db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, user.id));
+  if (!row?.hash) fail("이메일로 가입한 계정만 바꿀 수 있어요", 403);
+  if (!(await verifyPassword(String(input.current ?? ""), row.hash))) fail("현재 비밀번호를 확인해 주세요", 401);
+  const next = cleanPassword(input.next);
+  if (next !== input.confirm) fail("새 비밀번호가 서로 달라요");
+  if (next === input.current) fail("지금과 다른 비밀번호로 정해 주세요");
+  const passwordHash = await hashPassword(next);
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ passwordHash }).where(eq(users.id, user.id));
+    await tx.delete(sessions).where(and(eq(sessions.userId, user.id), ne(sessions.tokenHash, sha256(keepToken ?? ""))));
+  });
 }
 
 export async function createSession(db: DB, userId: string): Promise<{ token: string; expiresAt: Date }> {

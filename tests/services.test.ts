@@ -9,14 +9,14 @@ import { CRESCENT, moonShape } from "@/lib/moon";
 import { calendarMarks, endQuestion, estimate, predictionError } from "@/lib/prediction";
 import { AppError } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
-import { createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
+import { changePassword, createSession, deleteSession, limit, login, recordHealthConsent, signup, userFromToken, type User } from "@/lib/services/auth";
 import { clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
   activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, setSharingItem, tryClaim, updateSharing,
 } from "@/lib/services/couples";
 import {
   agreeToRules, blockAuthor, communityAccess, createComment, createPost, decideReport, deleteComment, deletePost, getPost, listPosts,
-  listReports, myPosts, report, updateComment, updatePost,
+  listBlocked, listReports, myPosts, report, unblock, updateComment, updatePost,
 } from "@/lib/services/community";
 import { kakaoAuthorizeUrl, kakaoEnabled, kakaoLanding, signInWithKakao } from "@/lib/services/kakao";
 import {
@@ -1303,6 +1303,117 @@ describe("끝나지 않은 생리", () => {
     await setReminder(db, me, false);
     expect(await sendReminders(db, "2026-10-26", sender)).toBe(0);
     expect(sent).toHaveLength(1);
+  });
+});
+
+describe("비밀번호 변경", () => {
+  const OLD = "password-1", NEXT = "new-password-1";
+  const account = () => signup(db, { email: "pw@example.com", password: OLD, nickname: "나", healthConsent: true });
+
+  it("지금 기기는 유지하고 다른 기기는 로그아웃하며, 다른 사람의 세션은 건드리지 않는다", async () => {
+    const user = await account();
+    const other = await signup(db, { email: "other@example.com", password: OLD, nickname: "남", healthConsent: true });
+    const here = await createSession(db, user.id);
+    const there = await createSession(db, user.id);
+    const theirs = await createSession(db, other.id);
+
+    await changePassword(db, user, { current: OLD, next: NEXT, confirm: NEXT }, here.token);
+
+    expect((await userFromToken(db, here.token))?.id).toBe(user.id);
+    expect(await userFromToken(db, there.token)).toBeNull();
+    expect((await userFromToken(db, theirs.token))?.id).toBe(other.id);
+    await expectFail(login(db, { email: "pw@example.com", password: OLD }), 401);
+    expect((await login(db, { email: "pw@example.com", password: NEXT })).id).toBe(user.id);
+  });
+
+  it("틀린 입력이면 바뀌지 않는다", async () => {
+    const user = await account();
+    const here = await createSession(db, user.id);
+    const there = await createSession(db, user.id);
+    await expectFail(changePassword(db, user, { current: "wrong-pass", next: NEXT, confirm: NEXT }, here.token), 401);
+    await expectFail(changePassword(db, user, { current: OLD, next: NEXT, confirm: "different-1" }, here.token));
+    await expectFail(changePassword(db, user, { current: OLD, next: "short", confirm: "short" }, here.token));
+    await expectFail(changePassword(db, user, { current: OLD, next: OLD, confirm: OLD }, here.token));
+    expect((await login(db, { email: "pw@example.com", password: OLD })).id).toBe(user.id);
+    expect(await userFromToken(db, there.token)).not.toBeNull();
+  });
+
+  it("현재 비밀번호를 계속 틀리면 막힌다", async () => {
+    const user = await account();
+    for (let i = 0; i < 5; i++) await expectFail(changePassword(db, user, { current: "wrong-pass", next: NEXT, confirm: NEXT }, "t"), 401);
+    await expectFail(changePassword(db, user, { current: OLD, next: NEXT, confirm: NEXT }, "t"), 429);
+  });
+
+  it("카카오 가입자는 바꿀 수 없다", async () => {
+    await db.insert(users).values({ id: "k1", kakaoId: "1", role: "recorder", nickname: "카카오" });
+    const kakao: User = { id: "k1", email: null, role: "recorder", nickname: "카카오" };
+    await expectFail(changePassword(db, kakao, { current: OLD, next: NEXT, confirm: NEXT }, "t"), 403);
+  });
+});
+
+describe("차단 풀기", () => {
+  let seq = 0;
+  async function member() {
+    const n = ++seq;
+    const recorder = await signup(db, { email: `ur${n}@example.com`, password: "password-1", nickname: `기록${n}`, healthConsent: true });
+    const joined = await signup(db, { email: `up${n}@example.com`, password: "password-1", nickname: `본명${n}`, healthConsent: true });
+    await connect(recorder, joined);
+    const partner = await reload(joined);
+    await agreeToRules(db, partner, `이웃${n}`);
+    return { partner, recorder };
+  }
+
+  it("내가 차단한 닉네임만 보이고, 풀면 서로 글과 댓글이 다시 보인다", async () => {
+    const { partner: me } = await member();
+    const { partner: you } = await member();
+    const { partner: third } = await member();
+    const yours = await createPost(db, you, { title: "네 글", body: "본문" });
+    const mine = await createPost(db, me, { title: "내 글", body: "본문" });
+    const open = await createPost(db, third, { title: "셋째 글", body: "본문" });
+    await createComment(db, you, open, "네 댓글");
+    await blockAuthor(db, me, { kind: "post", id: yours });
+    await expectFail(getPost(db, me, yours), 404);
+    await expectFail(getPost(db, you, mine), 404);
+
+    const list = await listBlocked(db, me);
+    expect(list.map((b) => b.nickname)).toEqual([`이웃${seq - 1}`]);
+    expect(await listBlocked(db, you)).toEqual([]); // 상대에게는 내가 차단했다는 사실이 보이지 않는다
+    const json = JSON.stringify(list);
+    for (const secret of [you.id, you.email, you.nickname]) expect(json).not.toContain(secret);
+
+    await expectFail(unblock(db, you, list[0].key), 404); // 남의 차단은 못 푼다
+    await expectFail(unblock(db, me, "wrong"), 404);
+    expect(await listBlocked(db, me)).toHaveLength(1);
+
+    await unblock(db, me, list[0].key);
+    expect(await listBlocked(db, me)).toEqual([]);
+    expect((await getPost(db, me, yours)).title).toBe("네 글");
+    expect((await getPost(db, you, mine)).title).toBe("내 글");
+    expect((await getPost(db, me, open)).commentCount).toBe(1);
+    await createComment(db, me, yours, "다시 댓글");
+  });
+
+  it("서로 차단했으면 내 차단을 풀어도 상대 차단이 남고, 연결을 끊어도 풀 수 있으며, 탈퇴한 사람도 풀 수 있다", async () => {
+    const { partner: me, recorder } = await member();
+    const { partner: you } = await member();
+    const { partner: gone } = await member();
+    const yours = await createPost(db, you, { title: "네 글", body: "본문" });
+    const mine = await createPost(db, me, { title: "내 글", body: "본문" });
+    const goneMade = await createPost(db, gone, { title: "떠날 글", body: "본문" });
+    await db.insert(blocks).values({ blockerId: you.id, blockedId: me.id });
+    await db.insert(blocks).values({ blockerId: me.id, blockedId: you.id });
+    await blockAuthor(db, me, { kind: "post", id: goneMade });
+    await withdraw(db, gone);
+    expect((await listBlocked(db, me)).map((b) => b.nickname)).toContain("탈퇴한 사용자");
+
+    await disconnect(db, recorder);
+    const left = await reload(me);
+    for (const b of await listBlocked(db, left)) await unblock(db, left, b.key);
+    expect(await listBlocked(db, left)).toEqual([]);
+
+    expect(await listBlocked(db, you)).toHaveLength(1);
+    await expectFail(getPost(db, you, mine), 404);
+    expect(yours).toBeTruthy();
   });
 });
 

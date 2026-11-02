@@ -7,10 +7,10 @@ import { getDb, type DB } from "@/lib/db";
 import { isMonth, todaySeoul } from "@/lib/dates";
 import { AppError } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
-import { limit, login, recordHealthConsent, signup } from "@/lib/services/auth";
+import { changePassword, limit, login, recordHealthConsent, signup } from "@/lib/services/auth";
 import { clearCare, respondToCare, saveCare } from "@/lib/services/care";
 import {
-  agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, updateComment, updatePost,
+  agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, unblock, updateComment, updatePost,
   type Target,
 } from "@/lib/services/community";
 import {
@@ -21,7 +21,7 @@ import { deletePeriod, listPeriods, savePeriod, setUsualCycle, snoozeEndQuestion
 import {
   markNewsSeen, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
 } from "@/lib/services/push";
-import { clientIp, endSession, requireLogin, requireUser, startSession, takeJoinCode } from "@/lib/session";
+import { clientIp, endSession, requireLogin, requireUser, sessionToken, startSession, takeJoinCode } from "@/lib/session";
 
 export type FormState = {
   error?: string; ok?: boolean; code?: string; expiresAt?: string;
@@ -123,6 +123,14 @@ export async function healthConsentAction(_: FormState, form: FormData): Promise
   if (code && !problem) later((d) => notifyConnected(d, user));
   refresh();
   redirect(code ? connectAfterClaim(problem, code) : "/");
+}
+
+export async function changePasswordAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    await changePassword(await getDb(), await requireUser(), {
+      current: form.get("current"), next: form.get("next"), confirm: form.get("confirm"),
+    }, await sessionToken());
+  });
 }
 
 export async function logoutAction() {
@@ -347,6 +355,11 @@ export async function blockAction(_: FormState, form: FormData): Promise<FormSta
   });
   if (result?.error) return result;
   redirect("/community");
+}
+
+export async function unblockAction(form: FormData) {
+  await unblock(await getDb(), await requireUser(), form.get("key")).catch(ignoreAppError);
+  refresh();
 }
 
 export async function decideReportAction(form: FormData) {

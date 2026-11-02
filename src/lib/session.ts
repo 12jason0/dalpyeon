@@ -76,6 +76,10 @@ export async function takeJoinCode() {
   return code;
 }
 
+export async function sessionToken() {
+  return (await cookies()).get(COOKIE)?.value;
+}
+
 export async function endSession() {
   const jar = await cookies();
   await deleteSession(await getDb(), jar.get(COOKIE)?.value);

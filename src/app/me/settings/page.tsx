@@ -1,10 +1,12 @@
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { getDb } from "@/lib/db";
+import { listBlocked } from "@/lib/services/community";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { usualCycle } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
-import { disconnectAction } from "../../actions";
+import { disconnectAction, unblockAction } from "../../actions";
+import { PasswordForm } from "../../_components/AuthForm";
 import { Nav } from "../../_components/Nav";
 import { LogoutButton, WithdrawForm } from "../../_components/NotificationSettings";
 import { UsualCycleForm } from "../../_components/PeriodForm";
@@ -35,12 +37,34 @@ export default async function SettingsPage() {
   const couple = await activeCouple(db, user.id);
   const name = couple ? await otherNickname(db, couple, user) : null;
   const usual = user.role === "recorder" ? await usualCycle(db, user.id) : null;
+  const blocked = await listBlocked(db, user);
   return (
     <>
       <Link href="/me" className="link text-sm">마이</Link>
       <h1 className="mt-6 text-3xl font-semibold tracking-tight">설정</h1>
       <ul className="card mt-6">
         {user.role === "recorder" && <li className={`${ROW} pb-4`}><UsualCycleForm initial={usual} /></li>}
+        {user.email && (
+          <ConfirmRow label="비밀번호 변경">
+            <PasswordForm />
+          </ConfirmRow>
+        )}
+        {(blocked.length > 0 || user.role === "partner") && (
+          <ConfirmRow label="차단한 사람">
+            {blocked.length === 0 && <p className="text-[15px] text-muted">차단한 사람이 없어요.</p>}
+            <ul>
+              {blocked.map((b) => (
+                <li key={b.key} className="flex items-center justify-between gap-4 py-2">
+                  <span className="min-w-0 text-[15px]">{b.nickname}</span>
+                  <form action={unblockAction} className="shrink-0">
+                    <input type="hidden" name="key" value={b.key} />
+                    <button type="submit" className="link h-11 text-sm">차단 풀기</button>
+                  </form>
+                </li>
+              ))}
+            </ul>
+          </ConfirmRow>
+        )}
         {name && (
           <ConfirmRow label="연결 끊기">
             <p className="text-[15px] leading-relaxed text-muted">

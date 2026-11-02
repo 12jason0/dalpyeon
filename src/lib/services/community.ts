@@ -5,7 +5,7 @@ import { cache } from "react";
 import type { DB } from "../db";
 import { blocks, comments, posts, reports, users } from "../db/schema";
 import { fail } from "../errors";
-import { limit, type User } from "./auth";
+import { limit, sha256, type User } from "./auth";
 import { activeCouple } from "./couples";
 
 export const PAGE_SIZE = 20;
@@ -260,6 +260,24 @@ export async function blockAuthor(db: DB, user: User, target: Target) {
   const authorId = target.kind === "post" ? (await openPost(db, user.id, target.id)).authorId : (await openComment(db, user.id, target.id)).authorId;
   if (authorId === user.id) fail("나를 차단할 수는 없어요");
   await db.insert(blocks).values({ blockerId: user.id, blockedId: authorId }).onConflictDoNothing();
+}
+
+// 화면에 상대 id를 내리지 않으려고 나에게만 뜻이 있는 값으로 가리킨다.
+const blockKey = (userId: string, blockedId: string) => sha256(`${userId}:${blockedId}`);
+
+/** 내가 차단한 사람. 연결이 끊겨도 풀 수 있도록 접근 조건 없이 보여준다. */
+export async function listBlocked(db: DB, user: User): Promise<{ key: string; nickname: string }[]> {
+  const rows = await db.select({ id: blocks.blockedId, nickname: users.communityNickname }).from(blocks)
+    .innerJoin(users, eq(users.id, blocks.blockedId)).where(eq(blocks.blockerId, user.id)).orderBy(desc(blocks.createdAt));
+  return rows.map((r) => ({ key: blockKey(user.id, r.id), nickname: r.nickname ?? WITHDRAWN_NAME }));
+}
+
+/** 내가 건 차단만 푼다. 상대도 나를 차단했다면 그 차단은 남아 서로 계속 안 보인다. */
+export async function unblock(db: DB, user: User, key: unknown) {
+  const mine = await db.select({ id: blocks.blockedId }).from(blocks).where(eq(blocks.blockerId, user.id));
+  const target = mine.find((b) => blockKey(user.id, b.id) === key);
+  if (!target) fail("차단한 사람을 찾을 수 없어요", 404);
+  await db.delete(blocks).where(and(eq(blocks.blockerId, user.id), eq(blocks.blockedId, target.id)));
 }
 
 export type ReportRow = Target & { postId: string; text: string; nickname: string; total: number; hidden: boolean };
