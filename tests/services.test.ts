@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLocalDb, type DB } from "@/lib/db";
 import {
   blocks, careRequests, careResponses, comments, couples, dayLogs, invitations, periods, posts, pushSubscriptions, rateLimits, reports, sessions, users,
@@ -103,8 +103,20 @@ async function fourPeriods(user: User) {
   }
 }
 
+/** 테스트가 끝나면 afterEach에서 닫을 DB를 만든다. */
+const opened: DB[] = [];
+async function openDb() {
+  const opening = await createLocalDb();
+  opened.push(opening);
+  return opening;
+}
+
 beforeEach(async () => {
-  db = await createLocalDb();
+  db = await openDb();
+});
+
+afterEach(async () => {
+  await Promise.all(opened.splice(0).map((d) => (d as unknown as { $client: { close(): Promise<void> } }).$client.close()));
 });
 
 describe("계정", () => {
@@ -1003,7 +1015,7 @@ describe("알림", () => {
     await notifyCare(db, paused.me, TODAY, box.sender);
     expect(box.sent).toEqual([]);
 
-    db = await createLocalDb();
+    db = await openDb();
     const { me, partner } = await shared();
     await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
     await disconnect(db, me);
@@ -1034,7 +1046,7 @@ describe("알림", () => {
     await expect(notifyCare(db, me, TODAY, sender)).resolves.toBeUndefined();
     expect((await partnerView(db, partner, TODAY))?.care).toHaveLength(1);
     const broken = db;
-    db = await createLocalDb();
+    db = await openDb();
     await expect(notifyCare(db, me, TODAY, sender)).resolves.toBeUndefined(); // 없는 계정이어도 조용히
     db = broken;
   });
