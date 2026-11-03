@@ -25,7 +25,8 @@ function isAsset(url) {
   return /^\/(_next\/static\/|icon|apple-icon)/.test(url.pathname);
 }
 
-const isFont = (url) => url.origin === self.location.origin && /^\/_next\/static\/media\/.+\.(ttf|otf|woff2?)$/.test(url.pathname);
+// 배포(Vercel)에서는 /_next/static/immutable/media/, 로컬에서는 /_next/static/media/ 아래에 있다.
+const isFont = (url) => url.origin === self.location.origin && /^\/_next\/static\/(immutable\/)?media\/.+\.(ttf|otf|woff2?)$/.test(url.pathname);
 
 async function cacheFirst(request, name = ASSETS) {
   const cache = await caches.open(name);
