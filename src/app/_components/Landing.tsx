@@ -4,13 +4,13 @@ import { exampleHome } from "@/lib/content/example";
 import { monthGrid, todaySeoul } from "@/lib/dates";
 import { moonShape } from "@/lib/moon";
 import { calendarMarks, DISCLAIMER, ESTIMATE_NOTE, estimate } from "@/lib/prediction";
-import { CARE_PRESETS, RESPONSES } from "@/lib/services/care";
+import { CARE_PRESETS } from "@/lib/services/care";
 import { CalendarMonth } from "./CalendarMonth";
 import { CareCard, Logo, recorderStatus, TopBar } from "./HomeCards";
 import { LINE_CARD } from "./Sheet";
 
 const FEATURES = [
-  { icon: HeartHandshake, title: "연인에게 배려 요청하고 답장 받기", line: "말하기 어려운 날, 버튼 하나로 전해요." },
+  { icon: HeartHandshake, title: "배려 요청과 오늘의 쪽지", line: "말하기 어려운 날, 버튼 하나로 전하고 하루 세 장 쪽지를 주고받아요." },
   { icon: Flower2, title: "오늘 내 몸 상태와 팁", line: "지금 시기에 흔한 변화와 챙길 것을 알려드려요." },
   { icon: CalendarDays, title: "내 주기에 맞춘 예측 달력", line: "기록이 쌓일수록 내 주기에 가까워져요." },
 ];
@@ -24,7 +24,7 @@ function HomePreview({ today }: { today: string }) {
   return (
     <div inert className="pointer-events-none mx-auto select-none overflow-hidden rounded-[2.25rem] border-4 border-line bg-paper px-3 pb-6 pt-6">
       <TopBar moon={moonShape(prediction, today)} {...recorderStatus(prediction, null, today)} />
-      <p className={`${LINE_CARD} mt-3`}>오늘 필요한 배려 · 도윤 · 도와줄게요</p>
+      <p className={`${LINE_CARD} mt-3`}>오늘 필요한 배려 · 도윤님이 봤어요</p>
       <CalendarMonth month={month} marks={calendarMarks(periods, prediction, first, last, today)} today={today} />
     </div>
   );
@@ -65,10 +65,10 @@ function CareFlow() {
             </span>
           </div>
         </FlowStep>
-        <FlowStep number={3} title="답장이 돌아와요" last>
-          <div className="card flex items-center justify-between gap-3">
-            <span className="text-[15px] text-muted">도윤</span>
-            <span className="rounded-full border border-accent bg-period px-3.5 py-1.5 text-[14px] font-medium text-period-ink">{RESPONSES.will_help}</span>
+        <FlowStep number={3} title="쪽지가 돌아와요" last>
+          <div className="card flex flex-col items-start gap-0.5">
+            <p className="max-w-[85%] rounded-2xl rounded-bl-md bg-line px-3.5 py-2 text-[15px] leading-snug">핫팩 챙겨갈게</p>
+            <p className="px-1 text-[12px] text-muted">도윤 · 오후 3:20</p>
           </div>
         </FlowStep>
       </ol>
