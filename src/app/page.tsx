@@ -121,13 +121,18 @@ async function CareSlot({ data, group }: { data: CareAndPartner; group: "body" |
 }
 
 /** 오늘의 통증·기분 칩. */
-function BodyChips({ log }: { log: Pick<DayLog, "pain" | "moods"> }) {
-  const { pain, mood } = bodyChips(log);
+const BODY_CHIP = "inline-flex h-7 max-w-full items-center gap-1 rounded-full px-2.5 text-[14px] font-medium";
+
+/** 파트너 홈 맨 위 카드 바로 아래의 한 줄. 오늘 남긴 통증·기분이 없으면 그리지 않는다. */
+function TodayBody({ name, log }: { name: string; log: Pick<DayLog, "pain" | "moods"> | null }) {
+  const { pain, mood } = log ? bodyChips(log) : { pain: null, mood: null };
+  if (!pain && !mood) return null;
   return (
-    <>
-      {pain && <Chip icon={<Activity size={12} aria-hidden />} tone="period">{pain}</Chip>}
-      {mood && <Chip icon={<Smile size={12} aria-hidden />} tone="fertile">{mood}</Chip>}
-    </>
+    <div className="card flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3.5 py-2.5">
+      <p className="mr-0.5 text-[15px] font-semibold tracking-tight">오늘 {name}님</p>
+      {pain && <span className={`${BODY_CHIP} bg-period text-period-ink`}><Activity size={14} aria-hidden /><span className="truncate">{pain}</span></span>}
+      {mood && <span className={`${BODY_CHIP} bg-fertile text-fertile-ink`}><Smile size={14} aria-hidden /><span className="truncate">{mood}</span></span>}
+    </div>
   );
 }
 
@@ -195,9 +200,8 @@ async function PartnerHome({ user }: { user: User }) {
   return (
     <>
       <HomeTop>
-        <TopBar moon={view.moon} main={line} sub={nextLine(view.nextPeriod, today)}>
-          {view.todayBody && <BodyChips log={view.todayBody} />}
-        </TopBar>
+        <TopBar moon={view.moon} main={line} sub={nextLine(view.nextPeriod, today)} />
+        <TodayBody name={name} log={view.todayBody} />
       </HomeTop>
       <div className="pb-4">
         <HomeCalendar
