@@ -58,6 +58,15 @@ describe("막대", () => {
     ]);
   });
 
+  it("전달에서 이어진 기간은 새 달 첫 칸에 글자를 쓴다. 생리 막대도 이때는 쓴다", () => {
+    const [dec] = weeksOf(monthGrid("2026-12").cells);
+    const cont = (type: CalendarMark["type"]) => marks(type, "2026-11-30", "2026-12-01", "2026-12-02");
+    expect(weekBars(dec, cont("period"))).toEqual([{ kind: "period", start: 2, span: 2, label: "생리" }]);
+    expect(weekBars(dec, cont("remaining_period"))[0].label).toBe("생리 예상");
+    expect(weekBars(dec, cont("predicted_period"))[0].label).toBe("생리 예상");
+    expect(weekBars(dec, cont("estimated_fertile_window"))[0].label).toBe("가임기");
+  });
+
   it("빈칸에서 끊기고, 띄엄띄엄한 날은 다른 막대다", () => {
     const row = [null, "2026-11-02", null, "2026-11-04", null, null, null];
     expect(weekBars(row, marks("period", "2026-11-02", "2026-11-04")).map((b) => b.start)).toEqual([1, 3]);

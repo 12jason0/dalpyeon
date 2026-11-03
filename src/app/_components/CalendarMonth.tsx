@@ -3,8 +3,8 @@ import { monthDay, monthGrid, monthLabel, WEEKDAYS } from "@/lib/dates";
 import type { CalendarMark } from "@/lib/prediction";
 
 const BAR_STYLE: Record<BarKind, string> = {
-  period: "bg-accent",
-  remaining: "border border-dashed border-period-dash",
+  period: "bg-accent text-white",
+  remaining: "border border-dashed border-period-dash text-period-ink",
   predicted: "bg-period text-period-ink",
   fertile: "bg-fertile-bar text-fertile-ink",
   tentative: "bg-fertile-bar/60 text-fertile-ink",
@@ -31,12 +31,19 @@ function DayCell({ day, column, marks, today, onPick }: { day: string; column: n
   const ovulation = ovulationOn(marks, day);
   const look = day === today ? "bg-accent font-semibold text-white" : WEEKEND[column] ?? "";
   const number = (
-    <span className={`relative mt-px flex h-[26px] w-[26px] items-center justify-center rounded-full text-[15px] ${look} ${ovulation ? "border border-fertile-ink/40" : ""}`}>
-      {Number(day.slice(8))}
-      {ovulation && <span className={`absolute bottom-0.5 h-1 w-1 rounded-full ${day === today ? "bg-white" : "bg-fertile-ink"}`} aria-hidden />}
-    </span>
+    <>
+      <span className={`mt-px flex h-[26px] w-[26px] items-center justify-center rounded-full text-[15px] ${look} ${ovulation ? "border border-fertile-ink/40" : ""}`}>
+        {Number(day.slice(8))}
+      </span>
+      {/* 막대 줄과 같은 높이에, 막대보다 위에 그려서 가임기 막대와 겹쳐도 읽힌다. */}
+      {ovulation && (
+        <span className="absolute inset-x-0 bottom-px z-[1] text-center text-[10.5px] font-semibold leading-[14px] text-[#5E5A8C]" aria-hidden>
+          배란일
+        </span>
+      )}
+    </>
   );
-  const cell = "flex h-[2.625rem] w-full justify-center";
+  const cell = "relative flex h-[2.625rem] w-full justify-center";
   if (!onPick || !pickable(day, today)) return <div data-day={day} className={cell} aria-label={label} role="img">{number}</div>;
   return <button type="button" data-day={day} aria-label={label} className={cell} onClick={() => onPick(day)}>{number}</button>;
 }
@@ -52,14 +59,20 @@ export function CalendarMonth({ month, marks, today, onPick }: { month: string; 
             {week.map((day, j) => (day ? <DayCell key={day} day={day} column={j} marks={marks} today={today} onPick={onPick} /> : <span key={j} />))}
           </div>
           <div className="pointer-events-none absolute inset-x-0 bottom-px grid grid-cols-7 text-[10px] font-medium leading-[14px]" aria-hidden>
-            {weekBars(week, marks).map((bar) => (
-              <span
-                key={bar.start} style={{ gridRow: 1, gridColumn: `${bar.start + 1} / span ${bar.span}` }}
-                className={`h-3.5 overflow-hidden whitespace-nowrap rounded-full px-1.5 ${BAR_STYLE[bar.kind]}`}
-              >
-                {bar.label}
-              </span>
-            ))}
+            {weekBars(week, marks).map((bar) => {
+              // 첫 칸에 배란일 글자가 있으면 막대 글자는 다음 칸부터 쓴다. 한 칸짜리면 생략한다.
+              const first = week[bar.start];
+              const clash = bar.label !== null && first !== null && ovulationOn(marks, first);
+              return (
+                <span
+                  key={bar.start}
+                  style={{ gridRow: 1, gridColumn: `${bar.start + 1} / span ${bar.span}`, ...(clash ? { paddingLeft: `calc(100% / ${bar.span} + 0.25rem)` } : {}) }}
+                  className={`h-3.5 overflow-hidden whitespace-nowrap rounded-full px-1.5 ${BAR_STYLE[bar.kind]}`}
+                >
+                  {clash && bar.span === 1 ? null : bar.label}
+                </span>
+              );
+            })}
           </div>
         </div>
       ))}

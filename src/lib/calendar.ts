@@ -11,6 +11,8 @@ export type BarKind = "period" | "remaining" | "predicted" | "fertile" | "tentat
 export type Bar = { kind: BarKind; start: number; span: number; label: string | null };
 
 const BAR_LABELS: Partial<Record<BarKind, string>> = { predicted: "생리 예상", fertile: "가임기", tentative: "가임기" };
+/** 전달에서 이어진 막대는 새 달 카드에서 무엇인지 모르니 생리 막대에도 글자를 쓴다. */
+const CONTINUED_LABELS: Record<BarKind, string> = { period: "생리", remaining: "생리 예상", predicted: "생리 예상", fertile: "가임기", tentative: "가임기" };
 const DAY_LABELS: Record<BarKind, string> = { period: "생리", remaining: "생리 예상", predicted: "생리 예상", fertile: "가임기", tentative: "가임기 추정" };
 const OVULATION_TENTATIVE = "배란 추정";
 
@@ -65,15 +67,21 @@ export function todayDirection(cell: { top: number; bottom: number }, view: { to
   return cell.top >= view.bottom ? "down" : null;
 }
 
-/** 한 주의 막대. 주가 바뀌면 끊어서 다시 그리고, 글자는 기간의 첫 칸에만 쓴다. */
+/** 막대 첫 칸의 글자. 기간이 시작하는 칸, 또는 전달에서 이어져 새 달이 시작하는 칸에만 쓴다. */
+function barLabel(marks: CalendarMark[], kind: BarKind, day: string) {
+  if (barOn(marks, addDays(day, -1)) !== kind) return BAR_LABELS[kind] ?? null;
+  return day.endsWith("-01") ? CONTINUED_LABELS[kind] : null;
+}
+
+/** 한 주의 막대. 주가 바뀌면 끊어서 다시 그리고, 글자는 기간의 첫 칸(전달에서 이어지면 새 달 첫 칸)에만 쓴다. */
 export function weekBars(week: (string | null)[], marks: CalendarMark[]): Bar[] {
   const bars: Bar[] = [];
   week.forEach((day, i) => {
     const kind = day && barOn(marks, day);
-    if (!kind) return;
+    if (!day || !kind) return;
     const last = bars[bars.length - 1];
     if (last?.kind === kind && last.start + last.span === i) last.span++;
-    else bars.push({ kind, start: i, span: 1, label: day && barOn(marks, addDays(day, -1)) !== kind ? BAR_LABELS[kind] ?? null : null });
+    else bars.push({ kind, start: i, span: 1, label: barLabel(marks, kind, day) });
   });
   return bars;
 }
