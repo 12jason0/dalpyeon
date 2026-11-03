@@ -6,6 +6,7 @@ import {
 } from "@/lib/db/schema";
 import { barOn, calendarWindow } from "@/lib/calendar";
 import { ARTICLES, findArticle } from "@/lib/content/articles";
+import EXAMPLE_POSTS from "@/lib/content/example-posts.json";
 import PINNED_POSTS from "@/lib/content/pinned-posts.json";
 import { RULES } from "@/lib/content/rules";
 import { addDays, monthDay, timeSeoul } from "@/lib/dates";
@@ -23,7 +24,7 @@ import {
 } from "@/lib/services/couples";
 import {
   agreeToRules, blockAuthor, communityAccess, createComment, createPost, decideReport, deleteComment, deletePost, getPost, listPosts,
-  listBlocked, listReports, myPosts, report, TEAM_NAME, unblock, updateComment, updatePost,
+  listBlocked, listReports, myPosts, report, TEAM_NAME, toggleLike, unblock, updateComment, updatePost,
 } from "@/lib/services/community";
 import { dayLogOn, listDayLogs, saveDayLog } from "@/lib/services/daylogs";
 import { kakaoAuthorizeUrl, kakaoEnabled, kakaoLanding, signInWithKakao } from "@/lib/services/kakao";
@@ -682,6 +683,16 @@ describe("고정 글", () => {
     }
   });
 
+  it("예시 글은 고민·꿀팁·후기 하나씩이고 제한 안이다", () => {
+    expect(EXAMPLE_POSTS.map((p) => p.board)).toEqual(["question", "tip", "review"]);
+    for (const p of EXAMPLE_POSTS) {
+      expect(p.title.length).toBeLessThanOrEqual(60);
+      expect(p.body.length).toBeLessThanOrEqual(2000);
+      expect(p.nickname.length).toBeGreaterThanOrEqual(2);
+      expect(p.nickname.length).toBeLessThanOrEqual(12);
+    }
+  });
+
   it("이용 규칙은 고정 글 \"서로 지켜줄 것\"의 항목과 같다", () => {
     const promises = PINNED_POSTS.find((p) => p.id === "pinned-promises")!;
     expect(promises.body.join("\n").split("\n").filter((l) => l.startsWith("• ")).map((l) => l.slice(2))).toEqual(RULES);
@@ -903,6 +914,35 @@ describe("커뮤니티", () => {
     await expectFail(updatePost(db, partner, id, { title: "되살리기", body: "본문" }), 404);
     expect((await myPosts(db, partner))[0]).toMatchObject({ id, hidden: true }); // 작성자는 목록에서 보고 지울 수 있다
     await deletePost(db, partner, id);
+  });
+
+  it("말머리: 기본은 고민, 고르면 그 말머리 글과 고정 글만, 이상한 값은 거절", async () => {
+    const { partner } = await member();
+    await db.insert(posts).values({ id: "pin", authorId: null, title: "고정", body: "본문", pinned: true });
+    const q = await post(partner, "고민 글");
+    const tip = await createPost(db, partner, { board: "tip", title: "꿀팁 글", body: "본문" });
+    await expectFail(createPost(db, partner, { board: "free", title: "제목", body: "본문" }));
+    expect((await getPost(db, partner, q)).board).toBe("question");
+    expect((await listPosts(db, partner, 1, "tip")).posts.map((p) => p.id)).toEqual(["pin", tip]);
+    expect((await listPosts(db, partner, 1, "nope")).posts).toHaveLength(3); // 모르는 값이면 전체
+    await updatePost(db, partner, tip, { title: "고침", body: "본문" }); // 말머리를 안 보내면 그대로
+    expect((await getPost(db, partner, tip)).board).toBe("tip");
+    await updatePost(db, partner, tip, { board: "review", title: "고침", body: "본문" });
+    expect((await getPost(db, partner, tip)).board).toBe("review");
+  });
+
+  it("공감은 한 사람당 한 번, 다시 누르면 취소된다", async () => {
+    const { partner } = await member();
+    const other = (await member(false)).partner; // 동의 전에도 공감은 된다
+    const id = await post(partner);
+    expect(await toggleLike(db, other, id)).toBe(true);
+    expect(await toggleLike(db, partner, id)).toBe(true);
+    expect(await getPost(db, other, id)).toMatchObject({ likeCount: 2, liked: true });
+    expect(await toggleLike(db, other, id)).toBe(false);
+    expect(await getPost(db, other, id)).toMatchObject({ likeCount: 1, liked: false });
+    expect((await listPosts(db, other)).posts[0]).toMatchObject({ likeCount: 1, preview: "본문" });
+    const { recorder } = await member();
+    await expectFail(toggleLike(db, recorder, id), 403);
   });
 
   it("글쓰기 요청 제한: 10분에 5개, 다른 계정은 영향 없음", async () => {

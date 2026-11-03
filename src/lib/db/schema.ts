@@ -112,13 +112,14 @@ export const careResponses = pgTable("care_responses", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [primaryKey({ columns: [t.careId, t.coupleId] })]);
 
-export type Board = "question" | "tip";
+/** 말머리: 고민·꿀팁·후기. */
+export type Board = "question" | "tip" | "review";
 
 export const posts = pgTable("posts", {
   id: text("id").primaryKey(),
   /** 운영팀의 고정 글만 비어 있다. */
   authorId: text("author_id").references(() => users.id, { onDelete: "cascade" }),
-  /** 게시판을 하나로 합치기 전의 분류. 화면에서는 더 쓰지 않고 예전 글의 값으로만 남아 있다. */
+  /** 말머리. 0008 마이그레이션 전의 글은 모두 고민이 됐다. */
   board: text("board").$type<Board>().notNull().default("question"),
   title: text("title").notNull(),
   body: text("body").notNull(),
@@ -130,7 +131,15 @@ export const posts = pgTable("posts", {
 }, (t) => [
   index("posts_created").on(t.createdAt),
   index("posts_author").on(t.authorId),
+  check("posts_board", sql`board in ('question', 'tip', 'review')`),
 ]);
+
+/** 공감. 한 사람이 한 글에 한 번. */
+export const postLikes = pgTable("post_likes", {
+  postId: text("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: created(),
+}, (t) => [primaryKey({ columns: [t.postId, t.userId] })]);
 
 export const comments = pgTable("comments", {
   id: text("id").primaryKey(),

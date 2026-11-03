@@ -10,7 +10,7 @@ import { withdraw } from "@/lib/services/account";
 import { changePassword, limit, login, recordConsents, signup, updateNickname } from "@/lib/services/auth";
 import { clearCare, respondToCare, saveCare, type ResponseKey } from "@/lib/services/care";
 import {
-  agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, unblock, updateComment, updatePost,
+  agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, toggleLike, unblock, updateComment, updatePost,
   type Target,
 } from "@/lib/services/community";
 import {
@@ -340,11 +340,11 @@ export async function savePostAction(_: FormState, form: FormData): Promise<Form
   const result = await attempt(async () => {
     const user = await requireUser("partner");
     const db = await getDb();
-    const input = { title: form.get("title"), body: form.get("body") };
+    const input = { board: form.get("board"), title: form.get("title"), body: form.get("body") };
     if (id) await updatePost(db, user, id, input);
     else id = await createPost(db, user, input);
     refresh();
-  }, form, ["title", "body"]);
+  }, form, ["board", "title", "body"]);
   if (result?.error) return result;
   redirect(`/community/${id}`);
 }
@@ -366,8 +366,16 @@ export async function saveCommentAction(_: FormState, form: FormData): Promise<F
     else await createComment(db, user, postId, form.get("body"), (form.get("parentId") as string) || null);
     refresh();
   }, form, ["body"]);
-  if (result?.error || !id) return result;
+  // 새 댓글은 그 자리에서 입력칸만 비운다. 수정·답글은 주소의 ?edit=·?reply=를 지우려고 다시 연다.
+  if (result?.error || !(id || form.get("parentId"))) return result;
   redirect(`/community/${postId}`);
+}
+
+export async function likeAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    await toggleLike(await getDb(), await requireUser("partner"), String(form.get("id")));
+    refresh();
+  });
 }
 
 export async function deleteCommentAction(form: FormData) {
