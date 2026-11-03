@@ -7,6 +7,7 @@ import { ErrorText } from "./Submit";
 const PILL = "flex h-10 items-center justify-center rounded-full border border-line text-[15px] text-muted transition";
 const PICKED = "border-accent bg-accent font-semibold text-white";
 const FAILED = "저장하지 못했어요. 다시 시도해 주세요";
+const FIRST_CHIPS = 6;
 
 /** 생리 중인 오늘의 통증·기분. 누르면 바로 저장한다. 실패하면 마지막으로 저장된 값으로 돌아간다. */
 export function QuickLog({ day, initial }: { day: string; initial: DayLog | null }) {
@@ -73,15 +74,20 @@ export function QuickLog({ day, initial }: { day: string; initial: DayLog | null
 
 type Care = { presets: string[]; message: string | null; shareWithPartner: boolean };
 
-/** 오늘 필요한 배려. 항목을 누르면 바로 보내고, 다시 누르면 뺀다. 나만 보게 둔 요청은 그대로 나만 본다. */
-export function QuickCare({ presets, current, canShare, hint, status, more }: {
-  presets: Record<string, string>; current: Care | null; canShare: boolean; hint: string | null; status: React.ReactNode; more: React.ReactNode;
+/** 오늘 필요한 배려. 항목을 누르면 바로 보내고, 다시 누르면 뺀다. 나만 보게 둔 요청은 그대로 나만 본다. 처음엔 6개와 고른 칩만 보인다. */
+export function QuickCare({ presets, current, canShare, status, more }: {
+  presets: Record<string, string>; current: Care | null; canShare: boolean; status: React.ReactNode; more: React.ReactNode;
 }) {
   const [picked, setPicked] = useState(current?.presets ?? []);
   const [adding, setAdding] = useState(false);
   const [message, setMessage] = useState(current?.message ?? "");
   const [error, setError] = useState<string>();
+  const [expanded, setExpanded] = useState(false);
   const [pending, start] = useTransition();
+  const known = Object.entries(presets);
+  const unknown = (current?.presets ?? []).filter((key) => !(key in presets)).map((key) => [key, key]);
+  const chips = [...known, ...unknown];
+  const shown = chips.filter(([key], i) => expanded || i < FIRST_CHIPS || picked.includes(key));
 
   const send = (nextPicked: string[], nextMessage: string) => {
     setPicked(nextPicked);
@@ -110,7 +116,7 @@ export function QuickCare({ presets, current, canShare, hint, status, more }: {
         {status}
       </div>
       <div className="mt-2 flex flex-wrap gap-1.5">
-        {Object.entries(presets).map(([key, label]) => {
+        {shown.map(([key, label]) => {
           const on = picked.includes(key);
           return (
             <button
@@ -121,6 +127,7 @@ export function QuickCare({ presets, current, canShare, hint, status, more }: {
             </button>
           );
         })}
+        {shown.length < chips.length && <button type="button" className="link h-10 px-1 text-[13px]" onClick={() => setExpanded(true)}>더보기</button>}
       </div>
       {current?.message && !adding && <p className="mt-2 text-[15px] leading-relaxed">“{current.message}”</p>}
       {adding && (
@@ -129,7 +136,6 @@ export function QuickCare({ presets, current, canShare, hint, status, more }: {
           <button type="submit" disabled={pending} className="h-10 shrink-0 rounded-full bg-accent px-4 text-[15px] font-semibold text-white disabled:opacity-40">보내기</button>
         </form>
       )}
-      {hint && <p className="mt-2 text-[13px] text-muted">{hint}</p>}
       <ErrorText message={error} />
       <div className="mt-1 flex items-center gap-5 text-[13px]">
         {!adding && <button type="button" className="link h-9" onClick={() => setAdding(true)}>{current?.message ? "한마디 고치기" : "한마디 추가"}</button>}

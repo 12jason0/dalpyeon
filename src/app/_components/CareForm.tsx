@@ -7,10 +7,9 @@ type Props = {
   presets: Record<string, string>;
   current: { presets: string[]; message: string | null; shareWithPartner: boolean } | null;
   canShare: boolean;
-  shareHint: string | null;
 };
 
-export function CareForm({ presets, current, canShare, shareHint }: Props) {
+export function CareForm({ presets, current, canShare }: Props) {
   const [state, action] = useActionState<FormState, FormData>(saveCareAction, null);
   return (
     <form action={action}>
@@ -32,16 +31,12 @@ export function CareForm({ presets, current, canShare, shareHint }: Props) {
         placeholder="직접 한마디 (선택)"
         className="field mt-2"
       />
-      <label className="mt-6 flex items-center justify-between gap-4">
-        <span className="text-[15px]">
-          파트너에게 보내기
-          {shareHint && <span className="mt-1 block text-[13px] text-muted">{shareHint}</span>}
-        </span>
-        <input
-          type="checkbox" name="share" className="switch" disabled={!canShare}
-          defaultChecked={canShare && (current ? current.shareWithPartner : true)}
-        />
-      </label>
+      {canShare && (
+        <label className="mt-6 flex items-center justify-between gap-4">
+          <span className="text-[15px]">파트너에게 보내기</span>
+          <input type="checkbox" name="share" className="switch" defaultChecked={current ? current.shareWithPartner : true} />
+        </label>
+      )}
       <ErrorText message={state?.error} />
       <div className="mt-8 flex items-center gap-4">
         <Submit>{current ? "바꾸기" : "남기기"}</Submit>

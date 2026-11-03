@@ -17,7 +17,7 @@ import { withdraw } from "@/lib/services/account";
 import {
   changePassword, consentDone, createSession, deleteSession, hashPassword, limit, login, purgeExpired, recordConsents, sha256, signup, updateNickname, userFromToken, type User,
 } from "@/lib/services/auth";
-import { careChip, clearCare, getCare, respondToCare, saveCare } from "@/lib/services/care";
+import { CARE_PRESETS, careChip, careGroup, careLabel, clearCare, getCare, orderPresets, recentPresets, recentReplies, respondToCare, saveCare } from "@/lib/services/care";
 import {
   activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, otherNickname, setPaused, tryClaim, updateSharing,
 } from "@/lib/services/couples";
@@ -88,10 +88,11 @@ describe("이름 수정", () => {
 
 describe("배려 칩", () => {
   it("상태마다 글자가 다르고, 공유가 멈추면 보낸 것으로 보이지 않는다", () => {
-    expect(careChip(null, true)).toEqual({ label: "아직이에요", sent: false });
+    expect(careChip(null, true)).toBeNull();
+    expect(careChip(null, false)).toBeNull();
     expect(careChip({ shareWithPartner: false }, true)).toEqual({ label: "나만 봐요", sent: false });
     expect(careChip({ shareWithPartner: true }, false)).toEqual({ label: "나만 봐요", sent: false });
-    expect(careChip({ shareWithPartner: true }, true)).toEqual({ label: "보냈어요", sent: true });
+    expect(careChip({ shareWithPartner: true }, true)).toEqual({ label: "답장 기다리는 중", sent: true });
     expect(careChip({ shareWithPartner: true, response: "will_help" }, true)).toEqual({ label: "도와줄게요", sent: true });
   });
 });
@@ -555,6 +556,16 @@ describe("코드로 시작하기", () => {
 });
 
 describe("공유", () => {
+  it("기록이 1번뿐이어도 파트너 달력에 배란일이 추정으로 보인다", async () => {
+    const { me, you } = await pair();
+    await savePeriod(db, me.id, { startDate: "2026-10-30" }, "2026-11-03");
+    await connect(me, you);
+    const view = (await partnerView(db, await reload(you), "2026-11-03"))!;
+    expect(view.ovulation).toBe("2026-11-13");
+    expect(view.fertileWindow?.tentative).toBe(true);
+    expect(view.calendar).toContainEqual({ date: "2026-11-13", type: "estimated_ovulation", tentative: true });
+  });
+
   it("연결되면 모두 보이고, 계산 근거는 보내지 않는다", async () => {
     const { me, you } = await pair();
     await fourPeriods(me);
@@ -567,7 +578,7 @@ describe("공유", () => {
 
     const view = (await partnerView(db, partner, asOf))!;
     expect(view.nextPeriod?.startDate).toBe("2026-10-30");
-    expect(view.fertileWindow).toEqual({ startDate: "2026-10-11", endDate: "2026-10-17" });
+    expect(view.fertileWindow).toEqual({ startDate: "2026-10-11", endDate: "2026-10-17", tentative: false });
     expect(view.ovulation).toBe("2026-10-16");
     expect(view.recentPeriods.map((p) => p.startDate)).toEqual(["2026-10-02", "2026-09-04"]);
     expect(new Set(view.calendar.map((m) => m.type))).toEqual(new Set(["period", "predicted_period", "estimated_fertile_window", "estimated_ovulation"]));
@@ -1090,12 +1101,64 @@ describe("알림", () => {
 
     await respondToCare(db, partner, (await getCare(db, me, TODAY))!.id, "seen", TODAY);
     expect(await newsFor(db, me, TODAY)).toMatchObject({ replies: 1 });
+    expect(await recentReplies(db, (await activeCouple(db, me.id))!)).toMatchObject([{ day: TODAY, presets: ["rest"], response: "seen" }]);
     await markNewsSeen(db, me);
     expect(await newsFor(db, me, TODAY)).toMatchObject({ replies: 0 });
 
     await setPaused(db, me, true);
     await saveCare(db, me, { presets: ["company"], message: "", share: true }, TODAY);
     expect(await newsFor(db, partner, TODAY)).toMatchObject({ care: 0 }); // 잠시 멈추면 파트너에게 소식도 없다
+  });
+});
+
+describe("배려 칩", () => {
+  const keys = (used: string[], group: "body" | "mind" | null) => Object.keys(orderPresets(used, group));
+
+  it("시기별 순서: 생리 중이면 몸, 생리 전 7일이면 마음, 그 외는 섞는다", () => {
+    expect(keys([], "body").slice(0, 5)).toEqual(["heat_pack", "warm_food", "sweet", "medicine", "listen"]);
+    expect(keys([], "mind").slice(0, 5)).toEqual(["listen", "company", "rest", "understand", "heat_pack"]);
+    expect(keys([], null).slice(0, 4)).toEqual(["heat_pack", "listen", "stay_home", "warm_food"]);
+    for (const group of ["body", "mind", null] as const) expect(keys([], group).sort()).toEqual(Object.keys(CARE_PRESETS).sort());
+  });
+
+  it("최근에 자주 고른 칩이 시기보다 앞선다", () => {
+    expect(keys(["sleep_early", "rest", "rest", "bogus"], "body").slice(0, 3)).toEqual(["rest", "sleep_early", "heat_pack"]);
+  });
+
+  it("어떤 묶음을 먼저 보여줄지", () => {
+    expect(careGroup(true, "2026-11-05", "2026-11-03")).toBe("body");
+    expect(careGroup(false, "2026-11-10", "2026-11-03")).toBe("mind");
+    expect(careGroup(false, "2026-11-11", "2026-11-03")).toBeNull();
+    expect(careGroup(false, "2026-11-01", "2026-11-03")).toBeNull();
+    expect(careGroup(false, null, "2026-11-03")).toBeNull();
+  });
+
+  it("옛 칩은 비슷한 새 칩으로, 모르는 값은 글자 그대로", async () => {
+    expect(careLabel("rest")).toBe("혼자 쉬고 싶어");
+    expect(careLabel("옛날 칩")).toBe("옛날 칩");
+    expect(careLabel("constructor")).toBe("constructor");
+
+    const { me, you } = await pair();
+    await connect(me, you);
+    const partner = await reload(you);
+    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
+    const care = (await getCare(db, me, TODAY))!;
+    await db.update(careRequests).set({ presets: ["empathy", "easy_plans", "옛날 칩"] }).where(eq(careRequests.id, care.id));
+    expect((await getCare(db, me, TODAY))?.presets).toEqual(["listen", "postpone", "옛날 칩"]);
+    expect((await partnerView(db, partner, TODAY))?.care[0].presets).toEqual(["listen", "postpone", "옛날 칩"]);
+
+    await respondToCare(db, partner, care.id, "seen", TODAY);
+    await db.update(careRequests).set({ presets: ["empathy"] }).where(eq(careRequests.id, care.id));
+    await saveCare(db, me, { presets: ["empathy"], message: "", share: true }, TODAY); // 같은 칩이면 답장이 남는다
+    expect(await getCare(db, me, TODAY)).toMatchObject({ presets: ["listen"], response: "seen" });
+  });
+
+  it("최근 30일 집계는 오늘과 30일보다 오래된 날을 뺀다", async () => {
+    const { me } = await pair();
+    await saveCare(db, me, { presets: ["rest"], message: "", share: false }, TODAY);
+    await saveCare(db, me, { presets: ["empathy"], message: "", share: false }, addDays(TODAY, -30));
+    await saveCare(db, me, { presets: ["sweet"], message: "", share: false }, addDays(TODAY, -31));
+    expect(await recentPresets(db, me, TODAY)).toEqual(["listen"]);
   });
 });
 
