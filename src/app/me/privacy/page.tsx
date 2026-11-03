@@ -10,7 +10,7 @@ const CONTACT = "12jason@donacouse.com";
 function Part({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mt-10">
-      <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      <h2 className="text-xl font-medium tracking-tight">{title}</h2>
       <div className="mt-3 space-y-3 text-[15px] leading-relaxed">{children}</div>
     </section>
   );
@@ -46,7 +46,7 @@ export default async function PrivacyPage() {
       <BackLink href={member ? "/me" : "/"} />
       <h1 className="sr-only">개인정보 처리방침</h1>
       <p className="mt-2 text-[15px] leading-relaxed text-muted">
-        우리주기 개인정보 처리방침이에요. 우리주기를 운영하는 두나는 어떤 정보를 왜 저장하고, 누구에게 맡기고, 언제 지우는지 이 문서로 알려드려요.
+        디어데이 개인정보 처리방침이에요. 디어데이를 운영하는 두나는 어떤 정보를 왜 저장하고, 누구에게 맡기고, 언제 지우는지 이 문서로 알려드려요.
         날짜와 시각은 서울 기준이에요.
       </p>
 
@@ -75,8 +75,8 @@ export default async function PrivacyPage() {
           ["서버 기록", "접속 기록(IP 주소 등)과 오류 종류. 처리되지 않은 오류에는 계정·기록의 내부 번호가 함께 남을 수 있어요.", "장애 확인과 보안"],
         ]} />
         <p>
-          <strong className="font-semibold">건강 정보는 민감정보예요.</strong> 생리 기록, 평소 주기, 통증·기분은 건강에 관한 정보라서 따로 동의를 받아요.
-          배려 요청에 몸 상태를 적으면 그 내용도 건강 정보가 될 수 있어요. 동의하지 않을 수 있지만, 동의하지 않으면 우리주기를 쓸 수 없어요.
+          <strong className="font-medium text-ink">건강 정보는 민감정보예요.</strong> 생리 기록, 평소 주기, 통증·기분은 건강에 관한 정보라서 따로 동의를 받아요.
+          배려 요청에 몸 상태를 적으면 그 내용도 건강 정보가 될 수 있어요. 동의하지 않을 수 있지만, 동의하지 않으면 디어데이를 쓸 수 없어요.
         </p>
         <p>카카오로 가입할 때는 회원번호와 닉네임만 받아요. 카카오 액세스 토큰은 저장하지 않아요.</p>
         <p>개인정보를 팔지 않아요. 광고에 쓰지 않고, 광고·행동 분석 도구도 넣지 않았어요.</p>
@@ -141,9 +141,9 @@ export default async function PrivacyPage() {
           ["jsDelivr (jsdelivr.com)", "접속한 곳과 가까운 서버", "접속 IP, 브라우저 정보", "화면 글꼴 전달"],
         ]} />
         <ul className="list-disc space-y-1 pl-5">
-          <li><strong className="font-semibold">이전 시기와 방법:</strong> 서비스를 쓸 때마다 암호화된 네트워크로 전송해요.</li>
-          <li><strong className="font-semibold">보유 기간:</strong> Vercel과 Neon은 3번의 기간과 같아요. 푸시 서비스에는 전달되지 않은 알림이 최대 24시간 머물러요.</li>
-          <li><strong className="font-semibold">거부 방법과 영향:</strong> 동의를 거부할 수 있어요. 국외 이전 없이는 앱이 동작하지 않아서, 거부하거나 철회하면 우리주기를 쓸 수 없어요. 철회는 회원 탈퇴로 해요. 푸시만 막고 싶다면 마이에서 끄면 돼요.</li>
+          <li><strong className="font-medium text-ink">이전 시기와 방법:</strong> 서비스를 쓸 때마다 암호화된 네트워크로 전송해요.</li>
+          <li><strong className="font-medium text-ink">보유 기간:</strong> Vercel과 Neon은 3번의 기간과 같아요. 푸시 서비스에는 전달되지 않은 알림이 최대 24시간 머물러요.</li>
+          <li><strong className="font-medium text-ink">거부 방법과 영향:</strong> 동의를 거부할 수 있어요. 국외 이전 없이는 앱이 동작하지 않아서, 거부하거나 철회하면 디어데이를 쓸 수 없어요. 철회는 회원 탈퇴로 해요. 푸시만 막고 싶다면 마이에서 끄면 돼요.</li>
         </ul>
         <p>
           카카오 로그인은 국내 회사인 (주)카카오를 통해요. 로그인할 때 카카오에서 회원번호와 닉네임을 받고, 탈퇴할 때 앱 연결을 끊으려고 회원번호를 보내요.
@@ -199,7 +199,7 @@ export default async function PrivacyPage() {
       </Part>
 
       <Part title="9. 만 14세 미만">
-        <p>우리주기에는 법정대리인 동의 절차가 없어서 만 14세 미만은 이용 대상이 아니에요. 가입할 때 만 14세 이상인지 확인해요.</p>
+        <p>디어데이에는 법정대리인 동의 절차가 없어서 만 14세 미만은 이용 대상이 아니에요. 가입할 때 만 14세 이상인지 확인해요.</p>
       </Part>
 
       <Part title="10. 권리 침해 상담">

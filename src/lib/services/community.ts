@@ -14,7 +14,7 @@ export const REPORTS_TO_HIDE = 3;
 export const WRITE_LIMIT = 5;
 export const WRITE_WINDOW_SECONDS = 600;
 export const WITHDRAWN_NAME = "탈퇴한 사용자";
-export const TEAM_NAME = "우리주기 운영팀";
+export const TEAM_NAME = "디어데이 운영팀";
 
 export type Target = { kind: "post" | "comment"; id: string };
 export type Access = { admin: boolean; member: boolean; nickname: string | null };
@@ -77,7 +77,7 @@ export async function agreeToRules(db: DB, user: User, rawNickname: unknown) {
   if (access.nickname) return access.nickname;
   const typed = String(rawNickname ?? "").trim();
   if (typed && (typed.length < 2 || typed.length > 12)) fail("닉네임은 2~12자로 적어 주세요");
-  if (/운영자|운영팀|관리자|탈퇴|우리주기/.test(typed)) fail("쓸 수 없는 닉네임이에요");
+  if (/운영자|운영팀|관리자|탈퇴|디어데이|우리주기/.test(typed)) fail("쓸 수 없는 닉네임이에요");
   if (typed && (await nicknameTaken(db, typed))) fail("이미 쓰고 있는 닉네임이에요", 409);
   const nickname = typed || (await randomNickname(db));
   await db.update(users).set({ communityNickname: nickname }).where(and(eq(users.id, user.id), isNull(users.communityNickname)));

@@ -76,7 +76,7 @@ export function NotificationSettings({ publicKey, showReminder, reminder }: { pu
       {status === "ios-browser" && (
         <div className="mt-2 text-[13px] leading-relaxed text-muted">
           <p className="text-[15px] text-ink">홈 화면에 추가한 앱에서만 알림을 받을 수 있어요</p>
-          <p className="mt-1">Safari 아래쪽 공유 버튼을 누르고 &ldquo;홈 화면에 추가&rdquo;를 고른 뒤, 홈 화면의 우리주기를 열어 다시 켜 주세요.</p>
+          <p className="mt-1">Safari 아래쪽 공유 버튼을 누르고 &ldquo;홈 화면에 추가&rdquo;를 고른 뒤, 홈 화면의 디어데이를 열어 다시 켜 주세요.</p>
         </div>
       )}
       {error && <p role="alert" className="mt-2 text-sm text-period-ink">{error}</p>}

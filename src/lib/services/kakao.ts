@@ -6,7 +6,7 @@ import { errorKind } from "../errors";
 import { consentDone, sessionUserFields, type SessionUser } from "./auth";
 
 export const KAKAO_CALLBACK = "/api/auth/kakao/callback";
-const DEFAULT_NICKNAME = "우리주기 사용자";
+const DEFAULT_NICKNAME = "디어데이 사용자";
 
 export function kakaoEnabled() {
   return Boolean(process.env.KAKAO_REST_API_KEY && process.env.KAKAO_CLIENT_SECRET);

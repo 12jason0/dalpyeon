@@ -15,8 +15,8 @@ export default async function ConsentPage() {
   return (
     <>
       <Logo />
-      <h1 className="mt-10 text-3xl font-semibold leading-snug tracking-tight">계속 쓰려면 동의가 필요해요</h1>
-      <p className="mt-3 mb-4 text-[15px] leading-relaxed text-muted">우리주기는 생리 기록 같은 건강 정보를 저장해요. 동의해야 이어서 쓸 수 있어요.</p>
+      <h1 className="mt-10 text-3xl font-medium leading-snug tracking-tight">계속 쓰려면 동의가 필요해요</h1>
+      <p className="mt-3 mb-4 text-[15px] leading-relaxed text-muted">디어데이는 생리 기록 같은 건강 정보를 저장해요. 동의해야 이어서 쓸 수 있어요.</p>
       {returning && (
         <p className="mb-6 text-[15px] leading-relaxed">
           파트너 공유도 바뀌었어요. 연결돼 있으면 생리 기록·예상·가임기·배란일·그날의 통증과 기분이 항목 구분 없이 상대에게 보여요.
