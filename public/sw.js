@@ -3,13 +3,15 @@
 const VERSION = new URL(self.location.href).searchParams.get("v");
 const ASSETS = `assets-${VERSION}`;
 const PAGES = `pages-${VERSION}`; // 건강 기록이 든 HTML. 로그아웃·탈퇴 때 NotificationSettings가 지운다
+// 글꼴 파일은 이름에 내용 해시가 붙어 바뀌면 주소도 바뀐다. 배포가 바뀌어도 지우지 않아서 5.7MB 손글씨를 다시 받지 않는다.
+const FONTS = "fonts-v1";
 
 self.addEventListener("install", () => self.skipWaiting());
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k !== ASSETS && k !== PAGES).map((k) => caches.delete(k)));
+    await Promise.all(keys.filter((k) => k !== ASSETS && k !== PAGES && k !== FONTS).map((k) => caches.delete(k)));
     // 워커가 깨어나는 시간만큼 페이지 요청이 늦어지지 않게 한다
     await self.registration.navigationPreload?.enable();
     await self.clients.claim();
@@ -23,8 +25,10 @@ function isAsset(url) {
   return /^\/(_next\/static\/|icon|apple-icon)/.test(url.pathname);
 }
 
-async function cacheFirst(request) {
-  const cache = await caches.open(ASSETS);
+const isFont = (url) => url.origin === self.location.origin && /^\/_next\/static\/media\/.+\.(ttf|otf|woff2?)$/.test(url.pathname);
+
+async function cacheFirst(request, name = ASSETS) {
+  const cache = await caches.open(name);
   const hit = await cache.match(request);
   if (hit) return hit;
   const response = await fetch(request);
@@ -47,6 +51,7 @@ async function networkFirst(event, path) {
 self.addEventListener("fetch", (event) => {
   if (!VERSION || event.request.method !== "GET") return;
   const url = new URL(event.request.url);
+  if (isFont(url)) return event.respondWith(cacheFirst(event.request, FONTS));
   if (isAsset(url)) return event.respondWith(cacheFirst(event.request));
   // 로그인·가입 화면은 캐시된 HTML을 보여주지 않는다(로그인 상태가 바뀌는 곳이라 지난 화면이 나오면 안 된다). 브라우저가 직접 받는다.
   if (event.request.mode === "navigate" && !NO_CACHE.test(url.pathname)) event.respondWith(networkFirst(event, url.pathname));

@@ -120,7 +120,7 @@ export function QuickCare({ presets, current, canShare, status, more }: {
           const on = picked.includes(key);
           return (
             <button
-              key={key} type="button" aria-pressed={on} className={`${PILL} px-3 text-[14px] ${on ? PICKED : ""}`}
+              key={key} type="button" aria-pressed={on} className={`${PILL} px-3 font-hand text-[16px] ${on ? PICKED : ""}`}
               onClick={() => send(on ? picked.filter((p) => p !== key) : [...picked, key], message)}
             >
               {label}

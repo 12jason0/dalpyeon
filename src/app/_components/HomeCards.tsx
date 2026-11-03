@@ -36,14 +36,14 @@ export function recorderStatus(prediction: Prediction, current: { day: number } 
   };
 }
 
-/** 홈 맨 위의 카드. children은 달과 문구 아래의 칩이다. */
-export function TopBar({ moon, main, sub, children }: Status & { moon: MoonShape; children?: React.ReactNode }) {
+/** 홈 맨 위의 카드. children은 달과 문구 아래의 칩이다. 상태 문구는 손글씨이고, 시작 화면 미리보기(plain)만 기본 글꼴이다. */
+export function TopBar({ moon, main, sub, plain, children }: Status & { moon: MoonShape; plain?: boolean; children?: React.ReactNode }) {
   return (
     <div className="rounded-[18px] border-[0.5px] border-line bg-gradient-to-br from-period/40 to-fertile px-3.5 py-3 shadow-soft">
       <div className="flex items-center gap-3">
         <MoonPhase moon={moon} />
         <div className="min-w-0 flex-1">
-          <p className="text-[17px] font-semibold leading-snug tracking-tight">{main}</p>
+          <p className={plain ? "text-[17px] font-semibold leading-snug tracking-tight" : "font-hand text-[19px] font-semibold leading-snug"}>{main}</p>
           {sub && <p className="text-[13px] leading-snug text-ink/80">{sub}</p>}
         </div>
       </div>

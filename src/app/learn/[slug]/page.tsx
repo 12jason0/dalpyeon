@@ -13,7 +13,7 @@ export default async function ArticlePage({ params }: { params: Promise<{ slug: 
   return (
     <>
       <BackLink href="/learn" />
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight">{article.title}</h1>
+      <h1 className="mt-2 font-hand text-[32px] font-semibold">{article.title}</h1>
       <div className="mt-6 space-y-4 text-[17px] leading-relaxed">
         {article.body.map((text) => <p key={text}>{text}</p>)}
       </div>

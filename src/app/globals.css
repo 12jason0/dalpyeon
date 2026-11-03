@@ -140,3 +140,9 @@ body {
 .switch:checked, .switch[aria-checked="true"] { background: var(--color-accent); }
 .switch:checked::after, .switch[aria-checked="true"]::after { transform: translateX(1.15rem); }
 .switch:disabled { opacity: 0.4; }
+
+/* 포인트 손글씨. 굵기가 하나뿐이라 semibold를 가짜로 두껍게 만들지 않는다(받기 전 Pretendard일 때는 그대로 굵다). */
+@utility font-hand {
+  font-family: var(--font-hand), var(--font-sans);
+  font-synthesis-weight: none;
+}

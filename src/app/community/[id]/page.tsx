@@ -72,7 +72,7 @@ export default async function PostPage({ params, searchParams }: { params: Promi
         <div className="mt-6"><PostForm post={post} /></div>
       ) : (
         <article className="mt-6">
-          <h1 className="text-3xl font-semibold leading-snug tracking-tight">{post.title}</h1>
+          <h1 className="font-hand text-[32px] font-semibold leading-snug">{post.title}</h1>
           <p className="mt-2 text-[13px] text-muted">{post.pinned ? `📌 ${post.nickname}` : `${post.nickname} · ${timeAgo(post.createdAt)}`}{post.hidden && " · 숨겨짐"}</p>
           <p className="mt-8 whitespace-pre-wrap text-[17px] leading-relaxed">{post.body}</p>
           <div className="mt-6 border-b border-line pb-2">

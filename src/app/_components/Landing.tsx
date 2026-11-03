@@ -23,7 +23,7 @@ function HomePreview({ today }: { today: string }) {
   const { first, last } = monthGrid(month);
   return (
     <div inert className="pointer-events-none mx-auto select-none overflow-hidden rounded-[2.25rem] border-4 border-line bg-paper px-3 pb-6 pt-6">
-      <TopBar moon={moonShape(prediction, today)} {...recorderStatus(prediction, null, today)} />
+      <TopBar plain moon={moonShape(prediction, today)} {...recorderStatus(prediction, null, today)} />
       <p className={`${LINE_CARD} mt-3`}>오늘 필요한 배려 · 도윤 · 도와줄게요</p>
       <CalendarMonth month={month} marks={calendarMarks(periods, prediction, first, last, today)} today={today} />
     </div>

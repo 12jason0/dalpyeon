@@ -28,7 +28,7 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
         {posts.map((p) => (
           <li key={p.id} className="border-b border-line">
             <Link href={`/community/${p.id}`} className="block py-4">
-              <span className="block text-[17px] leading-snug">{p.pinned && "📌 "}{p.title}</span>
+              <span className="block font-hand text-[19px] leading-snug">{p.pinned && "📌 "}{p.title}</span>
               <span className="mt-1 block text-[13px] text-muted">
                 {p.nickname} · 댓글 {p.commentCount}{!p.pinned && ` · ${timeAgo(p.createdAt)}`}{p.hidden && " · 숨겨짐"}
               </span>
