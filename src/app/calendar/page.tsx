@@ -3,7 +3,7 @@ import { getDb } from "@/lib/db";
 import { todaySeoul } from "@/lib/dates";
 import { calendarMarks, estimate } from "@/lib/prediction";
 import { listDayLogs } from "@/lib/services/daylogs";
-import { listPeriods, usualCycle } from "@/lib/services/periods";
+import { listPeriods } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { AppHeader } from "../_components/AppHeader";
 import { BackLink } from "../_components/BackLink";
@@ -23,7 +23,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   const { first, last } = calendarWindow(today);
   const { day } = await searchParams;
   const open = day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day >= first && day <= last ? day : null;
-  const [periods, usual, logs] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id), listDayLogs(db, user.id)]);
+  const usual = user.usualCycleDays; // 세션 조회에서 함께 읽었다
+  const [periods, logs] = await Promise.all([listPeriods(db, user.id), listDayLogs(db, user.id)]);
   const prediction = estimate(periods, [], today, usual);
   return (
     <>

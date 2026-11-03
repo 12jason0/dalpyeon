@@ -15,14 +15,11 @@ export default async function NewPostPage() {
   if (!access.member) return <Gate user={user} />;
   return (
     <>
-      <BackLink href="/community" />
       {access.nickname ? (
-        <>
-          <h1 className="sr-only">글쓰기</h1>
-          <PostForm />
-        </>
+        <PostForm close="/community" />
       ) : (
         <>
+          <BackLink href="/community" />
           <h1 className="sr-only">이용 규칙</h1>
           <p className="mt-2 text-[17px] leading-relaxed text-muted">처음 쓰기 전에 한 번만 확인해 주세요. 이것만은 지켜 주세요.</p>
           <ul className="mt-4 mb-10">

@@ -5,7 +5,7 @@ import { after } from "next/server";
 import { cache } from "react";
 import { getDb } from "./db";
 import { errorKind } from "./errors";
-import { consentDone, createSession, deleteSession, userFromToken, type SessionUser, type User } from "./services/auth";
+import { consentDone, createSession, deleteSession, userFromToken, type Consents, type SessionUser, type User } from "./services/auth";
 import { tryClaim, type ClaimProblem } from "./services/couples";
 import { notifyConnected } from "./services/push";
 
@@ -90,7 +90,7 @@ export async function claimInvite(user: User, code: string) {
 }
 
 /** 초대 링크로 가입·로그인한 직후. 동의 전이면 코드를 쿠키에 남겨 동의 화면(consentAction)에서 연결한다. */
-export async function landWithInvite(user: SessionUser, code: string) {
+export async function landWithInvite(user: User & Consents, code: string) {
   if (consentDone(user)) return claimInvite(user, code);
   (await cookies()).set(JOIN_CODE, code.slice(0, 12), shortCookie());
   return "/consent";

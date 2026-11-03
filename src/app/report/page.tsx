@@ -4,7 +4,7 @@ import { summarizeLogs } from "@/lib/daylog";
 import { estimate } from "@/lib/prediction";
 import { averageCycle, cycleCheck, reportRows, type CheckTone, type CycleCheck } from "@/lib/report";
 import { listDayLogs } from "@/lib/services/daylogs";
-import { listPeriods, usualCycle } from "@/lib/services/periods";
+import { listPeriods } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { deletePeriodAction } from "../actions";
 import { AppHeader } from "../_components/AppHeader";
@@ -67,7 +67,8 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const today = todaySeoul();
 
   const db = await getDb();
-  const [periods, usual, logs] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id), listDayLogs(db, user.id)]);
+  const usual = user.usualCycleDays; // 세션 조회에서 함께 읽었다
+  const [periods, logs] = await Promise.all([listPeriods(db, user.id), listDayLogs(db, user.id)]);
   const prediction = estimate(periods, [], today, usual);
   const editing = periods.find((p) => p.id === params.edit) ?? null;
   const summaries = [...periods].reverse().filter((p) => p.endDate)

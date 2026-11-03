@@ -1,7 +1,8 @@
 "use client";
-import { Heart } from "lucide-react";
-import { useActionState } from "react";
-import { BOARDS } from "@/lib/boards";
+import { Heart, X } from "lucide-react";
+import Link from "next/link";
+import { useActionState, useState } from "react";
+import { BOARDS, POST_BODY_MAX } from "@/lib/boards";
 import type { Board } from "@/lib/db/schema";
 import { agreeAction, likeAction, saveCommentAction, savePostAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
@@ -23,18 +24,36 @@ export function ConsentForm() {
   );
 }
 
-// 라디오를 칩 모양으로. 고른 칩은 연분홍 배경 + 진한 분홍 글자(ui.ts chip(true)와 같은 색).
-const BOARD_CHIP = `${chip(false)} has-checked:border-accent has-checked:bg-period has-checked:text-period-ink has-focus-visible:outline-2 has-focus-visible:outline-accent`;
+// 라디오를 칩 모양으로. 글쓰기 화면에서는 고른 칩을 진한 분홍으로 채우고 글자는 흰색.
+const BOARD_CHIP = `${chip(false)} has-checked:border-accent has-checked:bg-accent has-checked:text-white has-focus-visible:outline-2 has-focus-visible:outline-accent`;
+const BODY_PLACEHOLDER = "여자친구에 대해 고민되는 점이나, 해보니 좋았던 걸 나눠주세요.\n\n상대 이름·사진·연락처는 쓰지 않아요.";
 
-export function PostForm({ post }: { post?: { id: string; board: Board; title: string; body: string } }) {
-  const [state, action] = useActionState<FormState, FormData>(savePostAction, null);
+/**
+ * 글쓰기·글 고치기. 맨 위 한 줄에 닫기(X)·제목·올리기. 제목과 본문은 흰 카드 하나에 플레이스홀더로.
+ * 제목이나 본문이 비어 있으면 서버로 보내지 않고 바로 알려준다. close는 X를 눌렀을 때 갈 곳.
+ */
+export function PostForm({ post, close }: { post?: { id: string; board: Board; title: string; body: string }; close: string }) {
+  const [body, setBody] = useState(post?.body ?? "");
+  const [state, action] = useActionState<FormState, FormData>((prev, form) => {
+    const values = { board: String(form.get("board") ?? ""), title: String(form.get("title") ?? ""), body: String(form.get("body") ?? "") };
+    if (!values.title.trim()) return { error: "제목을 적어 주세요", values };
+    if (!values.body.trim()) return { error: "본문을 적어 주세요", values };
+    return savePostAction(prev, form);
+  }, null);
   const board = state?.values?.board || post?.board || "question";
   return (
-    <form action={action} className="space-y-6">
+    <form action={action} className="space-y-4" noValidate>
       {post && <input type="hidden" name="id" value={post.id} />}
+      <div className="-mt-4 grid grid-cols-[44px_1fr_auto] items-center">
+        <Link href={close} aria-label="닫기" className="-ml-3 flex h-11 w-11 items-center justify-center text-muted"><X size={22} aria-hidden /></Link>
+        <h1 className="text-center text-[17px] font-medium">{post ? "글 고치기" : "글쓰기"}</h1>
+        <Submit className="inline-flex h-8 min-w-11 items-center justify-center rounded-full bg-accent px-3.5 text-[14px] font-medium text-white disabled:opacity-40" pendingText="…">
+          {post ? "고치기" : "올리기"}
+        </Submit>
+      </div>
       <fieldset>
-        <legend className="text-sm text-muted">말머리</legend>
-        <div className="mt-3 flex gap-2">
+        <legend className="sr-only">말머리</legend>
+        <div className="flex gap-2">
           {Object.entries(BOARDS).map(([value, label]) => (
             <label key={value} className={BOARD_CHIP}>
               <input type="radio" name="board" value={value} defaultChecked={value === board} className="sr-only" />
@@ -43,16 +62,20 @@ export function PostForm({ post }: { post?: { id: string; board: Board; title: s
           ))}
         </div>
       </fieldset>
-      <label className="block">
-        <span className="text-sm text-muted">제목</span>
-        <input name="title" className="field" maxLength={60} required defaultValue={state?.values?.title ?? post?.title} />
-      </label>
-      <label className="block">
-        <span className="text-sm text-muted">본문</span>
-        <textarea name="body" className="field min-h-48 resize-y" maxLength={2000} required defaultValue={state?.values?.body ?? post?.body} />
-      </label>
+      <div className="card px-4 py-0">
+        <input
+          name="title" aria-label="제목" placeholder="제목" maxLength={60} defaultValue={state?.values?.title ?? post?.title}
+          className="w-full bg-transparent py-3.5 text-[17px] outline-none placeholder:text-muted"
+        />
+        <div className="relative border-t-[0.5px] border-line">
+          <textarea
+            name="body" aria-label="본문" placeholder={BODY_PLACEHOLDER} maxLength={POST_BODY_MAX} value={body} onChange={(e) => setBody(e.target.value)}
+            className="block min-h-72 w-full resize-none bg-transparent pb-8 pt-3.5 text-[16px] leading-relaxed outline-none placeholder:text-muted"
+          />
+          <span aria-hidden className="absolute bottom-2.5 right-0 text-[12px] text-muted">{body.length}/{POST_BODY_MAX}</span>
+        </div>
+      </div>
       <ErrorText message={state?.error} />
-      <Submit>{post ? "고치기" : "올리기"}</Submit>
     </form>
   );
 }

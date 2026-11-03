@@ -799,7 +799,7 @@ describe("커뮤니티", () => {
     const other = (await member()).partner;
     await expectFail(createPost(db, partner, { title: " ", body: "본문" }));
     await expectFail(createPost(db, partner, { title: "가".repeat(61), body: "본문" }));
-    await expectFail(createPost(db, partner, { title: "제목", body: "가".repeat(2001) }));
+    await expectFail(createPost(db, partner, { title: "제목", body: "가".repeat(1001) }));
 
     const id = await post(partner, "<script>alert(1)</script>");
     expect((await getPost(db, partner, id)).title).toBe("<script>alert(1)</script>"); // 그대로 보관, 화면에서 글자로 출력
@@ -963,7 +963,7 @@ describe("커뮤니티", () => {
     await expectFail(post(partner), 429);
     expect((await listPosts(db, other)).posts).toHaveLength(5);
     const id = await post(other);
-    await expectFail(createPost(db, partner, { title: "제목", body: "가".repeat(2001) })); // 검증 실패가 먼저
+    await expectFail(createPost(db, partner, { title: "제목", body: "가".repeat(1001) })); // 검증 실패가 먼저
     for (let i = 0; i < 5; i++) await createComment(db, partner, id, "댓글");
     await expectFail(createComment(db, partner, id, "댓글"), 429);
   });

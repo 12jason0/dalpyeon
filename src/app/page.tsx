@@ -11,13 +11,13 @@ import { bodyChips, type DayLog } from "@/lib/daylog";
 import { CRESCENT, cycleLine, MOON_WAITING, moonShape } from "@/lib/moon";
 import { phaseFrom, understandingLine, type Phase } from "@/lib/phase";
 import { calendarMarks, endQuestion, estimate } from "@/lib/prediction";
-import { consentDone, type User } from "@/lib/services/auth";
-import { careChip, careGroup, getCare, markCareSeen, orderPresets, recentPresets } from "@/lib/services/care";
+import { consentDone, type SessionUser as User } from "@/lib/services/auth";
+import { careChip, careForHome, careGroup, markCareSeen, orderPresets } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { listDayLogs } from "@/lib/services/daylogs";
 import { NOTE_MAX, partnerExamples, recorderExamples, todayNotes } from "@/lib/services/notes";
 import { partnerView } from "@/lib/services/partner";
-import { currentPeriod, listPeriods, usualCycle } from "@/lib/services/periods";
+import { currentPeriod, listPeriods } from "@/lib/services/periods";
 import { currentUser } from "@/lib/session";
 import { checkSharingAction } from "./actions";
 import { AppHeader } from "./_components/AppHeader";
@@ -76,7 +76,7 @@ function TipLine({ phase, today }: { phase: Phase | null; today: string }) {
 
 /** 위 칸이 먼저 그려지고 뒤에 도착해도 되는 것들. 두 자리가 한 번의 조회를 나눠 쓴다. */
 async function careAndPartner(db: DB, user: User, today: string) {
-  const [care, couple, used] = await Promise.all([getCare(db, user, today), activeCouple(db, user.id), recentPresets(db, user, today)]);
+  const [{ care, used }, couple] = await Promise.all([careForHome(db, user, today), activeCouple(db, user.id)]);
   return { care, couple, used, partnerName: couple ? await otherNickname(db, couple, user) : null };
 }
 type CareAndPartner = ReturnType<typeof careAndPartner>;
@@ -140,7 +140,8 @@ const BODY_CHIP = "inline-flex h-9 max-w-full items-center gap-1 rounded-full px
 async function RecorderHome({ user }: { user: User }) {
   const db = await getDb();
   const today = todaySeoul();
-  const [periods, usual, logs] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id), listDayLogs(db, user.id)]);
+  const usual = user.usualCycleDays; // 세션 조회에서 함께 읽었다
+  const [periods, logs] = await Promise.all([listPeriods(db, user.id), listDayLogs(db, user.id)]);
   const data = careAndPartner(db, user, today);
   const prediction = estimate(periods, [], today, usual);
   const current = currentPeriod(periods, today);

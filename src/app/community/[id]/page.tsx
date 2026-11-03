@@ -88,9 +88,9 @@ export default async function PostPage({ params, searchParams }: {
 
   return (
     <>
-      <BackLink href="/community" />
+      {!editingPost && <BackLink href="/community" />}
       {editingPost ? (
-        <div className="mt-6"><PostForm post={post} /></div>
+        <PostForm post={post} close={here} />
       ) : (
         <article className="card mt-2 px-5 py-5">
           <div className="flex items-start justify-between gap-2">

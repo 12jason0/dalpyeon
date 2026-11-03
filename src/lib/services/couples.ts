@@ -29,10 +29,15 @@ export const activeCouple = cache(async (db: DB, userId: string): Promise<Couple
   return row ?? null;
 });
 
-export async function otherNickname(db: DB, couple: Couple, user: User) {
+/** 연결된 상대의 이름과 평소 주기. 한 요청 안에서는 한 번만 읽는다(couple·user는 캐시된 같은 객체가 들어온다). */
+export const otherUser = cache(async (db: DB, couple: Couple, user: User) => {
   const otherId = user.id === couple.recorderId ? couple.partnerId : couple.recorderId;
-  const [row] = await db.select({ nickname: users.nickname }).from(users).where(eq(users.id, otherId));
-  return row?.nickname ?? "";
+  const [row] = await db.select({ nickname: users.nickname, usualCycleDays: users.usualCycleDays }).from(users).where(eq(users.id, otherId));
+  return { nickname: row?.nickname ?? "", usualCycleDays: row?.usualCycleDays ?? null };
+});
+
+export async function otherNickname(db: DB, couple: Couple, user: User) {
+  return (await otherUser(db, couple, user)).nickname;
 }
 
 export async function createInvite(db: DB, user: User) {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, gt, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, ne } from "drizzle-orm";
 import type { DB } from "../db";
-import { notes, users } from "../db/schema";
+import { notes } from "../db/schema";
 import { timeSeoul, todaySeoul } from "../dates";
 import type { Pain } from "../daylog";
 import { fail } from "../errors";
@@ -42,18 +42,14 @@ async function noteCouple(db: DB, user: User): Promise<Couple | null> {
   return couple && !couple.paused ? couple : null;
 }
 
-async function myName(db: DB, user: User) {
-  const [row] = await db.select({ nickname: users.nickname }).from(users).where(eq(users.id, user.id));
-  return row?.nickname ?? "";
-}
-
 /** 오늘(새벽 5시 기준) 이 연결에서 주고받은 쪽지. 연결이 없거나 잠시 멈췄으면 null. */
 export async function todayNotes(db: DB, user: User, now = new Date()): Promise<TodayNotes | null> {
   const couple = await noteCouple(db, user);
   if (!couple) return null;
-  const [rows, me, otherName] = await Promise.all([
+  const me = user.nickname; // 세션 조회에서 이미 읽은 이름
+  const [rows, otherName] = await Promise.all([
     db.select().from(notes).where(and(eq(notes.coupleId, couple.id), eq(notes.day, noteDay(now)))).orderBy(asc(notes.createdAt), asc(notes.seq)),
-    myName(db, user), otherNickname(db, couple, user),
+    otherNickname(db, couple, user),
   ]);
   const view = rows.map((n) => {
     const mine = n.senderId === user.id;
@@ -84,10 +80,4 @@ export async function sendNote(db: DB, user: User, rawBody: unknown, now = new D
 export async function receivedNotes(db: DB, user: User, couple: Couple) {
   return db.select({ id: notes.id, body: notes.body, createdAt: notes.createdAt }).from(notes)
     .where(and(eq(notes.coupleId, couple.id), ne(notes.senderId, user.id))).orderBy(desc(notes.createdAt)).limit(20);
-}
-
-export async function receivedSince(db: DB, user: User, couple: Couple, since: Date) {
-  const [{ total }] = await db.select({ total: count() }).from(notes)
-    .where(and(eq(notes.coupleId, couple.id), ne(notes.senderId, user.id), gt(notes.createdAt, since)));
-  return total;
 }

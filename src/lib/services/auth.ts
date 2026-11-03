@@ -8,7 +8,9 @@ export const SESSION_DAYS = 30;
 
 export type User = { id: string; email: string | null; role: Role; nickname: string };
 export type Consents = { healthConsentAt: Date | null; ageConfirmedAt: Date | null; transferConsentAt: Date | null };
-export type SessionUser = User & Consents;
+/** 세션을 확인하는 조회 한 번에 같이 읽어 두는 값. 페이지가 users를 다시 읽지 않게 한다(요청마다 새로 읽으니 늘 최신). */
+export type SessionExtras = { usualCycleDays: number | null; newsSeenAt: Date | null; isAdmin: boolean; communityNickname: string | null };
+export type SessionUser = User & Consents & SessionExtras;
 
 /** 페이지와 서버 액션의 관문이 보는 값. 세 동의가 모두 있어야 앱을 쓸 수 있다. */
 export const consentDone = (user: Consents) => Boolean(user.healthConsentAt && user.ageConfirmedAt && user.transferConsentAt);
@@ -16,6 +18,7 @@ export const consentDone = (user: Consents) => Boolean(user.healthConsentAt && u
 export const sessionUserFields = {
   id: users.id, email: users.email, role: users.role, nickname: users.nickname,
   healthConsentAt: users.healthConsentAt, ageConfirmedAt: users.ageConfirmedAt, transferConsentAt: users.transferConsentAt,
+  usualCycleDays: users.usualCycleDays, newsSeenAt: users.newsSeenAt, isAdmin: users.isAdmin, communityNickname: users.communityNickname,
 };
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
@@ -105,7 +108,7 @@ export async function signup(
   return { id, email, role, nickname };
 }
 
-export async function login(db: DB, input: { email: unknown; password: unknown }): Promise<SessionUser> {
+export async function login(db: DB, input: { email: unknown; password: unknown }): Promise<User & Consents> {
   const email = String(input.email ?? "").trim().toLowerCase();
   const password = String(input.password ?? "");
   const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);

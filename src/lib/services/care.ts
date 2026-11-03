@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, ne } from "drizzle-orm";
 import { cache } from "react";
 import type { DB } from "../db";
 import { careRequests, careResponses } from "../db/schema";
@@ -84,12 +84,17 @@ export type CareView = {
   response: ResponseKey | null; respondedAt: Date | null;
 };
 
-async function responseFor(db: DB, careId: string, coupleId: string | undefined) {
-  if (!coupleId) return { response: null, respondedAt: null };
-  const [row] = await db.select({ response: careResponses.response, respondedAt: careResponses.updatedAt }).from(careResponses)
-    .where(and(eq(careResponses.careId, careId), eq(careResponses.coupleId, coupleId)));
-  return row ?? { response: null, respondedAt: null };
+/** 배려 요청과 이 연결의 답장을 한 번에 읽는다(답장은 left join). 연결이 없으면 답장은 비어 있다. */
+function careWithResponse(db: DB, coupleId: string | undefined) {
+  return db.select({ care: careRequests, response: careResponses.response, respondedAt: careResponses.updatedAt }).from(careRequests)
+    .leftJoin(careResponses, and(eq(careResponses.careId, careRequests.id), eq(careResponses.coupleId, coupleId ?? "")));
 }
+
+type CareRow = { care: typeof careRequests.$inferSelect; response: ResponseKey | null; respondedAt: Date | null };
+const careView = ({ care: r, response, respondedAt }: CareRow): CareView => ({
+  id: r.id, day: r.day, presets: currentPresets(r.presets), message: r.message, shareWithPartner: r.shareWithPartner, updatedAt: r.updatedAt,
+  response, respondedAt,
+});
 
 /** 기록자의 새 소식 화면에 보이는 파트너 답장. 최근 답장부터. */
 export async function recentReplies(db: DB, couple: Couple) {
@@ -102,11 +107,18 @@ export async function recentReplies(db: DB, couple: Couple) {
 }
 
 export async function getCare(db: DB, user: User, day = todaySeoul()): Promise<CareView | null> {
-  const [row] = await db.select().from(careRequests).where(and(eq(careRequests.ownerId, user.id), eq(careRequests.day, day)));
-  if (!row) return null;
   const couple = await activeCouple(db, user.id);
-  return { id: row.id, day: row.day, presets: currentPresets(row.presets), message: row.message, updatedAt: row.updatedAt,
-    shareWithPartner: row.shareWithPartner, ...await responseFor(db, row.id, couple?.id) };
+  const [row] = await careWithResponse(db, couple?.id).where(and(eq(careRequests.ownerId, user.id), eq(careRequests.day, day)));
+  return row ? careView(row) : null;
+}
+
+/** 기록자 홈: 오늘 요청(답장 포함)과 최근 30일에 고른 칩을 한 번의 조회로. 칩 순서용 목록에서 오늘은 뺀다. */
+export async function careForHome(db: DB, user: User, today = todaySeoul()) {
+  const couple = await activeCouple(db, user.id);
+  const rows = await careWithResponse(db, couple?.id)
+    .where(and(eq(careRequests.ownerId, user.id), gte(careRequests.day, addDays(today, -RECENT_DAYS)), lte(careRequests.day, today)));
+  const todays = rows.find((r) => r.care.day === today);
+  return { care: todays ? careView(todays) : null, used: rows.filter((r) => r.care.day < today).flatMap((r) => currentPresets(r.care.presets)) };
 }
 
 export async function saveCare(db: DB, user: User, input: { presets: unknown[]; message: unknown; share: unknown }, day = todaySeoul()) {
@@ -140,13 +152,10 @@ export async function clearCare(db: DB, user: User, day = todaySeoul()) {
 export const sharedCare = cache(async (db: DB, couple: Couple, today = todaySeoul()): Promise<CareView[]> => {
   if (couple.paused) return [];
   const from = [couple.shareFrom, addDays(today, -6)].sort()[1];
-  const rows = await db.select().from(careRequests)
-    .where(and(eq(careRequests.ownerId, couple.recorderId), eq(careRequests.shareWithPartner, true), gte(careRequests.day, from)))
+  const rows = await careWithResponse(db, couple.id)
+    .where(and(eq(careRequests.ownerId, couple.recorderId), eq(careRequests.shareWithPartner, true), gte(careRequests.day, from), lte(careRequests.day, today)))
     .orderBy(desc(careRequests.day));
-  return Promise.all(rows.filter((r) => r.day <= today).map(async (r) => ({
-    id: r.id, day: r.day, presets: currentPresets(r.presets), message: r.message, shareWithPartner: true, updatedAt: r.updatedAt,
-    ...await responseFor(db, r.id, couple.id),
-  })));
+  return rows.map(careView);
 });
 
 export async function respondToCare(db: DB, user: User, careId: string, response: unknown, today = todaySeoul()) {

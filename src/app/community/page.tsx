@@ -80,9 +80,9 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
       {access.member && (
         <Link
           href="/community/new" aria-label="글쓰기" data-floating
-          className="fixed bottom-[calc(env(safe-area-inset-bottom)+74px)] right-[max(1.5rem,calc(50%-12.5rem))] z-20 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-opacity active:opacity-80"
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+74px)] right-[max(1.5rem,calc(50%-12.5rem))] z-20 flex h-11 w-11 items-center justify-center rounded-full bg-accent text-white shadow-lg transition-opacity active:opacity-80"
         >
-          <Pencil size={22} aria-hidden />
+          <Pencil size={18} aria-hidden />
         </Link>
       )}
       <Nav role={user.role} active="community" />

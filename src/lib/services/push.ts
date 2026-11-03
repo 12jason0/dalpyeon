@@ -1,14 +1,14 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { and, count, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
 import type { DB } from "../db";
-import { careRequests, careResponses, periods, pushSubscriptions, users } from "../db/schema";
+import { couples, periods, pushSubscriptions, users } from "../db/schema";
 import { diffDays, formatDay, timeSeoul, todaySeoul } from "../dates";
 import { errorKind, fail } from "../errors";
 import { endQuestion, estimate } from "../prediction";
 import { limit, type User } from "./auth";
 import { careLabel, recentReplies, replySentence, sharedCare } from "./care";
 import { activeCouple, otherNickname } from "./couples";
-import { receivedNotes, receivedSince } from "./notes";
+import { receivedNotes } from "./notes";
 import { listPeriods } from "./periods";
 
 export const REMINDER_DAYS = 3;
@@ -177,25 +177,33 @@ export function cronAuthorized(header: string | null, secret: string | undefined
 
 export type News = { replies: number; care: number; notes: number };
 
-/** 알림을 거부한 사람도 볼 수 있는 새 소식. */
-export async function newsFor(db: DB, user: User, today = todaySeoul()): Promise<News> {
-  const [[me], couple] = await Promise.all([
-    db.select({ seen: users.newsSeenAt }).from(users).where(eq(users.id, user.id)), activeCouple(db, user.id),
+/**
+ * 알림을 거부한 사람도 볼 수 있는 새 소식(헤더의 빨간 점). 페이지 데이터와 겹치는 조회는 다시 하지 않는다:
+ * 확인 시각은 세션 조회에서 읽은 값(newsSeenAt)을, 연결·파트너에게 보이는 요청은 요청 안에서 캐시된 값을 쓴다.
+ * 남은 숫자(답장 수·받은 쪽지 수)는 한 번의 조회로 같이 센다.
+ */
+export async function newsFor(db: DB, user: User & { newsSeenAt?: Date | null }, today = todaySeoul()): Promise<News> {
+  const [seenAt, couple] = await Promise.all([
+    "newsSeenAt" in user ? user.newsSeenAt : db.select({ seen: users.newsSeenAt }).from(users).where(eq(users.id, user.id)).then(([r]) => r?.seen ?? null),
+    activeCouple(db, user.id),
   ]);
-  const since = me?.seen ?? new Date(0);
-  if (!couple) return { replies: 0, care: 0, notes: 0 };
-  const notes = await receivedSince(db, user, couple, since);
-  if (user.role === "recorder") {
-    const [{ total }] = await db.select({ total: count() }).from(careResponses)
-      .where(and(eq(careResponses.coupleId, couple.id), gt(careResponses.updatedAt, since)));
-    return { replies: total, care: 0, notes };
-  }
-  if (couple.partnerId !== user.id) return { replies: 0, care: 0, notes: 0 };
-  const unanswered = (await sharedCare(db, couple, today)).filter((c) => !c.response).map((c) => c.id);
-  if (!unanswered.length) return { replies: 0, care: 0, notes };
-  const [{ total }] = await db.select({ total: count() }).from(careRequests)
-    .where(and(inArray(careRequests.id, unanswered), gt(careRequests.updatedAt, since)));
-  return { replies: 0, care: total, notes };
+  const none = { replies: 0, care: 0, notes: 0 };
+  if (!couple) return none;
+  const isPartner = couple.partnerId === user.id;
+  if (user.role === "partner" && !isPartner) return none;
+  const since = (seenAt ?? new Date(0)).toISOString();
+  const [[counts], visible] = await Promise.all([
+    db.select({
+      replies: sql<number>`(select count(*) from care_responses where couple_id = ${couple.id} and updated_at > ${since}::timestamptz)`.mapWith(Number),
+      notes: sql<number>`(select count(*) from notes where couple_id = ${couple.id} and sender_id <> ${user.id} and created_at > ${since}::timestamptz)`.mapWith(Number),
+    }).from(couples).where(eq(couples.id, couple.id)),
+    isPartner ? sharedCare(db, couple, today) : [],
+  ]);
+  const notes = counts?.notes ?? 0;
+  if (!isPartner) return { replies: counts?.replies ?? 0, care: 0, notes };
+  // 파트너: 아직 답하지 않았고 마지막으로 본 뒤에 바뀐 요청
+  const care = visible.filter((c) => !c.response && c.updatedAt > new Date(since)).length;
+  return { replies: 0, care, notes };
 }
 
 /** 새 소식 시트의 한 줄. 누르면 href로 간다(배려 요청·답장은 홈의 배려 카드). */

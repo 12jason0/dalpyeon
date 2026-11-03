@@ -5,9 +5,9 @@ import { CRESCENT, moonShape, type MoonShape } from "../moon";
 import { calendarMarks, estimate, type CalendarMark, type Prediction } from "../prediction";
 import type { User } from "./auth";
 import { sharedCare, type CareView } from "./care";
-import { activeCouple, otherNickname, requireRole } from "./couples";
+import { activeCouple, otherUser, requireRole } from "./couples";
 import { dayLogOn } from "./daylogs";
-import { currentPeriod, listPeriods, usualCycle } from "./periods";
+import { currentPeriod, listPeriods } from "./periods";
 import type { DB } from "../db";
 
 export type PartnerView = {
@@ -35,8 +35,8 @@ export async function partnerView(db: DB, user: User, today = todaySeoul()): Pro
   requireRole(user, "partner");
   const couple = await activeCouple(db, user.id);
   if (!couple) return null;
-  const [recorderNickname, all, usual, care] = await Promise.all([
-    otherNickname(db, couple, user), couple.paused ? [] : listPeriods(db, couple.recorderId), usualCycle(db, couple.recorderId), sharedCare(db, couple, today),
+  const [{ nickname: recorderNickname, usualCycleDays: usual }, all, care] = await Promise.all([
+    otherUser(db, couple, user), couple.paused ? [] : listPeriods(db, couple.recorderId), sharedCare(db, couple, today),
   ]);
   const base: PartnerView = {
     recorderNickname, paused: couple.paused,

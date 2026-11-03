@@ -2,7 +2,7 @@ import { randomInt, randomUUID } from "node:crypto";
 import { and, count, desc, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { cache } from "react";
-import { isBoard } from "../boards";
+import { isBoard, POST_BODY_MAX } from "../boards";
 import type { DB } from "../db";
 import { blocks, comments, postLikes, posts, reports, users, type Board } from "../db/schema";
 import { fail } from "../errors";
@@ -30,10 +30,17 @@ export type PostRow = {
 export type CommentView = { id: string; body: string; nickname: string; createdAt: Date; hidden: boolean; mine: boolean; replies: CommentView[] };
 export type PostView = PostRow & { body: string; liked: boolean; comments: CommentView[] };
 
-/** 활성 연결이 있는 파트너만 회원이다. 역할과 연결을 매번 함께 확인한다. */
-export const communityAccess = cache(async (db: DB, user: User): Promise<Access> => {
-  const [[row], couple] = await Promise.all([
-    db.select({ isAdmin: users.isAdmin, nickname: users.communityNickname }).from(users).where(eq(users.id, user.id)),
+type MaybeSession = User & { isAdmin?: boolean; communityNickname?: string | null };
+
+/**
+ * 활성 연결이 있는 파트너만 회원이다. 역할과 연결을 매번 함께 확인한다.
+ * 페이지에서는 세션 조회가 이미 읽은 운영자 여부·닉네임을 쓰고, 그 값이 없는 호출(서비스 테스트 등)에서만 다시 읽는다.
+ */
+export const communityAccess = cache(async (db: DB, user: MaybeSession): Promise<Access> => {
+  const [row, couple] = await Promise.all([
+    "isAdmin" in user && "communityNickname" in user
+      ? { isAdmin: user.isAdmin ?? false, nickname: user.communityNickname ?? null }
+      : db.select({ isAdmin: users.isAdmin, nickname: users.communityNickname }).from(users).where(eq(users.id, user.id)).then(([r]) => r),
     user.role === "partner" ? activeCouple(db, user.id) : null,
   ]);
   return { admin: row?.isAdmin ?? false, member: couple?.partnerId === user.id, nickname: row?.nickname ?? null };
@@ -205,7 +212,7 @@ type PostInput = { board?: unknown; title: unknown; body: unknown };
 function cleanPost(input: PostInput) {
   const board = input.board ?? "question";
   if (!isBoard(board)) fail("말머리를 골라 주세요");
-  return { board, title: cleanText(input.title, "제목", 60), body: cleanText(input.body, "본문", 2000) };
+  return { board, title: cleanText(input.title, "제목", 60), body: cleanText(input.body, "본문", POST_BODY_MAX) };
 }
 
 export async function createPost(db: DB, user: User, input: PostInput) {

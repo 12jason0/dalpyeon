@@ -2,7 +2,6 @@ import { ChevronRight } from "lucide-react";
 import { getDb } from "@/lib/db";
 import { listBlocked } from "@/lib/services/community";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
-import { usualCycle } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { disconnectAction, unblockAction } from "../../actions";
 import { PasswordForm } from "../../_components/AuthForm";
@@ -37,7 +36,7 @@ export default async function SettingsPage() {
   const db = await getDb();
   const couple = await activeCouple(db, user.id);
   const name = couple ? await otherNickname(db, couple, user) : null;
-  const usual = user.role === "recorder" ? await usualCycle(db, user.id) : null;
+  const usual = user.role === "recorder" ? user.usualCycleDays : null;
   const blocked = await listBlocked(db, user);
   return (
     <>
