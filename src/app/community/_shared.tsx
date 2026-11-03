@@ -4,6 +4,7 @@ import { myPosts } from "@/lib/services/community";
 import type { User } from "@/lib/services/auth";
 import { getDb } from "@/lib/db";
 import { deletePostAction } from "../actions";
+import { AppHeader } from "../_components/AppHeader";
 import { Nav } from "../_components/Nav";
 
 export function Confirm({ label, confirm, action, fields }: {
@@ -48,6 +49,7 @@ export async function MyPosts({ user, member }: { user: User; member: boolean })
 export async function Gate({ user }: { user: User }) {
   return (
     <>
+      <AppHeader user={user} />
       <h1 className="sr-only">남친톡</h1>
       <p className="text-[17px] leading-relaxed text-muted">남친톡은 연결된 파트너만 볼 수 있어요.</p>
       <MyPosts user={user} member={false} />

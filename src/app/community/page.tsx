@@ -3,6 +3,7 @@ import { getDb } from "@/lib/db";
 import { timeAgo } from "@/lib/dates";
 import { communityAccess, listPosts, myPosts } from "@/lib/services/community";
 import { requireUser } from "@/lib/session";
+import { AppHeader } from "../_components/AppHeader";
 import { Nav } from "../_components/Nav";
 import { Gate, MyPosts } from "./_shared";
 
@@ -19,6 +20,7 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
   const [{ posts, hasMore }] = await Promise.all([listPosts(db, user, page), access.member && myPosts(db, user)]);
   return (
     <>
+      <AppHeader user={user} />
       <h1 className="sr-only">남친톡</h1>
       {access.member && <p className="text-right"><Link href="/community/new" className="link text-[15px]">글쓰기</Link></p>}
       {posts.length === 0 && <p className="mt-10 text-[17px] text-muted">아직 글이 없어요.</p>}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { ARTICLE_FOOTER, ARTICLES } from "@/lib/content/articles";
 import { requireUser } from "@/lib/session";
+import { AppHeader } from "../_components/AppHeader";
 import { Nav } from "../_components/Nav";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export default async function LearnPage() {
   const user = await requireUser("partner");
   return (
     <>
+      <AppHeader user={user} />
       <h1 className="sr-only">알아두면 좋은 것</h1>
       <ul className="mt-2">
         {ARTICLES.map((a) => (

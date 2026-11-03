@@ -1,6 +1,6 @@
 import { CRESCENT } from "@/lib/moon";
 import { MoonPhase } from "./HomeCards";
-import { LoadingNav } from "./Nav";
+import { LoadingHeader, LoadingNav } from "./Nav";
 
 export const BLOCK = "animate-pulse rounded-[18px] bg-line motion-reduce:animate-none";
 
@@ -8,6 +8,7 @@ export const BLOCK = "animate-pulse rounded-[18px] bg-line motion-reduce:animate
 export function PageSkeleton({ active }: { active: React.ComponentProps<typeof LoadingNav>["active"] }) {
   return (
     <>
+      <LoadingHeader />
       <div role="status" aria-label="불러오는 중">
         <div className={`${BLOCK} h-10 w-32`} />
         <div className={`${BLOCK} mt-8 h-24`} />
@@ -23,6 +24,7 @@ export function PageSkeleton({ active }: { active: React.ComponentProps<typeof L
 export function HomeSkeleton() {
   return (
     <>
+      <LoadingHeader />
       <div role="status" aria-label="불러오는 중">
         <div className="flex items-center gap-3">
           <div className="animate-pulse motion-reduce:animate-none"><MoonPhase moon={CRESCENT} /></div>

@@ -406,7 +406,6 @@ export async function markNewsSeenAction() {
   const user = await requireUser();
   await markNewsSeen(await getDb(), user);
   refresh();
-  redirect("/");
 }
 
 // 버튼 하나짜리 동작은 실패해도(이미 처리됨·만료 등) 화면을 새로 고쳐 현재 상태를 보여주면 충분하다.

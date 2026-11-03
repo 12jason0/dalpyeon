@@ -5,6 +5,7 @@ import { communityAccess, myPosts } from "@/lib/services/community";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser } from "@/lib/session";
 import { reminderEnabled } from "@/lib/services/push";
+import { AppHeader } from "../_components/AppHeader";
 import { IconBadge } from "../_components/Chip";
 import { NameEdit } from "../_components/NameEdit";
 import { Nav } from "../_components/Nav";
@@ -32,6 +33,7 @@ export default async function MePage() {
   ]);
   return (
     <>
+      <AppHeader user={user} />
       <h1 className="sr-only">마이</h1>
 
       <Link href="/connect" className="card flex items-center gap-3">
