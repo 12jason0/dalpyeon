@@ -22,7 +22,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="card min-w-0 flex-1 text-center">
       <p className="text-[11px] text-muted">{label}</p>
-      <p className="mt-0.5 text-[17px] font-semibold tracking-tight">{value}</p>
+      <p className="mt-0.5 text-[17px] font-medium tracking-tight">{value}</p>
     </div>
   );
 }

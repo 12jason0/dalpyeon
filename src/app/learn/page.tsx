@@ -16,7 +16,7 @@ export default async function LearnPage() {
         {ARTICLES.map((a) => (
           <li key={a.slug} className="border-b border-line">
             <Link href={`/learn/${a.slug}`} className="block py-4">
-              <span className="block font-hand text-[19px] font-medium">{a.title}</span>
+              <span className="block text-[17px] font-medium">{a.title}</span>
               <span className="mt-1 block text-[13px] text-muted">{a.line}</span>
             </Link>
           </li>

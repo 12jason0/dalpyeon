@@ -6,23 +6,32 @@ import { ServiceWorker } from "./_components/ServiceWorker";
 import "./globals.css";
 
 /**
- * 포인트 손글씨(교보 손글씨 2025 이유빈). 라이선스상 파일 형식을 바꿀 수 없어 .ttf 그대로 쓴다.
- * 5.7MB라 미리 받지 않고(preload: false) 글자가 보일 때 받으며, 받는 동안은 Pretendard로 보인다(swap).
- * 변수 --font-hand만 등록하고, 쓰는 곳에서 font-hand 유틸리티로 고른다. 두 번째부터는 서비스 워커 캐시에서 바로 뜬다.
+ * 앱 기본 글꼴: 학교안심 둥근미소 Regular. 파일 형식을 바꾸지 않고 받은 OTF 그대로 쓴다(TTF보다 4배 작다).
+ * 받은 파일의 굵기는 R 400, B 600(OS/2 usWeightClass) 두 개. 앱은 굵기를 500까지만 쓰고(500은 400으로 그려진다)
+ * 강조는 색으로 하므로 B는 불러오지 않는다. globals.css의 font-synthesis: none으로 가짜 굵기도 만들지 않는다.
+ * 받는 동안은 기기 기본 글꼴로 보이고(swap), 두 번째부터는 서비스 워커 캐시에서 바로 뜬다.
  */
-const hand = localFont({
-  src: "./fonts/KyoboHandwriting2025lyb.ttf",
-  variable: "--font-hand",
+const base = localFont({
+  src: [{ path: "./fonts/Hakgyoansim Dunggeunmiso OTF R.otf", weight: "400", style: "normal" }],
+  variable: "--font-base",
   display: "swap",
-  preload: false,
-  adjustFontFallback: false, // 대체 글꼴은 font-hand 유틸리티의 Pretendard
+  adjustFontFallback: false, // 대체 글꼴은 globals.css --font-sans의 기기 글꼴
 });
 
 export const metadata: Metadata = {
-  title: "우리주기",
+  title: "디어데이",
   description: "말하기 어려운 날에도, 서로의 편.",
+  // 아이콘은 npm run icons가 public/brand/icon-source.png에서 만든다. 파비콘은 작아서 D 두 개만 크게.
+  icons: {
+    icon: [
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-icon-180.png", sizes: "180x180", type: "image/png" }],
+  },
   appleWebApp: {
-    capable: true, title: "우리주기", statusBarStyle: "default",
+    capable: true, title: "디어데이", statusBarStyle: "default",
     startupImage: SPLASH_SIZES.map(({ width, height, ratio }) => ({
       url: `/brand/splash/${width * ratio}x${height * ratio}.png`,
       media: `(device-width: ${width}px) and (device-height: ${height}px) and (-webkit-device-pixel-ratio: ${ratio}) and (orientation: portrait)`,
@@ -39,15 +48,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" className={hand.variable}>
+    <html lang="ko" className={base.variable}>
       <head>
         {/* Next는 mobile-web-app-capable만 넣는다. 아이폰 시작 화면에는 이 이름이 필요하다 */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <link
-          rel="stylesheet"
-          crossOrigin="anonymous"
-          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css"
-        />
       </head>
       <body>
         <main className="mx-auto max-w-md px-6 pb-[calc(8rem+env(safe-area-inset-bottom))] pt-[max(3rem,env(safe-area-inset-top))]">{children}</main>

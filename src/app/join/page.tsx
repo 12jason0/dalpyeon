@@ -25,7 +25,7 @@ export default async function JoinPage({ searchParams }: { searchParams: Promise
   return (
     <>
       <Logo />
-      <h1 className="mt-10 text-3xl font-semibold leading-snug tracking-tight">받은 코드로 시작해요</h1>
+      <h1 className="mt-10 text-3xl font-medium leading-snug tracking-tight">받은 코드로 시작해요</h1>
       <p className="mt-3 mb-10 text-[15px] leading-relaxed text-muted">가입하면 코드를 준 사람과 바로 연결돼요.</p>
       <JoinForm code={code} kakao={kakaoEnabled()} kakaoFailed={kakao === "failed"} />
     </>
