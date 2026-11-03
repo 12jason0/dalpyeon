@@ -8,7 +8,7 @@ import { todaySeoul } from "@/lib/dates";
 import { AppError, errorKind } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
 import { changePassword, limit, login, recordConsents, signup, updateNickname } from "@/lib/services/auth";
-import { clearCare, respondToCare, saveCare } from "@/lib/services/care";
+import { clearCare, respondToCare, saveCare, type ResponseKey } from "@/lib/services/care";
 import {
   agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, unblock, updateComment, updatePost,
   type Target,
@@ -310,8 +310,10 @@ export async function clearCareAction() {
 export async function respondAction(form: FormData) {
   const user = await requireUser("partner");
   const careId = String(form.get("careId"));
-  const first = await respondToCare(await getDb(), user, careId, form.get("response")).catch(ignoreAppError);
-  if (first) later((d) => notifyReply(d, user, careId));
+  const response = form.get("response");
+  const changed = await respondToCare(await getDb(), user, careId, response).catch(ignoreAppError);
+  // 답장이 생기거나 바뀔 때마다 알린다. 같은 답장을 다시 누르면 changed가 false다.
+  if (changed) later((d) => notifyReply(d, user, careId, response as ResponseKey));
   refresh();
 }
 

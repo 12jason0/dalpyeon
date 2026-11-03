@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, lt } from "drizzle-orm";
+import { and, desc, eq, gte, lt, ne } from "drizzle-orm";
 import { cache } from "react";
 import type { DB } from "../db";
 import { careRequests, careResponses } from "../db/schema";
@@ -153,8 +153,14 @@ export async function respondToCare(db: DB, user: User, careId: string, response
   const visible = await sharedCare(db, couple, today);
   const shown = visible.find((c) => c.id === careId);
   if (!shown) fail("공유된 배려 요청을 찾을 수 없어요", 404);
-  await db.insert(careResponses).values({ careId, coupleId: couple.id, response: response as ResponseKey })
-    .onConflictDoUpdate({ target: [careResponses.careId, careResponses.coupleId], set: { response: response as ResponseKey, updatedAt: new Date() } });
-  return shown.response === null; // 첫 답장인지
+  // 같은 답장을 다시 누르면 아무것도 바꾸지 않는다. 동시에 눌러도 바뀐 한 번만 true가 되도록 DB에서 비교한다.
+  const changed = await db.insert(careResponses).values({ careId, coupleId: couple.id, response: response as ResponseKey })
+    .onConflictDoUpdate({
+      target: [careResponses.careId, careResponses.coupleId],
+      set: { response: response as ResponseKey, updatedAt: new Date() },
+      setWhere: ne(careResponses.response, response as ResponseKey),
+    })
+    .returning({ careId: careResponses.careId });
+  return changed.length > 0; // 답장이 새로 생겼거나 바뀌었는지
 }
 

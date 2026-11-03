@@ -1044,8 +1044,8 @@ describe("알림", () => {
     const care = (await getCare(db, me, TODAY))!;
     await db.update(users).set({ nickname: "" }).where(eq(users.id, partner.id));
     await respondToCare(db, partner, care.id, "seen", TODAY);
-    await notifyReply(db, partner, care.id, TODAY, sender);
-    expect(sent.map((m) => [m.title, m.body])).toEqual([["지수", "배려 요청을 보냈어요"], ["파트너", "답장했어요"]]);
+    await notifyReply(db, partner, care.id, "seen", TODAY, sender);
+    expect(sent.map((m) => [m.title, m.body])).toEqual([["지수", "배려 요청을 보냈어요"], ["파트너", "봤어요"]]);
     const text = JSON.stringify(sent);
     expect(text).not.toContain("배가 너무 아파");
     expect(text).not.toContain(careLabel("rest"));
@@ -1064,22 +1064,52 @@ describe("알림", () => {
     await disconnect(db, me);
     const { sent, sender } = outbox();
     await notifyCare(db, me, TODAY, sender);
-    await notifyReply(db, await reload(partner), "any", TODAY, sender);
+    await notifyReply(db, await reload(partner), "any", "seen", TODAY, sender);
     expect(sent).toEqual([]);
   });
 
-  it("답장은 기록자에게 파트너 이름으로, 첫 답장만. 잠시 멈추면 보내지 않는다", async () => {
+  it("답장은 바뀔 때마다 기록자에게 파트너 이름과 답장 그대로. 같은 답장을 다시 누르면 보내지 않는다", async () => {
     const { me, partner } = await shared();
     const { sent, sender } = outbox();
     await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
     const care = (await getCare(db, me, TODAY))!;
-    expect(await respondToCare(db, partner, care.id, "seen", TODAY)).toBe(true);
-    expect(await respondToCare(db, partner, care.id, "done", TODAY)).toBe(false);
-    await notifyReply(db, partner, care.id, TODAY, sender);
-    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "너", body: "답장했어요", url: "/" }]);
+    // respondAction과 같은 순서: 바뀌었을 때만 알린다
+    const reply = async (response: "seen" | "will_help" | "done") => {
+      const changed = await respondToCare(db, partner, care.id, response, TODAY);
+      if (changed) await notifyReply(db, partner, care.id, response, TODAY, sender);
+      return changed;
+    };
+    expect(await reply("seen")).toBe(true);
+    expect(await reply("seen")).toBe(false); // 같은 답장
+    expect(await reply("will_help")).toBe(true);
+    expect(await reply("done")).toBe(true);
+    expect(sent).toMatchObject([
+      { endpoint: sub("me").endpoint, title: "너", body: "봤어요", url: "/" },
+      { title: "너", body: "도와줄게요" },
+      { title: "너", body: "했어요" },
+    ]);
+    expect((await getCare(db, me, TODAY))?.response).toBe("done");
+
     await setPaused(db, me, true);
-    await notifyReply(db, partner, care.id, TODAY, sender);
-    expect(sent).toHaveLength(1);
+    await notifyReply(db, partner, care.id, "seen", TODAY, sender); // 잠시 멈추면 보내지 않는다
+    expect(sent).toHaveLength(3);
+  });
+
+  it("같은 요청의 답장 알림은 1분 안에 3번까지만, 1분이 지나면 다시 보낸다", async () => {
+    const { me, partner } = await shared();
+    const { sent, sender } = outbox();
+    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
+    const care = (await getCare(db, me, TODAY))!;
+    for (const response of ["seen", "will_help", "done", "seen", "will_help"] as const) {
+      if (await respondToCare(db, partner, care.id, response, TODAY)) await notifyReply(db, partner, care.id, response, TODAY, sender);
+    }
+    expect(sent.map((m) => m.body)).toEqual(["봤어요", "도와줄게요", "했어요"]);
+    expect((await getCare(db, me, TODAY))?.response).toBe("will_help"); // 답장 저장은 막지 않는다
+
+    await db.update(rateLimits).set({ resetAt: new Date(Date.now() - 1000) }); // 1분이 지남
+    await respondToCare(db, partner, care.id, "done", TODAY);
+    await notifyReply(db, partner, care.id, "done", TODAY, sender);
+    expect(sent.map((m) => m.body)).toEqual(["봤어요", "도와줄게요", "했어요", "했어요"]);
   });
 
   it("발송이 실패해도 저장된 내용은 그대로이고 오류가 밖으로 나오지 않는다", async () => {

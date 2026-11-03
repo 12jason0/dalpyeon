@@ -5,8 +5,8 @@ import { careRequests, careResponses, periods, pushSubscriptions, users } from "
 import { diffDays, todaySeoul } from "../dates";
 import { errorKind, fail } from "../errors";
 import { endQuestion, estimate } from "../prediction";
-import type { User } from "./auth";
-import { sharedCare } from "./care";
+import { limit, type User } from "./auth";
+import { RESPONSES, sharedCare, type ResponseKey } from "./care";
 import { activeCouple } from "./couples";
 import { listPeriods } from "./periods";
 
@@ -66,8 +66,11 @@ export async function sendPush(db: DB, userId: string, message: PushMessage, sen
       await sender({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
     } catch (e) {
       const status = (e as { statusCode?: number }).statusCode;
-      if (status === 404 || status === 410) await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
-      else console.error("push failed", status);
+      if (status === 404 || status === 410) {
+        // 기기에서 알림을 끄거나 앱을 지우면 생긴다. 조용히 지우면 "왜 안 오지"를 알 수 없어서 남긴다.
+        console.warn("push subscription gone", status);
+        await db.delete(pushSubscriptions).where(eq(pushSubscriptions.id, sub.id));
+      } else console.error("push failed", status);
     }
   }));
 }
@@ -105,12 +108,25 @@ export function notifyCare(db: DB, owner: User, today = todaySeoul(), sender?: S
   });
 }
 
-export function notifyReply(db: DB, partner: User, careId: string, today = todaySeoul(), sender?: Sender) {
+export const REPLY_PUSH_MAX = 3;
+export const REPLY_PUSH_SECONDS = 60;
+
+/**
+ * 답장이 생기거나 바뀔 때마다 기록자에게 알린다(같은 답장을 다시 누른 것은 respondToCare가 걸러 부르지 않는다).
+ * 내용은 답장 그대로("봤어요" 등). 한 요청에 1분 안에는 3번까지만 보내고 그 이상은 조용히 건너뛴다.
+ */
+export function notifyReply(db: DB, partner: User, careId: string, response: ResponseKey, today = todaySeoul(), sender?: Sender) {
   return quietly(async () => {
     const couple = await activeCouple(db, partner.id);
     if (couple?.partnerId !== partner.id) return;
     const visible = await sharedCare(db, couple, today);
-    if (visible.some((c) => c.id === careId)) await sendPush(db, couple.recorderId, { title: await senderName(db, partner), body: "답장했어요", url: "/" }, sender);
+    if (!visible.some((c) => c.id === careId)) return;
+    try {
+      await limit(db, "reply-push", careId, REPLY_PUSH_MAX, REPLY_PUSH_SECONDS);
+    } catch {
+      return; // 1분 안에 3번을 넘김
+    }
+    await sendPush(db, couple.recorderId, { title: await senderName(db, partner), body: RESPONSES[response], url: "/" }, sender);
   });
 }
 
