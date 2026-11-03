@@ -2,12 +2,12 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { and, count, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import type { DB } from "../db";
 import { careRequests, careResponses, periods, pushSubscriptions, users } from "../db/schema";
-import { diffDays, todaySeoul } from "../dates";
+import { diffDays, formatDay, todaySeoul } from "../dates";
 import { errorKind, fail } from "../errors";
 import { endQuestion, estimate } from "../prediction";
 import { limit, type User } from "./auth";
-import { RESPONSES, sharedCare, type ResponseKey } from "./care";
-import { activeCouple } from "./couples";
+import { careLabel, recentReplies, RESPONSES, sharedCare, type ResponseKey } from "./care";
+import { activeCouple, otherNickname } from "./couples";
 import { listPeriods } from "./periods";
 
 export const REMINDER_DAYS = 3;
@@ -60,7 +60,7 @@ const webPushSender: Sender = async (target, payload) => {
 /** 한 사람의 모든 기기로 보낸다. 사라진 구독(404·410)은 지우고, 다른 실패는 기록만 남긴다. */
 export async function sendPush(db: DB, userId: string, message: PushMessage, sender: Sender = webPushSender) {
   const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
-  const payload = JSON.stringify({ ...message, title: message.title || "우리주기" });
+  const payload = JSON.stringify({ ...message, title: message.title || "디어데이" });
   await Promise.all(subs.map(async (sub) => {
     try {
       await sender({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
@@ -104,7 +104,7 @@ export function notifyCare(db: DB, owner: User, today = todaySeoul(), sender?: S
     const couple = await activeCouple(db, owner.id);
     if (couple?.recorderId !== owner.id) return;
     const visible = await sharedCare(db, couple, today);
-    if (visible.some((c) => c.day === today)) await sendPush(db, couple.partnerId, { title: await senderName(db, owner), body: "배려 요청을 보냈어요", url: "/" }, sender);
+    if (visible.some((c) => c.day === today)) await sendPush(db, couple.partnerId, { title: await senderName(db, owner), body: "배려 요청을 보냈어요", url: "/news" }, sender);
   });
 }
 
@@ -126,7 +126,7 @@ export function notifyReply(db: DB, partner: User, careId: string, response: Res
     } catch {
       return; // 1분 안에 3번을 넘김
     }
-    await sendPush(db, couple.recorderId, { title: await senderName(db, partner), body: RESPONSES[response], url: "/" }, sender);
+    await sendPush(db, couple.recorderId, { title: await senderName(db, partner), body: RESPONSES[response], url: "/news" }, sender);
   });
 }
 
@@ -198,6 +198,31 @@ export async function newsFor(db: DB, user: User, today = todaySeoul()): Promise
   const [{ total }] = await db.select({ total: count() }).from(careRequests)
     .where(and(inArray(careRequests.id, unanswered), gt(careRequests.updatedAt, since)));
   return { replies: 0, care: total };
+}
+
+/** 새 소식 시트의 한 줄. 누르면 href로 간다(배려 요청·답장은 홈의 배려 카드). */
+export type NewsItem = { id: string; title: string; body: string; detail: string; when: string; href: string };
+
+/**
+ * 새 소식 시트의 목록. 기록자는 파트너 답장(최근 것부터), 파트너는 지금 보이는 배려 요청.
+ * 공유 조건(연결·잠시 멈추기·요청별 공유)은 sharedCare가 다시 본다.
+ */
+export async function newsItems(db: DB, user: User, today = todaySeoul()): Promise<NewsItem[]> {
+  const couple = await activeCouple(db, user.id);
+  if (!couple) return [];
+  const name = (await otherNickname(db, couple, user)) || "파트너";
+  const when = (day: string) => (day === today ? "오늘" : formatDay(day));
+  const what = (presets: string[], message: string | null) => [...presets.map(careLabel), ...(message ? [`“${message}”`] : [])].join(" · ");
+  if (user.role === "recorder") {
+    return (await recentReplies(db, couple)).map((r) => ({
+      id: `reply-${r.id}`, title: `${name}님`, body: RESPONSES[r.response], detail: what(r.presets, r.message), when: when(r.day), href: "/",
+    }));
+  }
+  if (couple.partnerId !== user.id) return [];
+  return (await sharedCare(db, couple, today)).map((c) => ({
+    id: `care-${c.id}`, title: `${name}님의 배려 요청`, body: what(c.presets, c.message),
+    detail: c.response ? `내 답장: ${RESPONSES[c.response]}` : "아직 답장하지 않았어요", when: when(c.day), href: "/",
+  }));
 }
 
 export async function markNewsSeen(db: DB, user: User) {

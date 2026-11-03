@@ -32,7 +32,7 @@ import {
 } from "@/lib/services/periods";
 import { partnerView } from "@/lib/services/partner";
 import {
-  cronAuthorized, markNewsSeen, newsFor, notifyCare, notifyConnected, notifyReply, reminderEnabled, removeSubscription, saveSubscription,
+  cronAuthorized, markNewsSeen, newsFor, newsItems, notifyCare, notifyConnected, notifyReply, reminderEnabled, removeSubscription, saveSubscription,
   sendPush, sendReminders, setReminder, type Sender,
 } from "@/lib/services/push";
 
@@ -481,7 +481,7 @@ describe("카카오 로그인", () => {
   });
 
   it("닉네임이 없거나 길어도 가입된다", async () => {
-    expect((await signInWithKakao(db, "a", REDIRECT, kakao(1001).fetcher)).nickname).toBe("우리주기 사용자");
+    expect((await signInWithKakao(db, "a", REDIRECT, kakao(1001).fetcher)).nickname).toBe("디어데이 사용자");
     expect((await signInWithKakao(db, "b", REDIRECT, kakao(1002, "가".repeat(30)).fetcher)).nickname).toHaveLength(20);
   });
 
@@ -760,7 +760,7 @@ describe("커뮤니티", () => {
     const third = (await member(false)).partner;
     await expectFail(agreeToRules(db, third, (await communityAccess(db, partner)).nickname), 409);
     await expectFail(agreeToRules(db, third, "운영자님"));
-    await expectFail(agreeToRules(db, third, "우리주기 운영팀"));
+    await expectFail(agreeToRules(db, third, "디어데이 운영팀"));
     await expectFail(agreeToRules(db, third, "가"));
     expect(await agreeToRules(db, third, " 든든한편 ")).toBe("든든한편");
   });
@@ -1029,7 +1029,7 @@ describe("알림", () => {
     expect(sent).toEqual([]);
     expect(await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY)).toBe(true);
     await notifyCare(db, me, TODAY, sender);
-    expect(sent).toMatchObject([{ endpoint: sub("you").endpoint, title: "나", body: "배려 요청을 보냈어요", url: "/" }]);
+    expect(sent).toMatchObject([{ endpoint: sub("you").endpoint, title: "나", body: "배려 요청을 보냈어요", url: "/news" }]);
     expect(await saveCare(db, me, { presets: ["company"], message: "", share: true }, TODAY)).toBe(false); // 수정은 다시 안 보냄
     expect(JSON.stringify(sent)).not.toContain("조용히");
     expect(partner.role).toBe("partner");
@@ -1084,7 +1084,7 @@ describe("알림", () => {
     expect(await reply("will_help")).toBe(true);
     expect(await reply("done")).toBe(true);
     expect(sent).toMatchObject([
-      { endpoint: sub("me").endpoint, title: "너", body: "봤어요", url: "/" },
+      { endpoint: sub("me").endpoint, title: "너", body: "봤어요", url: "/news" },
       { title: "너", body: "도와줄게요" },
       { title: "너", body: "했어요" },
     ]);
@@ -1130,7 +1130,7 @@ describe("알림", () => {
     const { sent, sender } = outbox();
     expect(await sendReminders(db, "2026-10-26", sender)).toBe(0); // 4일 전
     expect(await sendReminders(db, "2026-10-27", sender)).toBe(1);
-    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "우리주기", body: "오늘 확인할 소식이 있어요" }]);
+    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "디어데이", body: "오늘 확인할 소식이 있어요" }]);
     expect(JSON.stringify(sent)).not.toContain("생리"); // 예정일 알림은 잠금 화면에 건강 정보를 쓰지 않는다
     expect(await sendReminders(db, "2026-10-27", sender)).toBe(0); // 크론이 두 번 돌아도 한 번
     expect(sent).toHaveLength(1);
@@ -1170,6 +1170,27 @@ describe("알림", () => {
     await setPaused(db, me, true);
     await saveCare(db, me, { presets: ["company"], message: "", share: true }, TODAY);
     expect(await newsFor(db, partner, TODAY)).toMatchObject({ care: 0 }); // 잠시 멈추면 파트너에게 소식도 없다
+  });
+
+  it("새 소식 시트 목록: 기록자는 파트너 답장, 파트너는 보이는 배려 요청. 연결 전·잠시 멈추면 비어 있다", async () => {
+    const { me, you } = await pair();
+    expect(await newsItems(db, me, TODAY)).toEqual([]);
+
+    await connect(me, you);
+    const partner = await reload(you);
+    await saveCare(db, me, { presets: ["rest"], message: "배 아파", share: true }, TODAY);
+    expect(await newsItems(db, partner, TODAY)).toEqual([{
+      id: expect.stringMatching(/^care-/), title: "나님의 배려 요청", body: `${careLabel("rest")} · “배 아파”`,
+      detail: "아직 답장하지 않았어요", when: "오늘", href: "/",
+    }]);
+    expect(await newsItems(db, me, TODAY)).toEqual([]); // 아직 답장 없음
+
+    await respondToCare(db, partner, (await getCare(db, me, TODAY))!.id, "will_help", TODAY);
+    expect(await newsItems(db, me, TODAY)).toMatchObject([{ title: "너님", body: "도와줄게요", when: "오늘", href: "/" }]);
+    expect((await newsItems(db, partner, TODAY))[0].detail).toBe("내 답장: 도와줄게요");
+
+    await setPaused(db, me, true);
+    expect(await newsItems(db, partner, TODAY)).toEqual([]);
   });
 });
 

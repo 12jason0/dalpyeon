@@ -14,7 +14,7 @@ async function UnreadDot({ user }: { user: User }) {
   );
 }
 
-/** 탭 화면 공통 헤더. 안 읽은 소식 점은 조회가 끝나는 대로 나타난다. */
-export function AppHeader({ user }: { user: User }) {
-  return <Header dot={<Suspense><UnreadDot user={user} /></Suspense>} />;
+/** 탭 화면 공통 헤더. 안 읽은 소식 점은 조회가 끝나는 대로 나타난다. openNews면 새 소식 시트가 열린 채로 시작한다. */
+export function AppHeader({ user, openNews }: { user: User; openNews?: boolean }) {
+  return <Header dot={<Suspense><UnreadDot user={user} /></Suspense>} openNews={openNews} />;
 }
