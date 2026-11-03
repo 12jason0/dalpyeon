@@ -68,29 +68,34 @@ export async function recentPresets(db: DB, user: User, today: string) {
 export const RESPONSES = { seen: "봤어요", will_help: "도와줄게요", done: "했어요" } as const;
 export type ResponseKey = keyof typeof RESPONSES;
 
-/** 기록자 홈 배려 카드의 칩 글자. 상대에게 간 것은 true다. 보낸 게 없으면 칩도 없다. */
+/** 기록자 홈 배려 카드와 새 소식이 같이 쓰는 답장 문장. 도윤님이 '도와줄게요'라고 답했어요 */
+export function replySentence(name: string, response: ResponseKey) {
+  return `${name}님이 '${RESPONSES[response]}'라고 답했어요`;
+}
+
+/** 기록자 홈 배려 카드의 칩 글자. 상대에게 간 것은 true다. 보낸 게 없거나 답장이 왔으면(문장으로 보여준다) 칩이 없다. */
 export function careChip(care: { shareWithPartner: boolean; response?: ResponseKey | null } | null, canShare: boolean) {
-  if (!care) return null;
-  if (care.response) return { label: RESPONSES[care.response], sent: true };
+  if (!care || care.response) return null;
   return care.shareWithPartner && canShare ? { label: "답장 기다리는 중", sent: true } : { label: "나만 봐요", sent: false };
 }
 
 export type CareView = {
   id: string; day: string; presets: string[]; message: string | null; shareWithPartner: boolean;
-  response: ResponseKey | null;
+  response: ResponseKey | null; respondedAt: Date | null;
 };
 
-async function responseFor(db: DB, careId: string, coupleId: string | undefined): Promise<ResponseKey | null> {
-  if (!coupleId) return null;
-  const [row] = await db.select({ response: careResponses.response }).from(careResponses)
+async function responseFor(db: DB, careId: string, coupleId: string | undefined) {
+  if (!coupleId) return { response: null, respondedAt: null };
+  const [row] = await db.select({ response: careResponses.response, respondedAt: careResponses.updatedAt }).from(careResponses)
     .where(and(eq(careResponses.careId, careId), eq(careResponses.coupleId, coupleId)));
-  return row?.response ?? null;
+  return row ?? { response: null, respondedAt: null };
 }
 
 /** 기록자의 새 소식 화면에 보이는 파트너 답장. 최근 답장부터. */
 export async function recentReplies(db: DB, couple: Couple) {
   const rows = await db.select({
     id: careRequests.id, day: careRequests.day, presets: careRequests.presets, message: careRequests.message, response: careResponses.response,
+    respondedAt: careResponses.updatedAt,
   }).from(careResponses).innerJoin(careRequests, eq(careRequests.id, careResponses.careId))
     .where(eq(careResponses.coupleId, couple.id)).orderBy(desc(careResponses.updatedAt)).limit(20);
   return rows.map((r) => ({ ...r, presets: currentPresets(r.presets) }));
@@ -101,7 +106,7 @@ export async function getCare(db: DB, user: User, day = todaySeoul()): Promise<C
   if (!row) return null;
   const couple = await activeCouple(db, user.id);
   return { id: row.id, day: row.day, presets: currentPresets(row.presets), message: row.message,
-    shareWithPartner: row.shareWithPartner, response: await responseFor(db, row.id, couple?.id) };
+    shareWithPartner: row.shareWithPartner, ...await responseFor(db, row.id, couple?.id) };
 }
 
 export async function saveCare(db: DB, user: User, input: { presets: unknown[]; message: unknown; share: unknown }, day = todaySeoul()) {
@@ -140,7 +145,7 @@ export const sharedCare = cache(async (db: DB, couple: Couple, today = todaySeou
     .orderBy(desc(careRequests.day));
   return Promise.all(rows.filter((r) => r.day <= today).map(async (r) => ({
     id: r.id, day: r.day, presets: currentPresets(r.presets), message: r.message, shareWithPartner: true,
-    response: await responseFor(db, r.id, couple.id),
+    ...await responseFor(db, r.id, couple.id),
   })));
 });
 

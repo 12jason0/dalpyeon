@@ -2,11 +2,11 @@ import { randomUUID, timingSafeEqual } from "node:crypto";
 import { and, count, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import type { DB } from "../db";
 import { careRequests, careResponses, periods, pushSubscriptions, users } from "../db/schema";
-import { diffDays, formatDay, todaySeoul } from "../dates";
+import { diffDays, formatDay, timeSeoul, todaySeoul } from "../dates";
 import { errorKind, fail } from "../errors";
 import { endQuestion, estimate } from "../prediction";
 import { limit, type User } from "./auth";
-import { careLabel, recentReplies, RESPONSES, sharedCare, type ResponseKey } from "./care";
+import { careLabel, recentReplies, replySentence, RESPONSES, sharedCare, type ResponseKey } from "./care";
 import { activeCouple, otherNickname } from "./couples";
 import { listPeriods } from "./periods";
 
@@ -215,7 +215,8 @@ export async function newsItems(db: DB, user: User, today = todaySeoul()): Promi
   const what = (presets: string[], message: string | null) => [...presets.map(careLabel), ...(message ? [`“${message}”`] : [])].join(" · ");
   if (user.role === "recorder") {
     return (await recentReplies(db, couple)).map((r) => ({
-      id: `reply-${r.id}`, title: `${name}님`, body: RESPONSES[r.response], detail: what(r.presets, r.message), when: when(r.day), href: "/",
+      id: `reply-${r.id}`, title: `${when(r.day)} 배려 요청`, body: replySentence(name, r.response), detail: what(r.presets, r.message),
+      when: timeSeoul(r.respondedAt), href: "/",
     }));
   }
   if (couple.partnerId !== user.id) return [];

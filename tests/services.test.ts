@@ -8,7 +8,7 @@ import { barOn, calendarWindow } from "@/lib/calendar";
 import { ARTICLES, findArticle } from "@/lib/content/articles";
 import PINNED_POSTS from "@/lib/content/pinned-posts.json";
 import { RULES } from "@/lib/content/rules";
-import { addDays, monthDay } from "@/lib/dates";
+import { addDays, monthDay, timeSeoul } from "@/lib/dates";
 import { summarizeLogs } from "@/lib/daylog";
 import { CRESCENT, moonShape, nextLine } from "@/lib/moon";
 import { calendarMarks, endQuestion, estimate, predictionError } from "@/lib/prediction";
@@ -17,7 +17,7 @@ import { withdraw } from "@/lib/services/account";
 import {
   changePassword, consentDone, createSession, deleteSession, hashPassword, limit, login, purgeExpired, recordConsents, sha256, signup, updateNickname, userFromToken, type User,
 } from "@/lib/services/auth";
-import { CARE_PRESETS, careChip, careGroup, careLabel, clearCare, getCare, orderPresets, recentPresets, recentReplies, respondToCare, saveCare } from "@/lib/services/care";
+import { CARE_PRESETS, careChip, careGroup, careLabel, clearCare, getCare, orderPresets, recentPresets, recentReplies, replySentence, respondToCare, saveCare } from "@/lib/services/care";
 import {
   activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, otherNickname, setPaused, tryClaim, updateSharing,
 } from "@/lib/services/couples";
@@ -93,7 +93,15 @@ describe("배려 칩", () => {
     expect(careChip({ shareWithPartner: false }, true)).toEqual({ label: "나만 봐요", sent: false });
     expect(careChip({ shareWithPartner: true }, false)).toEqual({ label: "나만 봐요", sent: false });
     expect(careChip({ shareWithPartner: true }, true)).toEqual({ label: "답장 기다리는 중", sent: true });
-    expect(careChip({ shareWithPartner: true, response: "will_help" }, true)).toEqual({ label: "도와줄게요", sent: true });
+    expect(careChip({ shareWithPartner: true, response: "will_help" }, true)).toBeNull(); // 답장은 칩 대신 문장으로 보인다
+  });
+
+  it("답장 문장과 시간은 홈과 새 소식이 같은 함수로 만든다", () => {
+    expect(replySentence("도윤", "seen")).toBe("도윤님이 '봤어요'라고 답했어요");
+    expect(replySentence("도윤", "will_help")).toBe("도윤님이 '도와줄게요'라고 답했어요");
+    expect(replySentence("도윤", "done")).toBe("도윤님이 '했어요'라고 답했어요");
+    expect(timeSeoul(new Date("2026-11-03T06:20:00Z"))).toBe("오후 3:20"); // UTC 06:20 = 서울 15:20
+    expect(timeSeoul(new Date("2026-11-02T15:05:00Z"))).toBe("오전 12:05"); // 서울은 이미 다음 날 자정 넘김
   });
 });
 
@@ -1185,7 +1193,9 @@ describe("알림", () => {
     expect(await newsItems(db, me, TODAY)).toEqual([]); // 아직 답장 없음
 
     await respondToCare(db, partner, (await getCare(db, me, TODAY))!.id, "will_help", TODAY);
-    expect(await newsItems(db, me, TODAY)).toMatchObject([{ title: "너님", body: "도와줄게요", when: "오늘", href: "/" }]);
+    const [reply] = await newsItems(db, me, TODAY);
+    const { respondedAt } = (await getCare(db, me, TODAY))!;
+    expect(reply).toMatchObject({ title: "오늘 배려 요청", body: "너님이 '도와줄게요'라고 답했어요", when: timeSeoul(respondedAt!), href: "/" });
     expect((await newsItems(db, partner, TODAY))[0].detail).toBe("내 답장: 도와줄게요");
 
     await setPaused(db, me, true);

@@ -6,13 +6,13 @@ import { Suspense } from "react";
 import { calendarWindow } from "@/lib/calendar";
 import { tipFor } from "@/lib/content/phases";
 import { getDb, type DB } from "@/lib/db";
-import { todaySeoul } from "@/lib/dates";
+import { timeSeoul, todaySeoul } from "@/lib/dates";
 import { bodyChips, type DayLog } from "@/lib/daylog";
 import { CRESCENT, cycleLine, MOON_WAITING, moonShape, nextLine } from "@/lib/moon";
 import { phaseFrom, type Phase } from "@/lib/phase";
 import { calendarMarks, endQuestion, estimate } from "@/lib/prediction";
 import { consentDone, type User } from "@/lib/services/auth";
-import { careChip, careGroup, getCare, orderPresets, recentPresets } from "@/lib/services/care";
+import { careChip, careGroup, getCare, orderPresets, recentPresets, replySentence } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { listDayLogs } from "@/lib/services/daylogs";
 import { partnerView } from "@/lib/services/partner";
@@ -107,7 +107,7 @@ async function ConnectLine({ data }: { data: CareAndPartner }) {
 }
 
 async function CareSlot({ data, group }: { data: CareAndPartner; group: "body" | "mind" | null }) {
-  const { care, couple, used } = await data;
+  const { care, couple, used, partnerName } = await data;
   const canShare = Boolean(couple && !couple.paused);
   const status = careChip(care, canShare);
   const presets = orderPresets(used, group);
@@ -116,6 +116,12 @@ async function CareSlot({ data, group }: { data: CareAndPartner; group: "body" |
       key={`${care?.presets.join()}|${care?.message}|${care?.shareWithPartner}`}
       presets={presets} current={care} canShare={canShare}
       status={status && <Chip icon={<HeartHandshake size={12} aria-hidden />} tone={status.sent ? "period" : "muted"}>{status.label}</Chip>}
+      reply={care?.response && care.respondedAt && (
+        <p className="mt-1 text-[15px] leading-snug">
+          {replySentence(partnerName || "파트너", care.response)}
+          <time dateTime={care.respondedAt.toISOString()} className="ml-1.5 text-[12px] text-muted">{timeSeoul(care.respondedAt)}</time>
+        </p>
+      )}
     />
   );
 }

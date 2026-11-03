@@ -12,7 +12,7 @@ export function exampleHome(today: string) {
     return { id: String(cyclesAgo), startDate, endDate: addDays(startDate, 4) };
   });
   const care: CareView = {
-    id: "example", day: today, presets: ["warm_food", "listen"], message: "오늘 배가 좀 아파", shareWithPartner: true, response: "will_help",
+    id: "example", day: today, presets: ["warm_food", "listen"], message: "오늘 배가 좀 아파", shareWithPartner: true, response: "will_help", respondedAt: null,
   };
   return { periods, care, month: expected.slice(0, 7) }; // 달력은 예상일이 있는 달을 보여준다
 }

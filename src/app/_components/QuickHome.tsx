@@ -79,8 +79,8 @@ type Care = { presets: string[]; message: string | null; shareWithPartner: boole
  * 연결돼 있을 때만(canShare) "나만 보기" 스위치와 "지우기"가 있다. 스위치를 켜면 파트너에게 보내지 않고 나만 저장한다.
  * 연결 전·잠시 멈추기 중에는 어차피 파트너에게 가지 않으므로 둘 다 숨긴다.
  */
-export function QuickCare({ presets, current, canShare, status }: {
-  presets: Record<string, string>; current: Care | null; canShare: boolean; status: React.ReactNode;
+export function QuickCare({ presets, current, canShare, status, reply }: {
+  presets: Record<string, string>; current: Care | null; canShare: boolean; status: React.ReactNode; reply?: React.ReactNode;
 }) {
   const [picked, setPicked] = useState(current?.presets ?? []);
   const [privateOnly, setPrivateOnly] = useState(current ? !current.shareWithPartner : false);
@@ -126,6 +126,7 @@ export function QuickCare({ presets, current, canShare, status }: {
         <h2 className="text-[13px] font-medium text-muted">오늘 필요한 배려</h2>
         {status}
       </div>
+      {reply}
       <div className="mt-2 flex flex-wrap gap-1.5">
         {shown.map(([key, label]) => {
           const on = picked.includes(key);

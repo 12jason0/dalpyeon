@@ -77,6 +77,13 @@ export function timeAgo(at: Date, now: Date = new Date()): string {
   return monthDay(todaySeoul(at));
 }
 
+const TIME_SEOUL = new Intl.DateTimeFormat("ko-KR", { timeZone: "Asia/Seoul", hour: "numeric", minute: "2-digit" });
+
+/** 오후 3:20 (서울 기준) */
+export function timeSeoul(at: Date): string {
+  return TIME_SEOUL.format(at);
+}
+
 /** 10.30 */
 export function shortDay(day: string): string {
   const d = new Date(`${day}T00:00:00Z`);
