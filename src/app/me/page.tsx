@@ -58,7 +58,7 @@ export default async function MePage() {
       <ul className="card mt-3">
         {access.admin && <SettingRow href="/admin/reports" label="운영자 신고 관리" />}
         {user.role === "recorder" && posts.length > 0 && <SettingRow href="/community" label="남친톡에 쓴 내 글" />}
-        <SettingRow href="/me/rules" label="이용 규칙" />
+        {user.role === "partner" && <SettingRow href="/me/rules" label="남친톡 이용 규칙" />}
         <SettingRow href="/me/privacy" label="개인정보 처리방침" />
         <SettingRow href="/me/settings" label="설정" />
       </ul>
