@@ -30,6 +30,7 @@ import { BLOCK } from "./_components/PageSkeleton";
 import { EndQuestion, EndTodayButton, StartTodayButton } from "./_components/PeriodButtons";
 import { QuickCare, QuickLog } from "./_components/QuickHome";
 import { LINE_CARD, SheetLink } from "./_components/Sheet";
+import { TodayRefresh } from "./_components/TodayRefresh";
 import { WeekStrip } from "./_components/WeekStrip";
 
 export const dynamic = "force-dynamic";
@@ -45,10 +46,11 @@ export const metadata: Metadata = {
 
 export default async function Home() {
   const user = await currentUser();
-  if (!user) return <Landing />;
+  if (!user) return <><TodayRefresh today={todaySeoul()} /><Landing /></>;
   if (!consentDone(user)) redirect("/consent");
   return (
     <>
+      <TodayRefresh today={todaySeoul()} />
       <AppHeader user={user} />
       {user.role === "recorder" ? <RecorderHome user={user} /> : <PartnerHome user={user} />}
       <Nav role={user.role} active="home" />

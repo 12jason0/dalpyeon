@@ -16,6 +16,8 @@ self.addEventListener("activate", (event) => {
   })());
 });
 
+const NO_CACHE = /^\/(api|admin|login|signup|join)(\/|$)/;
+
 function isAsset(url) {
   if (url.origin !== self.location.origin) return url.hostname === "cdn.jsdelivr.net"; // Pretendard 글꼴
   return /^\/(_next\/static\/|icon|apple-icon)/.test(url.pathname);
@@ -46,7 +48,8 @@ self.addEventListener("fetch", (event) => {
   if (!VERSION || event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (isAsset(url)) return event.respondWith(cacheFirst(event.request));
-  if (event.request.mode === "navigate" && !/^\/(api|admin)(\/|$)/.test(url.pathname)) event.respondWith(networkFirst(event, url.pathname));
+  // 로그인·가입 화면은 캐시된 HTML을 보여주지 않는다(로그인 상태가 바뀌는 곳이라 지난 화면이 나오면 안 된다). 브라우저가 직접 받는다.
+  if (event.request.mode === "navigate" && !NO_CACHE.test(url.pathname)) event.respondWith(networkFirst(event, url.pathname));
 });
 
 self.addEventListener("push", (event) => {

@@ -10,7 +10,9 @@ import { BackLink } from "../_components/BackLink";
 import { HomeTop } from "../_components/HomeCards";
 import { HomeCalendar } from "../_components/HomeCalendar";
 import { Nav } from "../_components/Nav";
+import { TodayRefresh } from "../_components/TodayRefresh";
 
+export const dynamic = "force-dynamic";
 export const metadata = { title: "달력 — 우리주기" };
 
 /** 기록자의 전체 달력. 파트너는 홈의 달력을 본다. */
@@ -23,6 +25,7 @@ export default async function CalendarPage() {
   const { first, last } = calendarWindow(today);
   return (
     <>
+      <TodayRefresh today={today} />
       <AppHeader user={user} />
       <HomeTop>
         <div className="flex items-center gap-1">

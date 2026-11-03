@@ -14,6 +14,7 @@ import { Nav } from "../_components/Nav";
 import { PeriodForm, UsualCycleForm } from "../_components/PeriodForm";
 import { EditPeriodSheet, PeriodTable } from "../_components/PeriodTable";
 import { Row, Section } from "../_components/Section";
+import { TodayRefresh } from "../_components/TodayRefresh";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
+      <TodayRefresh today={today} />
       <AppHeader user={user} />
       <h1 className="sr-only">리포트</h1>
 
