@@ -2,7 +2,7 @@ import { calendarWindow } from "../calendar";
 import { todaySeoul } from "../dates";
 import type { DayLog } from "../daylog";
 import { CRESCENT, moonShape, type MoonShape } from "../moon";
-import { calendarMarks, estimate, type CalendarMark } from "../prediction";
+import { calendarMarks, estimate, type CalendarMark, type Prediction } from "../prediction";
 import type { User } from "./auth";
 import { sharedCare, type CareView } from "./care";
 import { activeCouple, otherNickname, requireRole } from "./couples";
@@ -15,7 +15,7 @@ export type PartnerView = {
   paused: boolean;
   current: { day: number } | null;
   nextPeriod: { startDate: string; earliestStart: string; latestStart: string } | null;
-  fertileWindow: { startDate: string; endDate: string } | null;
+  fertileWindow: Prediction["fertileWindow"];
   /** 배란 추정일. */
   ovulation: string | null;
   recentPeriods: { startDate: string; endDate: string | null }[];

@@ -29,6 +29,12 @@ describe("주기 시기", () => {
     expect(phaseOn(regular, today)).toBe(phase);
   });
 
+  it("가임기가 추정뿐이면 시기를 나누지 않는다", () => {
+    const few = [{ id: "1", startDate: "2026-10-01", endDate: "2026-10-05" }];
+    expect(estimate(few, [], "2026-10-12").fertileWindow?.tentative).toBe(true);
+    expect(phaseOn(few, "2026-10-12")).toBeNull();
+  });
+
   it("예측이 없으면 생리 중일 때만 menstrual", () => {
     const few = [{ id: "1", startDate: "2026-10-01", endDate: "2026-10-05" }];
     expect(phaseOn(few, "2026-10-03")).toBe("menstrual");

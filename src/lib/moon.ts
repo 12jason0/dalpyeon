@@ -23,16 +23,17 @@ export const MOON_WAITING = "기록이 쌓이면 달이 차올라요";
 export function cycleLine(
   current: { day: number } | null,
   nextStart: string | null,
-  fertile: { startDate: string; endDate: string } | null,
+  fertile: { startDate: string; endDate: string; tentative?: boolean } | null,
   today: string,
 ) {
   if (current) return `생리 ${current.day}일째`;
   const fertileNow = fertile && fertile.startDate <= today && today <= fertile.endDate;
-  if (!nextStart) return fertileNow ? "가임기 예상" : null;
+  const fertileWord = fertile?.tentative ? "가임기 추정" : "가임기 예상";
+  if (!nextStart) return fertileNow ? fertileWord : null;
   const days = diffDays(nextStart, today);
   if (days < 0) return `예정일이 ${-days}일 지났어요`;
   const until = days ? `다음 생리까지 ${days}일` : "오늘이 생리 예정일이에요";
-  return fertileNow ? `가임기 예상 · ${until}` : until;
+  return fertileNow ? `${fertileWord} · ${until}` : until;
 }
 
 /** 다음 생리 예상 범위. 생리 중이거나 범위가 지났으면 말하지 않는다. */

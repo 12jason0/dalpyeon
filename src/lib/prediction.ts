@@ -2,11 +2,11 @@
  * 주기 예측 v1 — 기록 기반의 설명 가능한 참고용 추정. 검증된 의료 알고리즘이 아니다.
  * 규칙: 최근 최대 6개 간격의 가중 평균(최근일수록 크게). 튀는 간격은 빼고 화면에 알린다.
  * 간격 0개는 평소 주기나 28일, 1~2개는 평소 주기와 섞고, 3개부터 실제 간격만 쓴다.
- * 가임기·배란은 간격 3개부터 계산한다. 들쭉날쭉하면 가임기 숨김, 제외한 기록은 양옆 간격을 같이 뺀다.
+ * 가임기·배란은 다음 예상일이 있으면 계산한다. 간격이 3개 미만이거나 들쭉날쭉하면 tentative로 표시한다. 제외한 기록은 양옆 간격을 같이 뺀다.
  */
 import { addDays, diffDays, todaySeoul } from "./dates";
 
-export const DISCLAIMER = "월경 기록 기반의 참고용 추정이며, 실제 배란 확인·피임·진단에 사용할 수 없습니다.";
+export const DISCLAIMER = "생리 기록 기반의 참고용 추정이며, 실제 배란 확인·피임·진단에 사용할 수 없습니다.";
 /** 가임기·배란일을 보여주는 곳마다 함께 쓴다. */
 export const ESTIMATE_NOTE = "추정이에요. 피임 목적으로 쓰지 마세요";
 
@@ -47,7 +47,8 @@ export type Prediction = {
   /** 진행 중인 생리의 남은 예상 기간(내일~예상 종료일). 예상 종료일이 지났으면 null. */
   ongoing: { startDate: string; endDate: string } | null;
   ovulation: { estimatedDate: string; confirmed: false } | null;
-  fertileWindow: { startDate: string; endDate: string } | null;
+  /** tentative: 간격이 3개 미만이거나 들쭉날쭉해서 더 연하게 "추정"으로 보여줄 때. */
+  fertileWindow: { startDate: string; endDate: string; tentative: boolean } | null;
 };
 
 function median(values: number[]): number {
@@ -197,23 +198,16 @@ export function estimate(periods: PeriodInput[], factors: FactorInput[], asOf: s
     earliestStart: addDays(expected, -margin),
     latestStart: addDays(expected, margin),
   };
-  // 간격이 3개 되기 전엔 다음 생리 날짜만 알려 준다. 가임기·배란은 지어내지 않는다.
-  if (intervals.length < 3) return result;
-  result.status = "estimated";
-
-  if (variability > 10) {
-    result.status = "variable_cycles";
-  } else {
-    const ovulation = addDays(expected, -14);
-    result.ovulation = { estimatedDate: ovulation, confirmed: false };
-    result.fertileWindow = { startDate: addDays(ovulation, -5), endDate: addDays(ovulation, 1) };
-  }
+  const enough = intervals.length >= 3;
+  if (enough) result.status = variability > 10 ? "variable_cycles" : "estimated";
   // 예상 범위가 지났는데 새 기록이 없으면 다음 주기로 넘기지 않고 기다린다.
   if (asOf > result.period.latestStart) {
-    result.status = "awaiting_new_record";
-    result.ovulation = null;
-    result.fertileWindow = null;
+    if (enough) result.status = "awaiting_new_record";
+    return result;
   }
+  const ovulation = addDays(expected, -14);
+  result.ovulation = { estimatedDate: ovulation, confirmed: false };
+  result.fertileWindow = { startDate: addDays(ovulation, -5), endDate: addDays(ovulation, 1), tentative: !enough || variability > 10 };
   return result;
 }
 
@@ -239,6 +233,8 @@ export type CalendarEvent = {
   type: "period" | "remaining_period" | "predicted_period" | "estimated_fertile_window" | "estimated_ovulation";
   estimated: boolean;
   recordId: string | null;
+  /** 더 연하게 그릴 가임기·배란일. */
+  tentative?: boolean;
 };
 
 type CalendarPrediction = Pick<Prediction, "period" | "fertileWindow" | "ovulation"> & Partial<Pick<Prediction, "ongoing">>;
@@ -250,24 +246,24 @@ export function calendarEvents(
   end: string,
 ): CalendarEvent[] {
   const events: CalendarEvent[] = [];
-  const span = (first: string, last: string | null | undefined, type: CalendarEvent["type"], estimated: boolean, recordId: string | null = null) => {
+  const span = (first: string, last: string | null | undefined, type: CalendarEvent["type"], estimated: boolean, recordId: string | null = null, tentative?: boolean) => {
     let cursor = first > start ? first : start;
     const lastDay = last || first;
     const stop = lastDay < end ? lastDay : end;
     while (cursor <= stop) {
-      events.push({ date: cursor, type, estimated, recordId });
+      events.push({ date: cursor, type, estimated, recordId, tentative });
       cursor = addDays(cursor, 1);
     }
   };
   for (const p of periods) span(p.startDate, p.endDate, "period", false, p.id ?? null);
   if (prediction.ongoing) span(prediction.ongoing.startDate, prediction.ongoing.endDate, "remaining_period", true);
   if (prediction.period) span(prediction.period.startDate, prediction.period.endDate, "predicted_period", true);
-  if (prediction.fertileWindow) span(prediction.fertileWindow.startDate, prediction.fertileWindow.endDate, "estimated_fertile_window", true);
-  if (prediction.ovulation) span(prediction.ovulation.estimatedDate, prediction.ovulation.estimatedDate, "estimated_ovulation", true);
+  if (prediction.fertileWindow) span(prediction.fertileWindow.startDate, prediction.fertileWindow.endDate, "estimated_fertile_window", true, null, prediction.fertileWindow.tentative);
+  if (prediction.ovulation) span(prediction.ovulation.estimatedDate, prediction.ovulation.estimatedDate, "estimated_ovulation", true, null, prediction.fertileWindow?.tentative);
   return events.sort((a, b) => a.date.localeCompare(b.date) || a.type.localeCompare(b.type));
 }
 
-export type CalendarMark = Pick<CalendarEvent, "date" | "type">;
+export type CalendarMark = Pick<CalendarEvent, "date" | "type" | "tentative">;
 
 /**
  * 달력에 그릴 표시. 지나간 예측은 빼고, 날짜와 종류만 남긴다.
@@ -284,5 +280,5 @@ export function calendarMarks(
   const filled = open?.open ? periods.map((p) => (p.startDate === open.startDate ? { ...p, endDate: today } : p)) : periods;
   return calendarEvents(filled, prediction, start, end)
     .filter((e) => !e.estimated || e.date >= today)
-    .map(({ date, type }) => ({ date, type }));
+    .map(({ date, type, tentative }) => ({ date, type, tentative }));
 }
