@@ -2,7 +2,7 @@
 import { ArrowDown, ArrowUp } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, useTransition } from "react";
-import { calendarWindow, dayLabels, HEADER_ID, HOME_TOP_ID, todayDirection, type TodayDirection } from "@/lib/calendar";
+import { calendarWindow, dayLabels, HEADER_ID, HOME_TOP_ID, pickable, todayDirection, type TodayDirection } from "@/lib/calendar";
 import { dayRange, diffDays, formatDay, monthDay } from "@/lib/dates";
 import type { DayLog } from "@/lib/daylog";
 import { currentPeriod, type CalendarMark } from "@/lib/prediction";
@@ -21,6 +21,12 @@ function Labels({ marks, day }: { marks: CalendarMark[]; day: string }) {
   const labels = dayLabels(marks, day);
   if (!labels.length) return null;
   return <p className="text-[17px] text-muted">{labels.join(" · ")}</p>;
+}
+
+/** 기록 없이 그날 표시만 보여주는 시트. 앞날(기록자·파트너)과 파트너의 지난 날짜에 쓴다. 기록 버튼은 없다. */
+function DayInfo({ marks, day, today }: { marks: CalendarMark[]; day: string; today: string }) {
+  if (dayLabels(marks, day).length) return <Labels marks={marks} day={day} />;
+  return <p className="text-[17px] text-muted">{day > today ? "예정된 일정이 없어요" : "표시된 기록이 없어요"}</p>;
 }
 
 /** 기록자의 날짜 시트. 빈 날은 시작을 남기고, 기록이 있는 날은 날짜·삭제·통증과 기분을 고친다. */
@@ -131,7 +137,10 @@ function EndPrompt({ start, error, onCancel }: { start: string; error?: string; 
   );
 }
 
-/** 이번 달에서 시작하는 세로 달력. 위로 지난 6개월, 아래로 앞으로 6개월이다. quick은 이번 달 바로 위에 둔다. 날짜 시트는 기록자의 오늘과 지난 날짜에 열린다. */
+/**
+ * 이번 달에서 시작하는 세로 달력. 위로 지난 6개월, 아래로 앞으로 6개월이다. quick은 이번 달 바로 위에 둔다.
+ * 모든 날짜를 누를 수 있다. 기록자의 오늘·지난 날짜는 기록 시트, 그 밖(앞날, 파트너)은 그날 표시만 보여준다.
+ */
 export function HomeCalendar({ today, marks, recorder, quick }: {
   today: string;
   marks: CalendarMark[];
@@ -148,14 +157,23 @@ export function HomeCalendar({ today, marks, recorder, quick }: {
   const thisMonth = useRef<HTMLDivElement>(null);
 
   // 첫 칸이 6개월 전이라, 자리를 잡을 때까지 숨겨서 지난달이 먼저 보이지 않게 한다.
+  // 이번 달 맨 위(quick 포함)에 맞추고, 그래도 오늘 줄이 안 보이면 오늘 줄을 가운데로. 애니메이션 없이 바로 옮긴다.
   useLayoutEffect(() => {
     const top = thisMonth.current?.getBoundingClientRect().top ?? 0;
-    window.scrollTo(0, top + window.scrollY - topHeight());
+    window.scrollTo({ top: top + window.scrollY - topHeight(), behavior: "instant" });
+    const cell = todayCell(today)?.getBoundingClientRect();
+    const view = visibleArea();
+    if (cell && todayDirection(cell, view)) {
+      window.scrollTo({ top: window.scrollY + cell.top - view.top - (view.bottom - view.top - cell.height) / 2, behavior: "instant" });
+    }
     setPlaced(true);
-  }, []);
+  }, [today]);
+
+  const close = () => setPicked(null);
 
   const pick = (day: string) => {
     if (!startedOn) return setPicked(day);
+    if (!pickable(day, today)) return setEndError("끝난 날은 오늘까지 고를 수 있어요");
     const id = recorder?.periods.find((p) => p.startDate === startedOn)?.id;
     if (!id) return; // 저장한 기록이 아직 화면에 도착하지 않았다
     const form = new FormData();
@@ -187,19 +205,19 @@ export function HomeCalendar({ today, marks, recorder, quick }: {
       {months.map((m) => (
         <div key={m} ref={m === month ? thisMonth : undefined} className="space-y-4">
           {m === month && quick}
-          <CalendarMonth month={m} marks={marks} today={today} onPick={recorder ? pick : undefined} />
+          <CalendarMonth month={m} marks={marks} today={today} onPick={pick} />
         </div>
       ))}
-      {recorder && (
-        <Sheet open={picked !== null} title={picked ? formatDay(picked) : ""} onClose={() => setPicked(null)}>
-          {picked && (
+      <Sheet open={picked !== null} title={picked ? formatDay(picked) : ""} onClose={close}>
+        {picked && (recorder && pickable(picked, today)
+          ? (
             <RecorderDay
-              day={picked} today={today} marks={marks} data={recorder} onDeleted={() => setPicked(null)}
-              onStarted={() => { setStartedOn(picked); setPicked(null); }}
+              day={picked} today={today} marks={marks} data={recorder} onDeleted={close}
+              onStarted={() => { setStartedOn(picked); close(); }}
             />
-          )}
-        </Sheet>
-      )}
+          )
+          : <DayInfo marks={marks} day={picked} today={today} />)}
+      </Sheet>
     </div>
   );
 }
