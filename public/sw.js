@@ -1,10 +1,11 @@
-// 우리주기 서비스 워커: 푸시 알림, 앱 껍데기 캐시.
+// 디어데이 서비스 워커: 푸시 알림, 앱 껍데기 캐시.
 // 배포마다 등록 주소의 ?v=커밋이 바뀌어 새 워커가 설치되고 옛 캐시가 지워진다. v가 없으면(로컬) 캐시하지 않는다.
 const VERSION = new URL(self.location.href).searchParams.get("v");
 const ASSETS = `assets-${VERSION}`;
 const PAGES = `pages-${VERSION}`; // 건강 기록이 든 HTML. 로그아웃·탈퇴 때 NotificationSettings가 지운다
-// 글꼴 파일은 이름에 내용 해시가 붙어 바뀌면 주소도 바뀐다. 배포가 바뀌어도 지우지 않아서 5.7MB 손글씨를 다시 받지 않는다.
-const FONTS = "fonts-v1";
+// 글꼴 파일은 이름에 내용 해시가 붙어 바뀌면 주소도 바뀐다. 배포가 바뀌어도 지우지 않아서 다시 받지 않는다.
+// v2: 예전 손글씨(5.7MB)가 든 fonts-v1을 activate에서 지운다.
+const FONTS = "fonts-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 
@@ -21,7 +22,7 @@ self.addEventListener("activate", (event) => {
 const NO_CACHE = /^\/(api|admin|login|signup|join)(\/|$)/;
 
 function isAsset(url) {
-  if (url.origin !== self.location.origin) return url.hostname === "cdn.jsdelivr.net"; // Pretendard 글꼴
+  if (url.origin !== self.location.origin) return false;
   return /^\/(_next\/static\/|icon|apple-icon)/.test(url.pathname);
 }
 
@@ -66,9 +67,9 @@ self.addEventListener("push", (event) => {
     data = {};
   }
   event.waitUntil(
-    self.registration.showNotification(data.title || "우리주기", {
+    self.registration.showNotification(data.title || "디어데이", {
       body: data.body || "",
-      icon: "/icon",
+      icon: "/icons/icon-192.png",
       data: { url: data.url || "/" },
     }),
   );

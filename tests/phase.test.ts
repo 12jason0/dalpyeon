@@ -1,6 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import moon from "@/app/_components/brand-moon.json";
 import manifest from "@/app/manifest";
 import SPLASH_SIZES from "@/lib/content/splash-sizes.json";
 import { exampleHome, EXAMPLE_DAYS_UNTIL } from "@/lib/content/example";
@@ -96,8 +95,8 @@ describe("시작 화면", () => {
     expect(readFileSync("src/app/globals.css", "utf8")).toContain("--color-paper: #FBF4F1");
   });
 
-  it("splash.svg의 달은 BrandMoon과 같은 모양이고, 크기마다 PNG가 있다", () => {
-    expect(readFileSync("public/brand/splash.svg", "utf8")).toContain(`d="${moon.d}"`);
+  it("시작 화면 로고와 아이콘이 있고, 크기마다 시작 화면 PNG가 있다", () => {
+    for (const f of ["public/brand/logo.png", "public/brand/logo-dd.png", "public/brand/icon-master.png", "public/icons/apple-icon-180.png", "public/icons/maskable-512.png"]) expect(existsSync(f)).toBe(true);
     for (const { width, height, ratio } of SPLASH_SIZES) expect(existsSync(`public/brand/splash/${width * ratio}x${height * ratio}.png`)).toBe(true);
   });
 });

@@ -10,6 +10,7 @@
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.mjs",
     "db:generate": "drizzle-kit generate",
     "splash": "node scripts/splash.mjs",
+    "icons": "node scripts/icons.mjs",
     "db:seed:pinned": "node --env-file-if-exists=.env.local scripts/seed-pinned.mjs",
     "admin:grant": "node --env-file-if-exists=.env.local scripts/grant-admin.mjs"
   },

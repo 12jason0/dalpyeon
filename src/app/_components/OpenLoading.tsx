@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { BrandMoon } from "./BrandMoon";
+import { BrandLogo } from "./BrandLogo";
 
 let opened = false;
 
@@ -32,7 +32,7 @@ function OpenScreen() {
             strokeDasharray={`${LENGTH / 3} ${LENGTH}`} className="stroke-accent"
           />
         </svg>
-        <BrandMoon size={20} className="absolute left-[18px] top-[18px] text-accent" />
+        <BrandLogo size={20} className="absolute left-[18px] top-[18px]" />
       </div>
       <p className="absolute inset-x-0 top-[calc(50%+2.75rem)] text-center text-[13px] text-muted">불러오는 중</p>
     </div>
