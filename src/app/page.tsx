@@ -10,26 +10,27 @@ import { todaySeoul } from "@/lib/dates";
 import { bodyChips, type DayLog } from "@/lib/daylog";
 import { CRESCENT, cycleLine, MOON_WAITING, moonShape, nextLine } from "@/lib/moon";
 import { phaseFrom, type Phase } from "@/lib/phase";
-import { calendarMarks, DISCLAIMER, endQuestion, ESTIMATE_NOTE, estimate, predictionError } from "@/lib/prediction";
+import { calendarMarks, endQuestion, estimate } from "@/lib/prediction";
 import { consentDone, type User } from "@/lib/services/auth";
-import { CARE_PRESETS, careChip, getCare } from "@/lib/services/care";
+import { careChip, careGroup, getCare, orderPresets, recentPresets } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { listDayLogs } from "@/lib/services/daylogs";
 import { partnerView } from "@/lib/services/partner";
-import { newsFor } from "@/lib/services/push";
 import { currentPeriod, listPeriods, usualCycle } from "@/lib/services/periods";
 import { currentUser } from "@/lib/session";
 import { checkSharingAction } from "./actions";
+import { AppHeader } from "./_components/AppHeader";
 import { Chip, IconBadge } from "./_components/Chip";
 import { CareForm } from "./_components/CareForm";
-import { HOME_TOP_ID, HomeCalendar } from "./_components/HomeCalendar";
-import { CareCard, NewsDot, PredictionNote, recorderStatus, TopBar } from "./_components/HomeCards";
+import { HomeCalendar } from "./_components/HomeCalendar";
+import { CareCard, HomeTop, recorderStatus, TopBar } from "./_components/HomeCards";
 import { Landing } from "./_components/Landing";
 import { Nav } from "./_components/Nav";
 import { BLOCK } from "./_components/PageSkeleton";
 import { EndQuestion, EndTodayButton, StartTodayButton } from "./_components/PeriodButtons";
 import { QuickCare, QuickLog } from "./_components/QuickHome";
 import { LINE_CARD, SheetLink } from "./_components/Sheet";
+import { WeekStrip } from "./_components/WeekStrip";
 
 export const dynamic = "force-dynamic";
 
@@ -48,18 +49,10 @@ export default async function Home() {
   if (!consentDone(user)) redirect("/consent");
   return (
     <>
+      <AppHeader user={user} />
       {user.role === "recorder" ? <RecorderHome user={user} /> : <PartnerHome user={user} />}
       <Nav role={user.role} active="home" />
     </>
-  );
-}
-
-/** 스크롤해도 맨 위에 남는 자리. 달력의 지난달이 이 아래로 지나간다. */
-function HomeTop({ children }: { children: React.ReactNode }) {
-  return (
-    <div id={HOME_TOP_ID} className="sticky top-0 z-10 -mx-6 -mt-8 space-y-2 bg-paper px-6 pb-2 pt-[max(1rem,env(safe-area-inset-top))]">
-      {children}
-    </div>
   );
 }
 
@@ -75,24 +68,10 @@ function TipLine({ phase, today }: { phase: Phase | null; today: string }) {
   );
 }
 
-function CalendarNotes({ children }: { children?: React.ReactNode }) {
-  return (
-    <div className="border-t border-line py-3">
-      {children}
-      <p className="mt-2 text-center text-[11px] leading-relaxed text-muted">가임기·배란일은 {ESTIMATE_NOTE}</p>
-      <p className="mt-1 text-center text-[11px] leading-relaxed text-muted">{DISCLAIMER}</p>
-    </div>
-  );
-}
-
-async function News({ db, user, today, pick }: { db: DB; user: User; today: string; pick: "replies" | "care" }) {
-  return <NewsDot show={(await newsFor(db, user, today))[pick] > 0} />;
-}
-
 /** 위 칸이 먼저 그려지고 뒤에 도착해도 되는 것들. 두 자리가 한 번의 조회를 나눠 쓴다. */
 async function careAndPartner(db: DB, user: User, today: string) {
-  const [care, couple] = await Promise.all([getCare(db, user, today), activeCouple(db, user.id)]);
-  return { care, couple, partnerName: couple ? await otherNickname(db, couple, user) : null };
+  const [care, couple, used] = await Promise.all([getCare(db, user, today), activeCouple(db, user.id), recentPresets(db, user, today)]);
+  return { care, couple, used, partnerName: couple ? await otherNickname(db, couple, user) : null };
 }
 type CareAndPartner = ReturnType<typeof careAndPartner>;
 
@@ -122,23 +101,19 @@ async function ConnectLine({ data }: { data: CareAndPartner }) {
   );
 }
 
-async function CareSlot({ data }: { data: CareAndPartner }) {
-  const { care, couple } = await data;
+async function CareSlot({ data, group }: { data: CareAndPartner; group: "body" | "mind" | null }) {
+  const { care, couple, used } = await data;
   const canShare = Boolean(couple && !couple.paused);
-  const shareHint = !couple
-    ? "파트너와 연결하면 보낼 수 있어요"
-    : couple.paused
-      ? "연결 화면에서 잠시 멈추기를 끄면 보낼 수 있어요"
-      : null;
   const status = careChip(care, canShare);
+  const presets = orderPresets(used, group);
   return (
     <QuickCare
       key={`${care?.presets.join()}|${care?.message}|${care?.shareWithPartner}`}
-      presets={CARE_PRESETS} current={care} canShare={canShare} hint={shareHint}
-      status={<Chip icon={<HeartHandshake size={12} aria-hidden />} tone={status.sent ? "period" : "muted"}>{status.label}</Chip>}
+      presets={presets} current={care} canShare={canShare}
+      status={status && <Chip icon={<HeartHandshake size={12} aria-hidden />} tone={status.sent ? "period" : "muted"}>{status.label}</Chip>}
       more={(
         <SheetLink label="나만 남기기·지우기" title="오늘 필요한 배려">
-          <CareForm presets={CARE_PRESETS} current={care} canShare={canShare} shareHint={shareHint} />
+          <CareForm presets={presets} current={care} canShare={canShare} />
         </SheetLink>
       )}
     />
@@ -162,40 +137,22 @@ async function RecorderHome({ user }: { user: User }) {
   const [periods, usual, logs] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id), listDayLogs(db, user.id)]);
   const data = careAndPartner(db, user, today);
   const prediction = estimate(periods, [], today, usual);
-  const error = prediction.sampleSize >= 3 ? predictionError(periods, usual) : null;
   const current = currentPeriod(periods, today);
   const question = endQuestion(periods, today);
   const { first, last } = calendarWindow(today);
 
   return (
     <>
-      <HomeTop>
-        <TopBar
-          moon={moonShape(prediction, today)} {...recorderStatus(prediction, current, today)}
-          aside={<Suspense><News db={db} user={user} today={today} pick="replies" /></Suspense>}
-        />
-      </HomeTop>
+      <HomeTop><WeekStrip today={today} marks={calendarMarks(periods, prediction, first, last, today)} /></HomeTop>
 
-      <div className="pb-16">
-        <HomeCalendar
-          today={today} marks={calendarMarks(periods, prediction, first, last, today)}
-          recorder={{ periods: periods.map(({ id, startDate, endDate, autoEnded }) => ({ id, startDate, endDate, autoEnded })), logs }}
-          quick={(
-            <div className="space-y-2 pt-2">
-              {question && <EndQuestion question={question} today={today} />}
-              {current && <QuickLog key={today} day={today} initial={logs.find((l) => l.day === today) ?? null} />}
-              <Suspense><ConnectLine data={data} /></Suspense>
-              <Suspense><SharingNotice data={data} /></Suspense>
-              <Suspense fallback={<div className={`${BLOCK} h-40`} />}><CareSlot data={data} /></Suspense>
-              <TipLine phase={phaseFrom(Boolean(current), prediction.fertileWindow, today)} today={today} />
-            </div>
-          )}
-        >
-          <CalendarNotes>
-            {prediction.status === "variable_cycles" && <p className="text-center text-[13px] text-muted">주기 차이가 커서 가임기는 표시하지 않아요.</p>}
-            <PredictionNote error={error} />
-          </CalendarNotes>
-        </HomeCalendar>
+      <div className="space-y-2 pb-3 pt-1">
+        <TopBar moon={moonShape(prediction, today)} {...recorderStatus(prediction, current, today)} />
+        {question && <EndQuestion question={question} today={today} />}
+        {current && <QuickLog key={today} day={today} initial={logs.find((l) => l.day === today) ?? null} />}
+        <Suspense><ConnectLine data={data} /></Suspense>
+        <Suspense><SharingNotice data={data} /></Suspense>
+        <Suspense fallback={<div className={`${BLOCK} h-40`} />}><CareSlot data={data} group={careGroup(Boolean(current), prediction.period?.startDate, today)} /></Suspense>
+        <TipLine phase={phaseFrom(Boolean(current), prediction.fertileWindow, today)} today={today} />
       </div>
 
       {(current?.open || !current) && (
@@ -211,12 +168,11 @@ async function PartnerHome({ user }: { user: User }) {
   const db = await getDb();
   const today = todaySeoul();
   const view = await partnerView(db, user, today);
-  const news = <Suspense><News db={db} user={user} today={today} pick="care" /></Suspense>;
 
   if (!view) {
     return (
       <>
-        <HomeTop><TopBar moon={CRESCENT} main="연결이 필요해요" sub="상대에게 받은 코드를 입력하면 오늘 필요한 배려를 함께 볼 수 있어요." aside={news} /></HomeTop>
+        <HomeTop><TopBar moon={CRESCENT} main="연결이 필요해요" sub="상대에게 받은 코드를 입력하면 오늘 필요한 배려를 함께 볼 수 있어요." /></HomeTop>
         <div className="mt-10"><Link href="/connect" className="btn">코드 입력하기</Link></div>
       </>
     );
@@ -226,7 +182,7 @@ async function PartnerHome({ user }: { user: User }) {
   if (view.paused) {
     return (
       <>
-        <HomeTop><TopBar moon={view.moon} main={`${name}님은 잠시 쉬는 중`} sub="지금은 공유를 잠시 멈췄어요." aside={news} /></HomeTop>
+        <HomeTop><TopBar moon={view.moon} main={`${name}님은 잠시 쉬는 중`} sub="지금은 공유를 잠시 멈췄어요." /></HomeTop>
       </>
     );
   }
@@ -239,16 +195,16 @@ async function PartnerHome({ user }: { user: User }) {
   return (
     <>
       <HomeTop>
-        <TopBar moon={view.moon} main={line} sub={nextLine(view.nextPeriod, today)} aside={news}>
+        <TopBar moon={view.moon} main={line} sub={nextLine(view.nextPeriod, today)}>
           {view.todayBody && <BodyChips log={view.todayBody} />}
         </TopBar>
       </HomeTop>
       <div className="pb-4">
         <HomeCalendar
           today={today} marks={view.calendar}
-          quick={(
-            <div className="space-y-2 pt-2">
-              {first && <CareCard care={first} today={today} featured={first.day === today} />}
+          quick={first && (
+            <div className="space-y-2">
+              <CareCard care={first} today={today} featured={first.day === today} />
               {others.length > 0 && (
                 <details className="px-1 text-[13px]">
                   <summary className="link cursor-pointer list-none leading-9">지난 요청 {others.length}개</summary>
@@ -257,9 +213,7 @@ async function PartnerHome({ user }: { user: User }) {
               )}
             </div>
           )}
-        >
-          <CalendarNotes />
-        </HomeCalendar>
+        />
       </div>
     </>
   );

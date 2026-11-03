@@ -190,13 +190,27 @@ export async function startTodayAction(_: FormState, form: FormData): Promise<Fo
   });
 }
 
+async function myPeriod(db: DB, ownerId: string, form: FormData) {
+  const period = (await listPeriods(db, ownerId)).find((p) => p.id === form.get("id"));
+  if (!period) throw new AppError("기록을 찾을 수 없어요");
+  return period;
+}
+
 export async function endTodayAction(_: FormState, form: FormData): Promise<FormState> {
   return attempt(async () => {
     const user = await requireUser("recorder");
     const db = await getDb();
-    const period = (await listPeriods(db, user.id)).find((p) => p.id === form.get("id"));
-    if (!period) throw new AppError("기록을 찾을 수 없어요");
-    await savePeriod(db, user.id, { ...period, endDate: dayOf(form) });
+    await savePeriod(db, user.id, { ...await myPeriod(db, user.id, form), endDate: dayOf(form) });
+    refresh();
+  });
+}
+
+/** 날짜 시트. 날짜만 바꾸고 예측 제외 표시는 그대로 둔다. */
+export async function savePeriodDatesAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    const user = await requireUser("recorder");
+    const db = await getDb();
+    await savePeriod(db, user.id, { ...await myPeriod(db, user.id, form), startDate: form.get("startDate"), endDate: form.get("endDate") || null });
     refresh();
   });
 }

@@ -4,13 +4,18 @@ import { monthDay } from "@/lib/dates";
 import { endTodayAction, snoozeEndAction, startTodayAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
-/** day를 주면 그 날짜로, 없으면 오늘로 시작한다. */
-export function StartTodayButton({ day }: { day?: string }) {
-  const [state, action] = useActionState<FormState, FormData>(startTodayAction, null);
+/** day를 주면 그 날짜로, 없으면 오늘로 시작한다. onStarted는 저장이 끝난 뒤 불린다. */
+export function StartTodayButton({ day, onStarted }: { day?: string; onStarted?: () => void }) {
+  // 저장되면 시트가 다른 화면으로 바뀌어 이 버튼이 사라지므로, 결과를 받는 자리에서 바로 알린다.
+  const [state, action] = useActionState<FormState, FormData>(async (prev, form) => {
+    const result = await startTodayAction(prev, form);
+    if (result?.ok) onStarted?.();
+    return result;
+  }, null);
   return (
     <form action={action}>
       {day && <input type="hidden" name="day" value={day} />}
-      <Submit>{day ? "이날 시작했어요" : "오늘 시작했어요"}</Submit>
+      <Submit>{day ? "이날 시작" : "오늘 시작했어요"}</Submit>
       <ErrorText message={state?.error} />
     </form>
   );

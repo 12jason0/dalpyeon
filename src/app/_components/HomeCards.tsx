@@ -1,25 +1,13 @@
+import { HOME_TOP_ID } from "@/lib/calendar";
 import { formatDay } from "@/lib/dates";
 import { cycleLine, MOON_WAITING, moonPath, nextLine, type MoonShape } from "@/lib/moon";
 import type { Prediction } from "@/lib/prediction";
-import { CARE_PRESETS, RESPONSES, type CareView } from "@/lib/services/care";
-import { markNewsSeenAction } from "../actions";
+import { errorLabel } from "@/lib/report";
+import { careLabel, RESPONSES, type CareView } from "@/lib/services/care";
 import { CareReplies } from "./QuickHome";
 
 export function Logo() {
   return <p className="text-xl font-semibold tracking-tight text-accent">우리주기</p>;
-}
-
-/** 알림을 거부한 사람도 볼 수 있는 새 소식 표시. */
-export function NewsDot({ show }: { show: boolean }) {
-  if (!show) return null;
-  return (
-    <form action={markNewsSeenAction}>
-      <button type="submit" className="flex h-11 items-center gap-1.5 text-[13px] text-muted">
-        <span className="h-2 w-2 rounded-full bg-accent" aria-hidden />
-        새 소식
-      </button>
-    </form>
-  );
 }
 
 const MOON_RADIUS = 16;
@@ -49,7 +37,7 @@ export function recorderStatus(prediction: Prediction, current: { day: number } 
 }
 
 /** 홈 맨 위의 카드. children은 달과 문구 아래의 칩이다. */
-export function TopBar({ moon, main, sub, aside, children }: Status & { moon: MoonShape; aside?: React.ReactNode; children?: React.ReactNode }) {
+export function TopBar({ moon, main, sub, children }: Status & { moon: MoonShape; children?: React.ReactNode }) {
   return (
     <div className="rounded-[18px] border-[0.5px] border-line bg-gradient-to-br from-period/40 to-fertile px-3.5 py-3 shadow-soft">
       <div className="flex items-center gap-3">
@@ -58,9 +46,17 @@ export function TopBar({ moon, main, sub, aside, children }: Status & { moon: Mo
           <p className="text-[17px] font-semibold leading-snug tracking-tight">{main}</p>
           {sub && <p className="text-[13px] leading-snug text-ink/80">{sub}</p>}
         </div>
-        {aside}
       </div>
       {children && <div className="mt-2 flex flex-wrap gap-1.5">{children}</div>}
+    </div>
+  );
+}
+
+/** 스크롤해도 헤더 바로 아래에 남는 자리. 달력이 이 아래로 지나간다. */
+export function HomeTop({ children }: { children: React.ReactNode }) {
+  return (
+    <div id={HOME_TOP_ID} className="sticky top-[calc(52px+env(safe-area-inset-top))] z-10 -mx-6 -mt-4 space-y-2 bg-paper px-6 pb-2 pt-2">
+      {children}
     </div>
   );
 }
@@ -70,7 +66,7 @@ export function PredictionNote({ error }: { error: { days: number } | null }) {
   return (
     <p className="mt-3 text-center text-[13px] leading-relaxed text-muted">
       기록할수록 정확해지는 예측
-      {error && <span className="block">최근 예측은 평균 {error.days}일 차이</span>}
+      {error && <span className="block">최근 예측 오차 {errorLabel(error.days)}</span>}
     </p>
   );
 }
@@ -82,7 +78,7 @@ export function CareCard({ care, today, featured, readOnly }: { care: CareView; 
       <p className="text-[13px] text-muted">{care.day === today ? "오늘" : formatDay(care.day)}</p>
       <ul className="mt-1 space-y-1">
         {care.presets.map((key) => (
-          <li key={key} className={`font-medium leading-snug ${featured ? "text-xl tracking-tight" : "text-[17px]"}`}>{CARE_PRESETS[key]}</li>
+          <li key={key} className={`font-medium leading-snug ${featured ? "text-xl tracking-tight" : "text-[17px]"}`}>{careLabel(key)}</li>
         ))}
       </ul>
       {care.message && <p className="mt-2 text-[15px] leading-relaxed">“{care.message}”</p>}

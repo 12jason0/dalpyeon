@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useActionState, useState } from "react";
-import { savePeriodAction, saveUsualCycleAction, type FormState } from "../actions";
+import { savePeriodAction, savePeriodDatesAction, saveUsualCycleAction, type FormState } from "../actions";
 import { ErrorText, Submit } from "./Submit";
 
 type Initial = { id: string; startDate: string; endDate: string | null; excluded: boolean; excludeReason: string | null } | null;
@@ -18,6 +18,28 @@ export function UsualCycleForm({ initial }: { initial: number | null }) {
       <ErrorText message={state?.error} />
       {state?.ok && <p className="mt-3 text-sm text-muted">저장했어요.</p>}
       <div className="mt-4"><Submit>평소 주기 저장</Submit></div>
+    </form>
+  );
+}
+
+/** 날짜 시트에서 시작일·끝난 날만 고친다. 예측 제외 표시는 그대로 둔다. */
+export function PeriodDatesForm({ period, today }: { period: { id: string; startDate: string; endDate: string | null }; today: string }) {
+  const [state, action] = useActionState<FormState, FormData>(savePeriodDatesAction, null);
+  return (
+    <form action={action} className="mt-4 space-y-4">
+      <input type="hidden" name="id" value={period.id} />
+      <div className="grid grid-cols-2 gap-6">
+        <label className="block">
+          <span className="text-sm text-muted">시작일</span>
+          <input type="date" name="startDate" className="field" max={today} required defaultValue={period.startDate} />
+        </label>
+        <label className="block">
+          <span className="text-sm text-muted">끝난 날</span>
+          <input type="date" name="endDate" className="field" max={today} defaultValue={period.endDate ?? ""} />
+        </label>
+      </div>
+      <ErrorText message={state?.error} />
+      <Submit>날짜 저장</Submit>
     </form>
   );
 }

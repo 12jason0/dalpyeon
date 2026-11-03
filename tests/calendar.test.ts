@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { barOn, calendarWindow, dayLabels, ovulationOn, pickable, todayDirection, weekBars, weeksOf } from "@/lib/calendar";
+import { barOn, calendarWindow, dayLabels, ovulationOn, ovulationTentative, pickable, todayDirection, weekBars, weekOf, weeksOf } from "@/lib/calendar";
 import { addDays, monthGrid } from "@/lib/dates";
 import { nextLine } from "@/lib/moon";
 import { bodyChips, type DayLog } from "@/lib/daylog";
 import { navFor } from "@/lib/nav";
 import { calendarMarks, estimate, type CalendarMark } from "@/lib/prediction";
-import { cycleBars, painTrend, periodBars } from "@/lib/report";
+import { averageCycle, barWidth, errorLabel, reportRows, signed } from "@/lib/report";
 
 const marks = (type: CalendarMark["type"], ...dates: string[]) => dates.map((date) => ({ date, type }));
 // 2026년 11월 1일이 일요일이라 첫째 주가 1~7일이다.
@@ -27,6 +27,15 @@ describe("달력 범위", () => {
   });
 });
 
+describe("이번 주 띠", () => {
+  it("오늘이 든 주를 일요일부터 7일 돌려주고, 달이 바뀌어도 이어진다", () => {
+    expect(weekOf("2026-11-03")).toEqual(week);
+    expect(weekOf("2026-11-01")[0]).toBe("2026-11-01");
+    expect(weekOf("2026-11-07")[6]).toBe("2026-11-07");
+    expect(weekOf("2026-12-02")).toEqual(["2026-11-29", "2026-11-30", "2026-12-01", "2026-12-02", "2026-12-03", "2026-12-04", "2026-12-05"]);
+  });
+});
+
 describe("막대", () => {
   it("이어진 날은 하나의 막대이고 글자는 시작 칸에만 쓴다", () => {
     expect(weekBars(week, marks("predicted_period", "2026-11-02", "2026-11-03", "2026-11-04"))).toEqual([
@@ -34,11 +43,11 @@ describe("막대", () => {
     ]);
   });
 
-  it("주가 바뀌면 끊어서 다시 그리고 다음 주 시작 칸에 글자를 다시 쓴다", () => {
+  it("주가 바뀌면 끊어서 다시 그리고 글자는 기간의 첫 칸에만 쓴다", () => {
     const span = marks("estimated_fertile_window", "2026-11-06", "2026-11-07", "2026-11-08", "2026-11-09");
     const [first, second] = weeksOf(monthGrid("2026-11").cells);
     expect(weekBars(first, span)).toEqual([{ kind: "fertile", start: 5, span: 2, label: "가임기" }]);
-    expect(weekBars(second, span)).toEqual([{ kind: "fertile", start: 0, span: 2, label: "가임기" }]);
+    expect(weekBars(second, span)).toEqual([{ kind: "fertile", start: 0, span: 2, label: null }]);
   });
 
   it("생리 막대에는 글자가 없고, 진행 중 남은 날은 따로 그린다", () => {
@@ -64,18 +73,27 @@ describe("막대", () => {
   });
 });
 
-describe("배란일 칩", () => {
+describe("배란일 표시", () => {
   const fertile = marks("estimated_fertile_window", "2026-11-02", "2026-11-03", "2026-11-04");
 
-  it("가임기 막대를 끊지 않고 위에 얹힌다", () => {
+  it("가임기 막대를 끊지 않는다", () => {
     const all = [...fertile, ...marks("estimated_ovulation", "2026-11-03")];
     expect(weekBars(week, all)).toEqual([{ kind: "fertile", start: 1, span: 3, label: "가임기" }]);
     expect(ovulationOn(all, "2026-11-03")).toBe(true);
     expect(dayLabels(all, "2026-11-03")).toEqual(["가임기", "배란일"]);
   });
 
-  it("칩이 시작 칸을 차지하면 막대 글자를 뺀다", () => {
-    expect(weekBars(week, [...fertile, ...marks("estimated_ovulation", "2026-11-02")])[0].label).toBeNull();
+  it("배란일이 시작 칸이어도 막대 글자는 남는다", () => {
+    expect(weekBars(week, [...fertile, ...marks("estimated_ovulation", "2026-11-02")])[0].label).toBe("가임기");
+  });
+
+  it("추정이면 연한 막대이고 막대 글자에는 추정을 붙이지 않는다. 시트 글자에는 남는다", () => {
+    const soft = ["2026-11-02", "2026-11-03"].map((date) => ({ date, type: "estimated_fertile_window" as const, tentative: true }));
+    const all = [...soft, { date: "2026-11-03", type: "estimated_ovulation" as const, tentative: true }];
+    expect(weekBars(week, soft)).toEqual([{ kind: "tentative", start: 1, span: 2, label: "가임기" }]);
+    expect(ovulationOn(all, "2026-11-03")).toBe(true);
+    expect(ovulationTentative(all, "2026-11-03")).toBe(true);
+    expect(dayLabels(all, "2026-11-03")).toEqual(["가임기 추정", "배란 추정"]);
   });
 
   it("실제 생리나 생리 예상이 있는 날에는 그리지 않는다", () => {
@@ -146,36 +164,51 @@ describe("하단 메뉴", () => {
   });
 });
 
-describe("리포트 그래프", () => {
-  const starts = ["2026-01-01", "2026-01-29", "2026-02-28", "2026-03-27", "2026-04-25", "2026-05-23", "2026-06-20", "2026-07-20"];
-  const rows = starts.map((startDate) => ({ startDate, endDate: addDays(startDate, 4) }));
+describe("리포트 표", () => {
+  const row = (id: string, startDate: string, days: number | null, extra = {}) => ({
+    id, startDate, endDate: days ? addDays(startDate, days - 1) : null, excluded: false, autoEnded: false, ...extra,
+  });
+  const log = (day: string, pain: DayLog["pain"]): DayLog => ({ day, pain, moods: [] });
+  const rows = [row("a", "2026-08-01", 5), row("b", "2026-08-29", 5), row("c", "2026-09-30", 4), row("d", "2026-10-28", null)];
 
-  it("주기 길이는 최근 6번이고 오래된 것부터 놓인다", () => {
-    expect(cycleBars([...rows].reverse()).map((b) => b.days)).toEqual([30, 27, 29, 28, 28, 30]);
-    expect(cycleBars(rows)[0].day).toBe("2026-01-29"); // 간격의 시작 생리
+  it("최근 기록부터 놓이고, 주기는 다음 기록까지이며 가장 최근 기록은 없다", () => {
+    const result = reportRows(rows, [], 29);
+    expect(result.map((r) => r.id)).toEqual(["d", "c", "b", "a"]);
+    expect(result.map((r) => r.cycle)).toEqual([null, 28, 32, 28]);
+    expect(result.map((r) => r.diff)).toEqual([null, -1, 3, -1]);
   });
 
-  it("예측에서 뺀 기록이 낀 간격은 그리지 않는다", () => {
-    const [a, b, c] = rows;
-    expect(cycleBars([a, { ...b, excluded: true }, c])).toEqual([]);
-    expect(cycleBars([a])).toEqual([]);
+  it("기간은 시작일을 1일째로 세고, 진행 중이면 없다", () => {
+    expect(reportRows(rows, [], 29).map((r) => r.days)).toEqual([null, 4, 5, 5]);
   });
 
-  it("생리 기간은 끝난 기록만, 시작일을 1일째로 센다", () => {
-    expect(periodBars(rows)).toHaveLength(6);
-    expect(periodBars(rows)[0].days).toBe(5);
-    const [a, b, c, d] = rows;
-    expect(periodBars([a, { ...b, endDate: null }, { ...c, autoEnded: true }, { ...d, excluded: true }])).toHaveLength(1);
+  it("평균을 못 구하거나 예측에서 뺀 기록은 차이가 없다", () => {
+    expect(reportRows(rows, [], null).every((r) => r.diff === null)).toBe(true);
+    const excluded = reportRows([rows[0], { ...rows[1], excluded: true }, rows[2]], [], 29);
+    expect(excluded.map((r) => r.diff)).toEqual([null, null, -1]);
+    expect(excluded[1].cycle).toBe(32);
   });
 
-  it("통증은 생리마다 가장 심했던 값이고, 남기지 않은 생리와 진행 중인 생리는 뺀다", () => {
-    const log = (day: string, pain: DayLog["pain"]): DayLog => ({ day, pain, moods: [] });
-    const logs = [log("2026-01-01", "mild"), log("2026-01-02", "severe"), log("2026-02-28", "none"), log("2026-02-28", null), log("2026-03-27", null)];
-    expect(painTrend(rows, logs)).toEqual([
-      { day: "2026-01-01", level: 3, label: "심함" },
-      { day: "2026-02-28", level: 0, label: "없음" },
-    ]);
-    expect(painTrend([{ startDate: "2026-01-01", endDate: null }], logs)).toEqual([]);
+  it("통증은 가장 심했던 단계만큼 점이고, 진행 중인 기록도 세며, 없으면 null", () => {
+    const logs = [log("2026-08-01", "mild"), log("2026-08-02", "severe"), log("2026-08-29", "none"), log("2026-09-30", null), log("2026-10-29", "moderate")];
+    const pain = Object.fromEntries(reportRows(rows, logs, 29).map((r) => [r.id, r.pain]));
+    expect(pain).toEqual({
+      a: { dots: 3, label: "심함" }, b: { dots: 0, label: "없음" }, c: null, d: { dots: 2, label: "보통" },
+    });
+  });
+
+  it("막대는 1일 10px, 최대 70px", () => {
+    expect([1, 5, 7, 12].map(barWidth)).toEqual([10, 50, 70, 70]);
+  });
+
+  it("예측 오차는 반올림하고 1일 미만이면 이내로 적는다", () => {
+    expect([0, 0.8, 1, 1.2, 1.6].map(errorLabel)).toEqual(["±1일 이내", "±1일 이내", "±1일", "±1일", "±2일"]);
+  });
+
+  it("차이 글자와 평균 주기", () => {
+    expect([0, -1, 3].map(signed)).toEqual(["+0", "−1", "+3"]);
+    expect(averageCycle([{ days: 28 }, { days: 31 }])).toBe(30);
+    expect(averageCycle([])).toBeNull();
   });
 });
 
@@ -187,9 +220,9 @@ describe("오늘 칩", () => {
 });
 
 describe("날짜 시트", () => {
-  it("지난 날만 열리고 오늘과 앞날은 열리지 않는다", () => {
+  it("오늘과 지난 날만 열리고 앞날은 열리지 않는다", () => {
     expect(pickable("2026-11-01", "2026-11-02")).toBe(true);
-    expect(pickable("2026-11-02", "2026-11-02")).toBe(false);
+    expect(pickable("2026-11-02", "2026-11-02")).toBe(true);
     expect(pickable("2026-11-03", "2026-11-02")).toBe(false);
   });
 });

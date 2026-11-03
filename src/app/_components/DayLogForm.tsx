@@ -29,7 +29,7 @@ export function DayLogForm({ day, initial }: { day: string; initial: DayLog | nu
         </div>
       </fieldset>
       <fieldset>
-        <legend className="text-sm text-muted">기분 (여러 개 골라도 돼요)</legend>
+        <legend className="text-sm text-muted">기분</legend>
         <div className="mt-2 flex flex-wrap gap-2">
           {Object.entries(MOODS).map(([key, label]) => (
             <label key={key} className={`${PILL} has-[:checked]:border-accent has-[:checked]:bg-accent has-[:checked]:font-semibold has-[:checked]:text-white`}>
