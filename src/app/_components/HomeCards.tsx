@@ -1,7 +1,6 @@
 import { HOME_TOP_ID } from "@/lib/calendar";
 import { cycleLine, MOON_WAITING, moonPath, nextLine, type MoonShape } from "@/lib/moon";
 import type { Prediction } from "@/lib/prediction";
-import { errorLabel } from "@/lib/report";
 import { careLabel, type CareView } from "@/lib/services/care";
 
 export function Logo() {
@@ -57,16 +56,6 @@ export function HomeTop({ children }: { children: React.ReactNode }) {
     <div id={HOME_TOP_ID} className="sticky top-[calc(52px+env(safe-area-inset-top))] z-10 -mx-6 -mt-4 space-y-2 bg-paper px-6 pb-2 pt-2">
       {children}
     </div>
-  );
-}
-
-/** 기록할수록 나아진다는 안내. 간격이 3개 이상이면 지난 예측이 며칠 차이 났는지 함께 보여준다. */
-export function PredictionNote({ error }: { error: { days: number } | null }) {
-  return (
-    <p className="mt-3 text-center text-[13px] leading-relaxed text-muted">
-      기록할수록 정확해지는 예측
-      {error && <span className="block">최근 예측 오차 {errorLabel(error.days)}</span>}
-    </p>
   );
 }
 

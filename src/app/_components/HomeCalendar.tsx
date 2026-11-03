@@ -43,7 +43,7 @@ function RecorderDay({ day, today, marks, data, onStarted, onDone }: {
       <>
         <Labels marks={marks} day={day} />
         <div className="mt-4 text-center"><StartTodayButton day={day} onStarted={onStarted} compact /></div>
-        <p className="mt-1 text-center"><Link href="/report#direct" className={TEXT_BTN}>기간을 한 번에 입력하기</Link></p>
+        <p className="mt-1 text-center"><Link href="/report" className={TEXT_BTN}>기간을 한 번에 입력하기</Link></p>
       </>
     );
   }

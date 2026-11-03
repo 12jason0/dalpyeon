@@ -46,10 +46,9 @@ export function PeriodForm({ initial, today }: { initial: Initial; today: string
         <input type="checkbox" name="excluded" className="switch" checked={excluded} onChange={(e) => setExcluded(e.target.checked)} />
       </label>
       {excluded && (
-        <input name="excludeReason" className="field" maxLength={200} placeholder="이유 (나만 보여요)" defaultValue={state?.values?.excludeReason ?? initial?.excludeReason ?? ""} required />
+        <input name="excludeReason" className="field" maxLength={200} placeholder="이유 (선택, 나만 보여요)" defaultValue={state?.values?.excludeReason ?? initial?.excludeReason ?? ""} />
       )}
       <ErrorText message={state?.error} />
-      {state?.ok && !initial && <p className="text-sm text-muted">저장했어요.</p>}
       <div className="flex items-center gap-4 pt-2">
         <Submit>{initial ? "수정하기" : "기록하기"}</Submit>
         {initial && <Link href="/report" className="shrink-0 px-2 text-sm link">취소</Link>}

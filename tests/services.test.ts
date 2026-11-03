@@ -21,6 +21,7 @@ import {
 import { CARE_PRESETS, careChip, careGroup, careLabel, clearCare, getCare, orderPresets, recentPresets, recentReplies, replySentence, markCareSeen, respondToCare, saveCare } from "@/lib/services/care";
 import { noteDay, NOTES_PER_DAY, partnerExamples, recorderExamples, sendNote, todayNotes } from "@/lib/services/notes";
 import { understandingLine } from "@/lib/phase";
+import { reportRows } from "@/lib/report";
 import {
   activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, otherNickname, setPaused, tryClaim, updateSharing,
 } from "@/lib/services/couples";
@@ -241,19 +242,27 @@ describe("계정", () => {
 });
 
 describe("생리 기록", () => {
+  it("홈에서 \"오늘 끝났어요\"(endTodayAction과 같은 저장)를 누르면 리포트 기록 표에 기간이 바로 잡힌다", async () => {
+    const { me } = await pair();
+    const started = await savePeriod(db, me.id, { startDate: "2026-10-26" }, TODAY);
+    expect(reportRows(await listPeriods(db, me.id), [], null)[0]).toMatchObject({ days: null }); // 진행 중
+    await savePeriod(db, me.id, { ...started, endDate: TODAY }, TODAY);
+    expect(reportRows(await listPeriods(db, me.id), [], null)[0]).toMatchObject({ startDate: "2026-10-26", days: 5 });
+  });
+
   it("저장·수정·겹침·미래 날짜·남의 기록", async () => {
     const { me, you } = await pair();
     const p = await savePeriod(db, me.id, { startDate: "2026-10-02", endDate: "2026-10-06" }, TODAY);
     await expectFail(savePeriod(db, me.id, { startDate: "2026-10-05" }, TODAY), 409);
     await expectFail(savePeriod(db, me.id, { startDate: "2026-11-01" }, TODAY));
     await expectFail(savePeriod(db, me.id, { startDate: "2026-10-10", endDate: "2026-10-09" }, TODAY));
-    await expectFail(savePeriod(db, me.id, { startDate: "2026-09-01", excluded: true }, TODAY)); // 사유 필요
+    expect(await savePeriod(db, me.id, { startDate: "2026-09-01", excluded: true }, TODAY)).toMatchObject({ excluded: true, excludeReason: null }); // 사유는 선택
     const edited = await savePeriod(db, me.id, { id: p.id, startDate: "2026-10-02", endDate: "2026-10-07" }, TODAY);
     expect(edited.endDate).toBe("2026-10-07");
     await expectFail(savePeriod(db, you.id, { id: p.id, startDate: "2026-10-02" }, TODAY), 404);
     await expectFail(deletePeriod(db, you.id, p.id), 404);
     await deletePeriod(db, me.id, p.id);
-    expect(await listPeriods(db, me.id)).toHaveLength(0);
+    expect((await listPeriods(db, me.id)).map((x) => x.startDate)).toEqual(["2026-09-01"]); // 사유 없이 뺀 기록만 남는다
   });
 
   it("예측과 오늘 며칠째", async () => {

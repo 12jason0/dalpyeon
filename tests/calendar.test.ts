@@ -5,7 +5,7 @@ import { nextLine } from "@/lib/moon";
 import { bodyChips, type DayLog } from "@/lib/daylog";
 import { navFor } from "@/lib/nav";
 import { calendarMarks, estimate, type CalendarMark } from "@/lib/prediction";
-import { averageCycle, barWidth, errorLabel, reportRows, signed } from "@/lib/report";
+import { averageCycle, barWidth, cycleCheck, errorLabel, reportRows, signed } from "@/lib/report";
 
 const marks = (type: CalendarMark["type"], ...dates: string[]) => dates.map((date) => ({ date, type }));
 // 2026년 11월 1일이 일요일이라 첫째 주가 1~7일이다.
@@ -263,5 +263,62 @@ describe("날짜 시트", () => {
     expect(pickable("2026-11-01", "2026-11-02")).toBe(true);
     expect(pickable("2026-11-02", "2026-11-02")).toBe(true);
     expect(pickable("2026-11-03", "2026-11-02")).toBe(false);
+  });
+});
+
+describe("주기 체크", () => {
+  /** 시작일 간격(주기)과 기간으로 기록을 만든다. 첫 기록은 2026-01-01. */
+  function history(cycles: number[], days = 5, extra: Partial<{ excluded: boolean; autoEnded: boolean }>[] = []) {
+    let start = "2026-01-01";
+    const starts = [start, ...cycles.map((c) => (start = addDays(start, c)))];
+    return starts.map((s, i) => ({ id: String(i), startDate: s, endDate: addDays(s, days - 1), excluded: false, autoEnded: false, ...extra[i] }));
+  }
+  const chips = (periods: ReturnType<typeof history>) => cycleCheck(periods).lines.map((l) => [l.label, l.chip, l.tone]);
+
+  it("주기 길이: 24~38일이 보통 범위(경계 포함)", () => {
+    expect(cycleCheck(history([24])).lines[0]).toMatchObject({ value: "평균 24일", chip: "보통 범위", tone: "ok" });
+    expect(cycleCheck(history([38])).lines[0]).toMatchObject({ chip: "보통 범위", tone: "ok" });
+    expect(cycleCheck(history([23])).lines[0]).toMatchObject({ chip: "보통보다 짧아요", tone: "out" });
+    expect(cycleCheck(history([39])).lines[0]).toMatchObject({ chip: "보통보다 길어요", tone: "out" });
+  });
+
+  it("생리 기간: 8일까지 보통 범위", () => {
+    expect(cycleCheck(history([28], 8)).lines[1]).toMatchObject({ value: "평균 8일", chip: "보통 범위", tone: "ok" });
+    expect(cycleCheck(history([28], 9)).lines[1]).toMatchObject({ chip: "보통보다 길어요", tone: "out" });
+  });
+
+  it("규칙성: 주기 3개부터, 최대·최소 차이 9일까지 규칙적", () => {
+    expect(cycleCheck(history([26, 30, 35])).lines[2]).toMatchObject({ value: "차이 9일", chip: "규칙적이에요", tone: "ok" });
+    expect(cycleCheck(history([26, 30, 36])).lines[2]).toMatchObject({ chip: "주기 차이가 커요", tone: "out" });
+    expect(cycleCheck(history([28, 28])).lines[2]).toMatchObject({ chip: "1번 더 기록하면 보여요", tone: "wait" });
+  });
+
+  it("기록이 부족하면 연회색 안내 칩, 기록 수를 함께 준다", () => {
+    expect(cycleCheck([])).toMatchObject({ basis: 0, suggestVisit: false });
+    expect(chips([])).toEqual([
+      ["주기 길이", "2번 더 기록하면 보여요", "wait"], ["생리 기간", "1번 더 기록하면 보여요", "wait"], ["주기 규칙성", "3번 더 기록하면 보여요", "wait"],
+    ]);
+    expect(cycleCheck(history([28, 28])).basis).toBe(3);
+  });
+
+  it("예측에서 뺀 기록은 계산에서 빠지고, 그 기록에 붙은 주기도 빠진다", () => {
+    const periods = history([28, 60, 28], 5, [{}, {}, { excluded: true }, {}]);
+    const check = cycleCheck(periods);
+    expect(check.basis).toBe(3);
+    expect(check.lines[0]).toMatchObject({ value: "평균 28일", chip: "보통 범위" });
+    expect(check.lines[2].tone).toBe("wait"); // 남은 주기 1개
+  });
+
+  it("범위 밖이 최근 2번 이어질 때만 진료 안내", () => {
+    expect(cycleCheck(history([28, 40])).suggestVisit).toBe(false);
+    expect(cycleCheck(history([40, 41, 28])).suggestVisit).toBe(false);
+    expect(cycleCheck(history([28, 40, 41])).suggestVisit).toBe(true);
+    expect(cycleCheck(history([28, 28], 9)).suggestVisit).toBe(true); // 기간 9일이 이어짐
+    expect(cycleCheck(history([28, 28], 9, [{}, {}, { autoEnded: true }])).suggestVisit).toBe(true);
+  });
+
+  it("진단 표현을 쓰지 않는다", () => {
+    const text = JSON.stringify([history([20, 45, 50], 10), history([28, 28, 28])].map(cycleCheck));
+    expect(text).not.toMatch(/건강|이상|질환|정상/);
   });
 });

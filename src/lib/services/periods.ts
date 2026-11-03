@@ -23,10 +23,10 @@ export async function savePeriod(db: DB, ownerId: string, input: PeriodInput, to
   const startDate = String(input.startDate ?? "");
   let endDate = input.endDate ? String(input.endDate) : null;
   const excluded = Boolean(input.excluded);
-  const excludeReason = excluded ? String(input.excludeReason ?? "").trim().slice(0, 200) : null;
+  // 사유는 적지 않아도 된다(리포트의 추가 시트에는 사유 칸이 없다)
+  const excludeReason = excluded ? String(input.excludeReason ?? "").trim().slice(0, 200) || null : null;
   if (!isDay(startDate) || startDate > today || startDate < "1900-01-01") fail("시작일은 오늘이나 그 이전 날짜로 적어 주세요");
   if (endDate && (!isDay(endDate) || endDate < startDate || endDate > today)) fail("종료일은 시작일 이후, 오늘 이전으로 적어 주세요");
-  if (excluded && !excludeReason) fail("예측에서 빼는 이유를 적어 주세요");
 
   return db.transaction(async (tx) => {
     const existing = input.id

@@ -1,19 +1,16 @@
 import { getDb } from "@/lib/db";
-import { dayRange, formatDay, todaySeoul } from "@/lib/dates";
-import { nextRange } from "@/lib/moon";
+import { formatDay, todaySeoul } from "@/lib/dates";
 import { summarizeLogs } from "@/lib/daylog";
-import { estimate, predictionError } from "@/lib/prediction";
-import { averageCycle, errorLabel, reportRows } from "@/lib/report";
+import { estimate } from "@/lib/prediction";
+import { averageCycle, cycleCheck, reportRows, type CheckTone, type CycleCheck } from "@/lib/report";
 import { listDayLogs } from "@/lib/services/daylogs";
 import { listPeriods, usualCycle } from "@/lib/services/periods";
 import { requireUser } from "@/lib/session";
 import { deletePeriodAction } from "../actions";
 import { AppHeader } from "../_components/AppHeader";
-import { PredictionNote } from "../_components/HomeCards";
 import { Nav } from "../_components/Nav";
-import { PeriodForm, UsualCycleForm } from "../_components/PeriodForm";
+import { PeriodForm } from "../_components/PeriodForm";
 import { EditPeriodSheet, PeriodTable } from "../_components/PeriodTable";
-import { Row, Section } from "../_components/Section";
 import { TodayRefresh } from "../_components/TodayRefresh";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +19,45 @@ function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="card min-w-0 flex-1 text-center">
       <p className="text-[11px] text-muted">{label}</p>
-      <p className="mt-0.5 text-[17px] font-medium tracking-tight">{value}</p>
+      <p className="mt-0.5 truncate text-[17px] font-medium tracking-tight">{value}</p>
     </div>
+  );
+}
+
+/** 11/23~27, 달이 바뀌면 11/30~12/4, 하루뿐이면 11/23. */
+function shortRange(start: string, end: string) {
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`;
+  if (start === end) return md(start);
+  return `${md(start)}~${start.slice(0, 7) === end.slice(0, 7) ? Number(end.slice(8)) : md(end)}`;
+}
+
+// 보통 범위는 연한 초록, 범위 밖은 연한 주황, 기록 부족은 연회색
+const TONE: Record<CheckTone, string> = {
+  ok: "bg-emerald-50 text-emerald-700",
+  out: "bg-orange-50 text-orange-700",
+  wait: "bg-line text-muted",
+};
+
+function CheckCard({ check }: { check: CycleCheck }) {
+  return (
+    <section aria-labelledby="check-title" className="card mt-3">
+      <div className="flex items-baseline justify-between">
+        <h2 id="check-title" className="text-[13px] font-medium text-muted">주기 체크</h2>
+        <p className="text-[12px] text-muted">기록 {check.basis}번 기준</p>
+      </div>
+      <ul className="mt-1">
+        {check.lines.map((l) => (
+          <li key={l.label} className="flex min-h-11 items-center justify-between gap-3 border-t border-line py-1.5 first:border-t-0">
+            <span className="text-[15px]">
+              {l.label}
+              {l.value && <span className="ml-1.5 text-[13px] text-muted">{l.value}</span>}
+            </span>
+            <span className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] font-medium ${TONE[l.tone]}`}>{l.chip}</span>
+          </li>
+        ))}
+      </ul>
+      {check.suggestVisit && <p className="mt-1 border-t border-line pt-2.5 text-[13px] leading-relaxed">계속 이러면 진료를 받아보는 것도 좋아요</p>}
+    </section>
   );
 }
 
@@ -35,13 +69,12 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   const db = await getDb();
   const [periods, usual, logs] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id), listDayLogs(db, user.id)]);
   const prediction = estimate(periods, [], today, usual);
-  const accuracy = prediction.sampleSize >= 3 ? predictionError(periods, usual) : null;
-  const range = nextRange(null, prediction.period, today);
   const editing = periods.find((p) => p.id === params.edit) ?? null;
   const summaries = [...periods].reverse().filter((p) => p.endDate)
     .map((p) => ({ period: p, ...summarizeLogs(p, logs) })).filter((s) => s.pain || s.mood).slice(0, 6);
   const cycle = averageCycle(prediction.intervals);
   const days = prediction.typicalPeriodDays;
+  const next = prediction.period;
 
   return (
     <>
@@ -52,54 +85,26 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       <div className="flex gap-2">
         <Stat label="평균 주기" value={cycle ? `${cycle}일` : "—"} />
         <Stat label="평균 기간" value={days ? `${days}일` : "—"} />
-        <Stat label="예측 오차" value={accuracy ? errorLabel(accuracy.days) : "—"} />
+        <Stat label="다음 생리" value={next ? shortRange(next.earliestStart, next.latestStart) : "—"} />
       </div>
 
-      {periods.length === 0
-        ? <p className="mt-6 text-[17px] text-muted">아직 기록이 없어요. 기억나는 지난 시작일부터 넣어 보세요.</p>
-        : <PeriodTable rows={reportRows(periods, logs, cycle)} year={today.slice(0, 4)} />}
-
-      <Section title="내 주기">
-        {prediction.sampleSize > 0 && prediction.observedMinDays !== prediction.observedMaxDays && (
-          <Row label="최근 범위" value={`${prediction.observedMinDays}–${prediction.observedMaxDays}일`} />
-        )}
-        {range && <Row label="다음 생리 예상" value={range} />}
-        {prediction.sampleSize > 0 && (
-          <p className="pt-4 text-[13px] leading-relaxed text-muted">
-            최근 {prediction.sampleSize}번의 간격({prediction.intervals.map((i) => i.days).join(" · ")}일)으로 계산했어요. 최근 주기일수록 크게 반영해요.
-          </p>
-        )}
-        <PredictionNote error={accuracy} />
-        {prediction.outlierIntervals.length > 0 && (
-          <div className="pt-6">
-            <h3 className="text-[13px] font-medium text-muted">계산에서 뺀 주기</h3>
-            {prediction.outlierIntervals.map((i) => <Row key={i.from} label={dayRange(i.from, i.to)} value={`${i.days}일`} />)}
-          </div>
-        )}
-        <UsualCycleForm initial={usual} />
-      </Section>
+      <CheckCard check={cycleCheck(periods)} />
+      <PeriodTable rows={reportRows(periods, logs, cycle)} year={today.slice(0, 4)} today={today} />
 
       {summaries.length > 0 && (
-        <Section title="지난 생리 요약">
+        <section aria-labelledby="summary-title" className="card mt-3">
+          <h2 id="summary-title" className="text-[13px] font-medium text-muted">지난 생리 요약</h2>
           <ul>
             {summaries.map((s) => (
-              <li key={s.period.id} className="border-b border-line py-4">
+              <li key={s.period.id} className="border-t border-line py-3 first:border-t-0">
                 <p className="text-[13px] text-muted">{formatDay(s.period.startDate)}</p>
-                {s.pain && <p className="mt-1 text-[17px]">{s.pain}</p>}
-                {s.mood && <p className="mt-1 text-[15px] text-muted">{s.mood}</p>}
+                {s.pain && <p className="mt-1 text-[15px]">{s.pain}</p>}
+                {s.mood && <p className="mt-0.5 text-[15px] text-muted">{s.mood}</p>}
               </li>
             ))}
           </ul>
-        </Section>
-      )}
-
-      <details id="direct" className="mt-16">
-        <summary className="cursor-pointer list-none text-sm text-muted underline underline-offset-4">직접 입력</summary>
-        <section className="mt-8">
-          <h2 className="mb-5 text-sm font-medium text-muted">생리 기록 추가</h2>
-          <PeriodForm initial={null} today={today} />
         </section>
-      </details>
+      )}
 
       {editing && (
         <EditPeriodSheet key={editing.id} title={`${formatDay(editing.startDate)} 기록 수정`}>
