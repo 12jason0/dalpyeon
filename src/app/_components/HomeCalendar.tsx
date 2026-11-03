@@ -140,15 +140,17 @@ function EndPrompt({ start, error, onCancel }: { start: string; error?: string; 
 /**
  * 이번 달에서 시작하는 세로 달력. 위로 지난 6개월, 아래로 앞으로 6개월이다. quick은 이번 달 바로 위에 둔다.
  * 모든 날짜를 누를 수 있다. 기록자의 오늘·지난 날짜는 기록 시트, 그 밖(앞날, 파트너)은 그날 표시만 보여준다.
+ * open을 주면 그 날짜 시트를 열어 둔 채로 시작한다(홈 띠 달력에서 날짜를 눌렀을 때).
  */
-export function HomeCalendar({ today, marks, recorder, quick }: {
+export function HomeCalendar({ today, marks, recorder, quick, open }: {
   today: string;
   marks: CalendarMark[];
   recorder?: RecorderData;
   quick?: React.ReactNode;
+  open?: string | null;
 }) {
   const { month, months } = calendarWindow(today);
-  const [picked, setPicked] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(open ?? null);
   const [placed, setPlaced] = useState(false);
   // 시작을 저장한 뒤 다음 탭을 끝난 날로 받는다. 앱을 닫아도 시작일은 남아 진행 중인 기록이 된다.
   const [startedOn, setStartedOn] = useState<string | null>(null);
@@ -169,7 +171,11 @@ export function HomeCalendar({ today, marks, recorder, quick }: {
     setPlaced(true);
   }, [today]);
 
-  const close = () => setPicked(null);
+  // 띠 달력에서 연 시트를 닫으면 주소의 ?day도 지워서, 새로 고쳐도 다시 열리지 않게 한다.
+  const close = () => {
+    setPicked(null);
+    if (open) window.history.replaceState(window.history.state, "", window.location.pathname);
+  };
 
   const pick = (day: string) => {
     if (!startedOn) return setPicked(day);

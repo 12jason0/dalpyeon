@@ -15,14 +15,16 @@ import { TodayRefresh } from "../_components/TodayRefresh";
 export const dynamic = "force-dynamic";
 export const metadata = { title: "달력 — 우리주기" };
 
-/** 기록자의 전체 달력. 파트너는 홈의 달력을 본다. */
-export default async function CalendarPage() {
+/** 기록자의 전체 달력. 파트너는 홈의 달력을 본다. ?day=YYYY-MM-DD면 그 날짜 시트를 열어 둔 채로 시작한다(홈 띠 달력). */
+export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ day?: string }> }) {
   const user = await requireUser("recorder");
   const db = await getDb();
   const today = todaySeoul();
+  const { first, last } = calendarWindow(today);
+  const { day } = await searchParams;
+  const open = day && /^\d{4}-\d{2}-\d{2}$/.test(day) && day >= first && day <= last ? day : null;
   const [periods, usual, logs] = await Promise.all([listPeriods(db, user.id), usualCycle(db, user.id), listDayLogs(db, user.id)]);
   const prediction = estimate(periods, [], today, usual);
-  const { first, last } = calendarWindow(today);
   return (
     <>
       <TodayRefresh today={today} />
@@ -35,7 +37,7 @@ export default async function CalendarPage() {
       </HomeTop>
       <div className="pb-4">
         <HomeCalendar
-          today={today} marks={calendarMarks(periods, prediction, first, last, today)}
+          today={today} marks={calendarMarks(periods, prediction, first, last, today)} open={open}
           recorder={{ periods: periods.map(({ id, startDate, endDate, autoEnded }) => ({ id, startDate, endDate, autoEnded })), logs }}
         />
       </div>
