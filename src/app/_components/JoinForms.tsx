@@ -35,7 +35,13 @@ export function JoinForm({ code, kakao, kakaoFailed }: { code: string; kakao: bo
       <Consents />
       <ErrorText message={state?.error} />
       <div className="pt-4"><Submit className="btn w-full">시작하기</Submit></div>
-      <p className="text-center text-sm"><Link href="/login" className="link">이미 계정이 있어요</Link></p>
+      <p className="text-center text-sm">
+        {code ? (
+          <Link href={`/join?code=${encodeURIComponent(code)}&login=1`} replace className="link">이미 계정이 있어요 → 로그인</Link>
+        ) : (
+          <Link href="/login" className="link">이미 계정이 있어요</Link>
+        )}
+      </p>
     </form>
   );
 }

@@ -128,6 +128,7 @@ describe("계정", () => {
     await expectFail(login(db, { email: "me@example.com", password: "wrong-pass" }), 401);
     await expectFail(login(db, { email: "nobody@example.com", password: "password-1" }), 401);
     const logged = await login(db, { email: "ME@example.com", password: "password-1" });
+    expect(consentDone(logged)).toBe(true); // 초대 링크 로그인이 동의 화면을 거칠지 이 값으로 정한다
     const { token } = await createSession(db, logged.id);
     expect((await userFromToken(db, token))?.id).toBe(user.id);
     expect(await userFromToken(db, "fake-token")).toBeNull();
@@ -458,8 +459,7 @@ describe("카카오 로그인", () => {
     const { calls, fetcher } = kakao(1001, "지민");
     const user = await signInWithKakao(db, "auth-code", REDIRECT, fetcher);
     expect(user).toMatchObject({ email: null, role: "recorder", nickname: "지민", healthConsentAt: null, ageConfirmedAt: null, transferConsentAt: null });
-    expect(kakaoLanding(user, undefined)).toBe("/consent");
-    expect(kakaoLanding(user, "ABCDEFGH")).toBe("/consent"); // 코드가 있어도 동의가 먼저
+    expect(kakaoLanding(user)).toBe("/consent"); // 초대 코드가 있어도 동의가 먼저
 
     const body = calls[0].init?.body as URLSearchParams;
     expect(Object.fromEntries(body)).toMatchObject({ code: "auth-code", client_id: "rest-key", client_secret: "secret", redirect_uri: REDIRECT });
@@ -472,8 +472,7 @@ describe("카카오 로그인", () => {
     const again = await signInWithKakao(db, "b", REDIRECT, kakao(1001, "바뀐이름").fetcher);
     expect(again.id).toBe(first.id);
     expect(again.nickname).toBe("지민");
-    expect(kakaoLanding(again, undefined)).toBe("/");
-    expect(kakaoLanding(again, "ABCDEFGH")).toBe("/join?code=ABCDEFGH"); // 쓰던 계정은 확인 화면을 거친다
+    expect(kakaoLanding(again)).toBe("/"); // 초대 코드가 있으면 콜백이 바로 연결한다
 
     const other = await signInWithKakao(db, "c", REDIRECT, kakao(1002, "도윤").fetcher);
     expect(other.id).not.toBe(first.id);

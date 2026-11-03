@@ -67,8 +67,7 @@ export async function unlinkKakao(kakaoId: string, fetcher: typeof fetch = fetch
   }
 }
 
-/** 동의 전이면 코드는 쿠키에 남겨 동의 뒤 연결하고, 이미 쓰던 계정은 확인 화면에서 직접 연결하게 한다. */
-export function kakaoLanding(user: SessionUser, joinCode: string | undefined) {
-  if (!consentDone(user)) return "/consent";
-  return joinCode ? `/join?code=${encodeURIComponent(joinCode)}` : "/";
+/** 동의 전이면 동의 화면. 초대 코드는 쿠키에 남아 있다가 동의 뒤(또는 쓰던 계정이면 바로) 연결한다. */
+export function kakaoLanding(user: SessionUser) {
+  return consentDone(user) ? "/" : "/consent";
 }

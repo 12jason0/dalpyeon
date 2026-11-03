@@ -105,14 +105,17 @@ export async function signup(
   return { id, email, role, nickname };
 }
 
-export async function login(db: DB, input: { email: unknown; password: unknown }): Promise<User> {
+export async function login(db: DB, input: { email: unknown; password: unknown }): Promise<SessionUser> {
   const email = String(input.email ?? "").trim().toLowerCase();
   const password = String(input.password ?? "");
   const [row] = await db.select().from(users).where(eq(users.email, email)).limit(1);
   dummyHash ??= hashPassword("timing-dummy-password");
   const ok = await verifyPassword(password, row?.passwordHash ?? await dummyHash);
   if (!row?.passwordHash || !ok) fail("이메일 또는 비밀번호를 확인해 주세요", 401);
-  return { id: row.id, email: row.email, role: row.role, nickname: row.nickname };
+  return {
+    id: row.id, email: row.email, role: row.role, nickname: row.nickname,
+    healthConsentAt: row.healthConsentAt, ageConfirmedAt: row.ageConfirmedAt, transferConsentAt: row.transferConsentAt,
+  };
 }
 
 /** 비밀번호를 바꾸면 지금 쓰는 세션만 남기고 다른 기기는 모두 로그아웃한다. */

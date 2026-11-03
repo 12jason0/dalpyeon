@@ -14,16 +14,15 @@ import {
   type Target,
 } from "@/lib/services/community";
 import {
-  clearSharingNotice, createInvite, disconnect, setPaused, tryClaim, updateSharing,
-  type ClaimProblem,
+  clearSharingNotice, createInvite, disconnect, setPaused, updateSharing,
 } from "@/lib/services/couples";
 import { saveDayLog } from "@/lib/services/daylogs";
 import { deletePeriod, listPeriods, savePeriod, setUsualCycle, snoozeEndQuestion } from "@/lib/services/periods";
 import {
-  markNewsSeen, newsItems, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
+  markNewsSeen, newsItems, notifyCare, notifyReply, removeSubscription, saveSubscription, setReminder,
   type NewsItem,
 } from "@/lib/services/push";
-import { clientIp, endSession, requireLogin, requireUser, sessionToken, startSession, takeJoinCode } from "@/lib/session";
+import { claimInvite, clientIp, endSession, requireLogin, requireUser, sessionToken, landWithInvite, startSession, takeJoinCode } from "@/lib/session";
 
 export type FormState = {
   error?: string; ok?: boolean; code?: string; expiresAt?: string;
@@ -74,48 +73,43 @@ const consentsOf = (form: FormData) => ({
   ageConfirmed: form.get("ageConfirmed") === "on", healthConsent: form.get("healthConsent") === "on", transferConsent: form.get("transferConsent") === "on",
 });
 
-const connectAfterClaim = (problem: ClaimProblem | null, code: string) =>
-  problem ? `/connect?claim=${problem}&code=${encodeURIComponent(code.slice(0, 12))}` : "/connect";
-
 /** /join: 가입 → 세션 → 코드 연결. 코드가 틀려도 가입은 유지하고 연결 화면에서 다시 입력하게 한다. */
 export async function joinAction(_: FormState, form: FormData): Promise<FormState> {
-  const code = String(form.get("code") ?? "");
-  let problem: ClaimProblem | null = null;
+  let next = "/connect";
   const result = await attempt(async () => {
     const db = await getDb();
-    const ip = await clientIp();
-    await limit(db, "signup", ip, 10, 3600);
+    await limit(db, "signup", await clientIp(), 10, 3600);
     const user = await signup(db, {
       email: form.get("email"), password: form.get("password"), nickname: form.get("nickname"), ...consentsOf(form),
     });
     await startSession(user.id);
-    problem = await tryClaim(db, user, code, ip);
-    if (!problem) later((d) => notifyConnected(d, user));
+    next = await claimInvite(user, String(form.get("code") ?? ""));
   }, form, ["email", "nickname", "code"]);
   if (result?.error) return result;
-  redirect(connectAfterClaim(problem, code));
+  redirect(next);
 }
 
 /** 이미 로그인한 사람이 확인 화면에서 [연결하기]를 눌렀을 때만 연결한다. */
 export async function joinWithLinkAction(form: FormData) {
-  const code = String(form.get("code") ?? "");
-  const user = await requireUser();
-  const problem = await tryClaim(await getDb(), user, code, await clientIp());
-  if (!problem) later((d) => notifyConnected(d, user));
+  const next = await claimInvite(await requireUser(), String(form.get("code") ?? ""));
   refresh();
-  redirect(connectAfterClaim(problem, code));
+  redirect(next);
 }
 
+/** 초대 링크(/join?login=1)에서 오면 숨은 code가 있고, 로그인하자마자 연결한다. */
 export async function loginAction(_: FormState, form: FormData): Promise<FormState> {
+  const code = String(form.get("code") ?? "");
+  let next = "/";
   const result = await attempt(async () => {
     const db = await getDb();
     await limit(db, "login-ip", await clientIp(), 30, 900);
     await limit(db, "login-email", String(form.get("email") ?? "").toLowerCase(), 10, 900);
     const user = await login(db, { email: form.get("email"), password: form.get("password") });
     await startSession(user.id);
+    if (code) next = await landWithInvite(user, code);
   }, form, ["email"]);
   if (result?.error) return result;
-  redirect("/");
+  redirect(next);
 }
 
 export async function consentAction(_: FormState, form: FormData): Promise<FormState> {
@@ -125,10 +119,9 @@ export async function consentAction(_: FormState, form: FormData): Promise<FormS
   if (failed?.error) return failed;
   // /join에서 카카오로 가입했다면 동의가 끝난 지금 그 코드로 연결한다
   const code = await takeJoinCode();
-  const problem = code ? await tryClaim(db, user, code, await clientIp()) : null;
-  if (code && !problem) later((d) => notifyConnected(d, user));
+  const next = code ? await claimInvite(user, code) : "/";
   refresh();
-  redirect(code ? connectAfterClaim(problem, code) : "/");
+  redirect(next);
 }
 
 export async function changePasswordAction(_: FormState, form: FormData): Promise<FormState> {

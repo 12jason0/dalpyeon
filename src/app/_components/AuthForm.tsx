@@ -68,10 +68,12 @@ export function PasswordForm() {
   );
 }
 
-export function AuthForm({ mode }: { mode: "login" | "signup" }) {
+/** code가 있으면 초대 링크에서 온 로그인이다. 로그인하자마자 연결하고, 가입 링크는 초대 가입으로 돌려보낸다. */
+export function AuthForm({ mode, code }: { mode: "login" | "signup"; code?: string }) {
   const [state, action] = useActionState<FormState, FormData>(mode === "login" ? loginAction : signupAction, null);
   return (
     <form action={action} className="space-y-6">
+      {code && <input type="hidden" name="code" value={code} />}
       {mode === "signup" && (
         <label className="block">
           <span className="text-sm text-muted">상대에게 보일 이름</span>
@@ -96,14 +98,16 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       </div>
       <p className="text-center text-sm">
         {mode === "login" ? (
-          <Link href="/signup" className="link">처음이에요</Link>
+          <Link href={code ? `/join?code=${encodeURIComponent(code)}` : "/signup"} className="link">처음이에요</Link>
         ) : (
           <Link href="/login" className="link">이미 계정이 있어요</Link>
         )}
       </p>
-      <p className="text-center text-sm text-muted">
-        연인에게 코드를 받았나요? <Link href="/join" className="link">코드로 시작하기</Link>
-      </p>
+      {!code && (
+        <p className="text-center text-sm text-muted">
+          연인에게 코드를 받았나요? <Link href="/join" className="link">코드로 시작하기</Link>
+        </p>
+      )}
     </form>
   );
 }

@@ -3,7 +3,7 @@ import { getDb } from "@/lib/db";
 import { errorKind } from "@/lib/errors";
 import { limit } from "@/lib/services/auth";
 import { KAKAO_CALLBACK, kakaoEnabled, kakaoLanding, signInWithKakao } from "@/lib/services/kakao";
-import { clientIp, kakaoJoinCode, siteOrigin, startSession, takeJoinCode, takeKakaoState } from "@/lib/session";
+import { claimInvite, clientIp, kakaoJoinCode, siteOrigin, startSession, takeJoinCode, takeKakaoState } from "@/lib/session";
 
 export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
@@ -18,7 +18,8 @@ export async function GET(request: Request) {
       await limit(db, "login-ip", await clientIp(), 30, 900);
       const user = await signInWithKakao(db, code, `${await siteOrigin()}${KAKAO_CALLBACK}`);
       await startSession(user.id);
-      next = kakaoLanding(user, joinCode);
+      next = kakaoLanding(user);
+      if (joinCode && next === "/") next = await claimInvite(user, joinCode);
     } catch (e) {
       console.error("kakao login failed", errorKind(e));
     }

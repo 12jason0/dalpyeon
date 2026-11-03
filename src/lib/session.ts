@@ -1,9 +1,13 @@
 import "server-only";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { cache } from "react";
 import { getDb } from "./db";
+import { errorKind } from "./errors";
 import { consentDone, createSession, deleteSession, userFromToken, type SessionUser, type User } from "./services/auth";
+import { tryClaim, type ClaimProblem } from "./services/couples";
+import { notifyConnected } from "./services/push";
 
 const COOKIE = "dp_session";
 const KAKAO_STATE = "dp_kakao_state";
@@ -67,6 +71,29 @@ export async function takeKakaoState() {
 
 export async function kakaoJoinCode() {
   return (await cookies()).get(JOIN_CODE)?.value;
+}
+
+export const connectAfterClaim = (problem: ClaimProblem | null, code: string) =>
+  problem ? `/connect?claim=${problem}&code=${encodeURIComponent(code.slice(0, 12))}` : "/connect";
+
+/** 코드로 연결하고 갈 곳을 돌려준다. 코드가 틀려도 던지지 않고 연결 화면에서 다시 입력하게 한다. */
+export async function claimInvite(user: User, code: string) {
+  const problem = await tryClaim(await getDb(), user, code, await clientIp());
+  if (!problem) after(async () => {
+    try {
+      await notifyConnected(await getDb(), user);
+    } catch (e) {
+      console.error("after failed", errorKind(e));
+    }
+  });
+  return connectAfterClaim(problem, code);
+}
+
+/** 초대 링크로 가입·로그인한 직후. 동의 전이면 코드를 쿠키에 남겨 동의 화면(consentAction)에서 연결한다. */
+export async function landWithInvite(user: SessionUser, code: string) {
+  if (consentDone(user)) return claimInvite(user, code);
+  (await cookies()).set(JOIN_CODE, code.slice(0, 12), shortCookie());
+  return "/consent";
 }
 
 export async function takeJoinCode() {
