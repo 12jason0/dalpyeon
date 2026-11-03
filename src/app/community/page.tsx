@@ -1,4 +1,4 @@
-import { ChevronDown, Heart, MessageCircle, Pencil } from "lucide-react";
+import { ChevronRight, Heart, MessageCircle, Pencil } from "lucide-react";
 import Link from "next/link";
 import { BOARDS, isBoard } from "@/lib/boards";
 import { getDb } from "@/lib/db";
@@ -40,24 +40,23 @@ export default async function CommunityPage({ searchParams }: { searchParams: Pr
         ))}
       </nav>
 
+      {/* 공지: 고정 글을 항상 펼쳐 둔다. 말머리를 골라도 listPosts가 고정 글을 함께 돌려준다 */}
       {pinned.length > 0 && (
-        <details className="group card mt-4 py-0">
-          <summary className="flex h-11 cursor-pointer list-none items-center gap-1.5 text-[15px] [&::-webkit-details-marker]:hidden">
-            <span className="shrink-0 text-period-ink">고정</span>
-            <span className="shrink-0 text-muted">·</span>
-            <span className="min-w-0 flex-1 truncate">{pinned[0].title}{pinned.length > 1 && ` 외 ${pinned.length - 1}개`}</span>
-            <ChevronDown size={18} aria-hidden className="shrink-0 text-muted transition-transform group-open:rotate-180" />
-          </summary>
-          <ul className="border-t-[0.5px] border-line py-1">
-            {pinned.map((p) => (
-              <li key={p.id}><Link href={`/community/${p.id}`} className="block py-2.5 text-[15px]">{p.title}</Link></li>
-            ))}
-          </ul>
-        </details>
+        <ul aria-label="공지" className="mt-4 divide-y-[0.5px] divide-period-dash/40 rounded-[18px] bg-period/40 px-4">
+          {pinned.map((p) => (
+            <li key={p.id}>
+              <Link href={`/community/${p.id}`} className="flex h-11 items-center gap-2 text-[15px]">
+                <span className="shrink-0 rounded-full bg-period px-2 py-0.5 text-[12px] font-medium text-period-ink">공지</span>
+                <span className="min-w-0 flex-1 truncate">{p.title}</span>
+                <ChevronRight size={16} aria-hidden className="shrink-0 text-muted" />
+              </Link>
+            </li>
+          ))}
+        </ul>
       )}
 
       {rest.length === 0 && <p className="mt-10 text-[17px] text-muted">아직 글이 없어요.</p>}
-      <ul className="mt-4 space-y-3">
+      <ul className="mt-8 space-y-3">
         {rest.map((p) => (
           <li key={p.id}>
             <Link href={`/community/${p.id}`} className="card block px-4 py-3.5">
