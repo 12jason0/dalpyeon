@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { barOn, calendarWindow, dayLabels, ovulationOn, ovulationTentative, pickable, todayDirection, weekBars, weekOf, weeksOf } from "@/lib/calendar";
-import { addDays, monthGrid } from "@/lib/dates";
+import { addDays, monthDay, monthGrid } from "@/lib/dates";
 import { nextLine } from "@/lib/moon";
 import { bodyChips, type DayLog } from "@/lib/daylog";
 import { navFor } from "@/lib/nav";
@@ -129,13 +129,43 @@ describe("예측과 달력", () => {
     expect(dates("estimated_ovulation")).toEqual(["2026-11-14"]);
   });
 
-  it("맨 위의 다음 생리 줄: 생리 중에도 보이고, 예측이 없거나 지나면 생략한다", () => {
-    const next = { earliestStart: "2026-11-25", latestStart: "2026-11-29" };
-    expect(nextLine(next, today)).toBe("다음 생리 11월 25일 ~ 29일");
-    expect(nextLine(next, "2026-11-30")).toBeUndefined();
+  it("맨 위의 다음 생리 줄: 범위 대신 예상 시작일 하나, 생리 중에도 보이고, 예측이 없거나 지나면 생략한다", () => {
+    const next = { startDate: "2026-11-27", earliestStart: "2026-11-25", latestStart: "2026-11-29" };
+    expect(nextLine(next, today)).toBe("다음 생리 11월 27일 예상");
+    expect(nextLine(next, "2026-11-27")).toBe("다음 생리 11월 27일 예상");
+    expect(nextLine(next, "2026-11-28")).toBeUndefined();
     expect(nextLine(null, today)).toBeUndefined();
   });
+
+  it("기록자: 맨 위 줄의 날짜는 언제나 달력 '생리 예상' 막대의 시작일과 같다", () => {
+    const histories = {
+      진행중: periods,
+      끝남: [...periods.slice(0, 3), { id: "4", startDate: "2026-10-31", endDate: "2026-11-04" }],
+      기록하나: [{ id: "1", startDate: "2026-10-20", endDate: "2026-10-24" }],
+      들쭉날쭉: [
+        { id: "1", startDate: "2026-06-01", endDate: "2026-06-05" }, { id: "2", startDate: "2026-06-24", endDate: "2026-06-28" },
+        { id: "3", startDate: "2026-08-05", endDate: "2026-08-09" }, { id: "4", startDate: "2026-08-30", endDate: "2026-09-03" },
+      ],
+    };
+    for (const [name, list] of Object.entries(histories)) {
+      // 기록 직후부터 예정일이 한참 지날 때까지 하루씩 넘긴다.
+      // 끝난 날 없는 기록은 크론이 시작 10일 뒤에 끝내므로 그 전까지만 본다
+      const until = list.some((p) => !p.endDate) ? "2026-11-09" : "2027-01-31";
+      for (let day = "2026-11-01"; day <= until; day = addDays(day, 1)) {
+        const prediction = estimate(list, [], day);
+        const { first, last } = calendarWindow(day);
+        expectSameStart(nextLine(prediction.period, day), calendarMarks(list, prediction, first, last, day), prediction.period, day, `${name} ${day}`);
+      }
+    }
+  });
 });
+
+/** 줄이 보이면 막대 시작일과 같은 날짜다. 줄이 없으면 막대가 없거나, 예상일이 지나 막대가 오늘부터 남아 있는 경우뿐이다. */
+function expectSameStart(line: string | undefined, all: CalendarMark[], next: { startDate: string } | null, today: string, where: string) {
+  const start = all.find((m) => barOn(all, m.date) === "predicted")?.date;
+  if (line) expect(line, where).toBe(`다음 생리 ${monthDay(start!)} 예상`);
+  else expect(!start || (next !== null && next.startDate < today), where).toBe(true);
+}
 
 describe("오늘 칩", () => {
   const view = { top: 200, bottom: 760 };

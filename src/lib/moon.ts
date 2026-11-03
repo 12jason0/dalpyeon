@@ -1,5 +1,5 @@
 /** 홈의 달. 주기 위치를 밝은 부분의 비율로 바꾼다. 시작일이 그믐, 예상 주기의 가운데가 보름이다. */
-import { dayRange, diffDays } from "./dates";
+import { dayRange, diffDays, monthDay } from "./dates";
 import type { Prediction } from "./prediction";
 
 export type MoonShape = { lit: number; waxing: boolean };
@@ -41,9 +41,12 @@ export function nextRange(current: unknown, next: { earliestStart: string; lates
   return !current && next && today <= next.latestStart ? `${dayRange(next.earliestStart, next.latestStart)} 사이` : undefined;
 }
 
-/** 홈 맨 위의 작은 줄. 생리 중에도 보여주고, 예상 범위가 지났거나 예측이 없으면 말하지 않는다. */
-export function nextLine(next: { earliestStart: string; latestStart: string } | null, today: string) {
-  return next && today <= next.latestStart ? `다음 생리 ${dayRange(next.earliestStart, next.latestStart)}` : undefined;
+/**
+ * 홈 맨 위의 작은 줄. 달력의 "생리 예상" 막대가 시작하는 날과 같은 날짜를 쓴다(범위는 리포트에서만).
+ * 생리 중에도 보여주고, 예상일이 지났거나 예측이 없으면 말하지 않는다. 지난 예상일은 위 줄이 "며칠 지났어요"로 알려 준다.
+ */
+export function nextLine(next: { startDate: string } | null, today: string) {
+  return next && today <= next.startDate ? `다음 생리 ${monthDay(next.startDate)} 예상` : undefined;
 }
 
 /** 원의 왼쪽 위를 (0,0)으로 둔 밝은 부분. 바깥 반원 + 타원 호(명암 경계)로 그린다. */

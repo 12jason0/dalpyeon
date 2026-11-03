@@ -4,13 +4,13 @@ import { createLocalDb, type DB } from "@/lib/db";
 import {
   blocks, careRequests, careResponses, comments, couples, dayLogs, invitations, periods, posts, pushSubscriptions, rateLimits, reports, sessions, users,
 } from "@/lib/db/schema";
-import { calendarWindow } from "@/lib/calendar";
+import { barOn, calendarWindow } from "@/lib/calendar";
 import { ARTICLES, findArticle } from "@/lib/content/articles";
 import PINNED_POSTS from "@/lib/content/pinned-posts.json";
 import { RULES } from "@/lib/content/rules";
-import { addDays } from "@/lib/dates";
+import { addDays, monthDay } from "@/lib/dates";
 import { summarizeLogs } from "@/lib/daylog";
-import { CRESCENT, moonShape } from "@/lib/moon";
+import { CRESCENT, moonShape, nextLine } from "@/lib/moon";
 import { calendarMarks, endQuestion, estimate, predictionError } from "@/lib/prediction";
 import { AppError, errorKind } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
@@ -585,6 +585,22 @@ describe("공유", () => {
     expect(view.calendar.some((m) => m.date < calendarWindow(asOf).first || m.date > calendarWindow(asOf).last)).toBe(false);
     const sent = JSON.stringify(view);
     for (const secret of ["intervals", "비밀 사유", "excluded", "usual", "permissions"]) expect(sent).not.toContain(secret);
+  });
+
+  it("파트너: 맨 위 줄의 다음 생리 날짜는 언제나 달력 '생리 예상' 막대의 시작일과 같다", async () => {
+    const { me, you } = await pair();
+    await fourPeriods(me);
+    await savePeriod(db, me.id, { startDate: TODAY, endDate: addDays(TODAY, 4) }, addDays(TODAY, 4));
+    await connect(me, you);
+    const partner = await reload(you);
+    // 생리 중 → 다음 예상 전 → 예상일 → 예상일이 지난 뒤까지 하루씩
+    for (let day = TODAY; day <= "2027-01-15"; day = addDays(day, 1)) {
+      const view = (await partnerView(db, partner, day))!;
+      const line = nextLine(view.nextPeriod, day);
+      const start = view.calendar.find((m) => barOn(view.calendar, m.date) === "predicted")?.date;
+      if (line) expect(line, day).toBe(`다음 생리 ${monthDay(start!)} 예상`);
+      else expect(!start || (view.nextPeriod !== null && view.nextPeriod.startDate < day), day).toBe(true);
+    }
   });
 
   it("예전에 꺼 둔 항목 값이 남아 있어도 더는 보지 않는다", async () => {
