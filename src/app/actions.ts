@@ -20,7 +20,8 @@ import {
 import { saveDayLog } from "@/lib/services/daylogs";
 import { deletePeriod, listPeriods, savePeriod, setUsualCycle, snoozeEndQuestion } from "@/lib/services/periods";
 import {
-  markNewsSeen, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
+  markNewsSeen, newsItems, notifyCare, notifyConnected, notifyReply, removeSubscription, saveSubscription, setReminder,
+  type NewsItem,
 } from "@/lib/services/push";
 import { clientIp, endSession, requireLogin, requireUser, sessionToken, startSession, takeJoinCode } from "@/lib/session";
 
@@ -205,12 +206,20 @@ export async function endTodayAction(_: FormState, form: FormData): Promise<Form
   });
 }
 
-/** 날짜 시트. 날짜만 바꾸고 예측 제외 표시는 그대로 둔다. */
-export async function savePeriodDatesAction(_: FormState, form: FormData): Promise<FormState> {
+/**
+ * 날짜 시트의 "저장": 시작일·끝난 날과 그날 통증·기분을 한 번에 저장한다. 예측 제외 표시는 그대로 둔다.
+ * 날짜를 먼저 저장하고(검증 실패면 아무것도 바뀌지 않는다), 바뀐 기간에 그날이 아직 들어 있을 때만 통증·기분을 저장한다.
+ * (기간 밖으로 빠진 날의 통증·기분은 savePeriod가 지운다.)
+ */
+export async function saveRecordDayAction(_: FormState, form: FormData): Promise<FormState> {
   return attempt(async () => {
     const user = await requireUser("recorder");
     const db = await getDb();
-    await savePeriod(db, user.id, { ...await myPeriod(db, user.id, form), startDate: form.get("startDate"), endDate: form.get("endDate") || null });
+    const saved = await savePeriod(db, user.id, { ...await myPeriod(db, user.id, form), startDate: form.get("startDate"), endDate: form.get("endDate") || null });
+    const day = String(form.get("day") ?? "");
+    if (saved.startDate <= day && (!saved.endDate || day <= saved.endDate)) {
+      await saveDayLog(db, user, { day, pain: form.get("pain"), moods: form.getAll("moods") });
+    }
     refresh();
   });
 }
@@ -418,10 +427,13 @@ export async function setReminderAction(form: FormData) {
   refresh();
 }
 
-export async function markNewsSeenAction() {
+/** 새 소식 시트가 열리는 순간: 읽음 처리하고 목록을 돌려준다. 다시 그려지면서 종의 점도 사라진다. */
+export async function openNewsAction(): Promise<NewsItem[]> {
   const user = await requireUser();
-  await markNewsSeen(await getDb(), user);
+  const db = await getDb();
+  const [items] = await Promise.all([newsItems(db, user), markNewsSeen(db, user)]);
   refresh();
+  return items;
 }
 
 // 버튼 하나짜리 동작은 실패해도(이미 처리됨·만료 등) 화면을 새로 고쳐 현재 상태를 보여주면 충분하다.

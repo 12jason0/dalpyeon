@@ -92,7 +92,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
       {mode === "signup" && <Consents />}
       <ErrorText message={state?.error} />
       <div className="pt-4">
-        <Submit>{mode === "login" ? "로그인" : "시작하기"}</Submit>
+        <Submit className="btn w-full">{mode === "login" ? "로그인" : "시작하기"}</Submit>
       </div>
       <p className="text-center text-sm">
         {mode === "login" ? (

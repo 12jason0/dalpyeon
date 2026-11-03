@@ -8,7 +8,7 @@ export function InviteBox({ origin }: { origin: string }) {
   const [copied, setCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const sendLink = async () => {
-    const text = `우리주기에서 연결해 줘 💗 ${origin}/join?code=${state?.code}`;
+    const text = `디어데이에서 연결해 줘 💗 ${origin}/join?code=${state?.code}`;
     try {
       if (navigator.share) await navigator.share({ text });
       else {
@@ -26,7 +26,7 @@ export function InviteBox({ origin }: { origin: string }) {
     <form action={action}>
       {state?.code && (
         <div className="mb-8">
-          <p className="font-mono text-5xl font-semibold tracking-wider">{state.code}</p>
+          <p className="font-mono text-5xl font-medium tracking-wider">{state.code}</p>
           <p className="mt-3 text-[15px] text-muted">{until}까지 쓸 수 있어요. 파트너에게 보내 주세요.</p>
           <button
             type="button"
@@ -54,7 +54,8 @@ export function InviteBox({ origin }: { origin: string }) {
 }
 
 /** 코드를 넣으면 확인 화면(/join)으로 간다. 연결은 거기서 [연결하기]를 눌러야 된다. */
-export function ClaimForm({ code, notice }: { code?: string; notice?: string }) {
+/** secondary면 "다음"을 보조 버튼으로(기록자 연결 화면에서는 "코드 만들기"가 주요 버튼이다). */
+export function ClaimForm({ code, notice, secondary }: { code?: string; notice?: string; secondary?: boolean }) {
   return (
     <form action="/join" className="space-y-6">
       <input
@@ -68,7 +69,7 @@ export function ClaimForm({ code, notice }: { code?: string; notice?: string }) 
         defaultValue={code}
       />
       <ErrorText message={notice} />
-      <button type="submit" className="btn">다음</button>
+      <button type="submit" className={`${secondary ? "btn-line" : "btn"} w-full`}>다음</button>
     </form>
   );
 }
@@ -112,7 +113,7 @@ export function SharingForm({ initial, today }: { initial: Sharing; today: strin
         <ErrorText message={state?.error} />
         {state?.ok && <p className="mt-3 text-sm text-muted">저장했어요.</p>}
         <div className="mt-8">
-          <Submit>시작일 저장</Submit>
+          <Submit className="btn-line">시작일 저장</Submit>
         </div>
       </form>
     </>

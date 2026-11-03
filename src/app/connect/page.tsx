@@ -82,7 +82,7 @@ async function RecorderConnect({ user, claim }: { user: User; claim: Claim }) {
           상대에게 받은 8자리 코드를 입력해 주세요. 연결되면 파트너 화면으로 바뀌어요.
           내 기록은 지워지지 않고, 연결을 끊으면 다시 보여요.
         </p>
-        <ClaimForm code={claim.code} notice={claim.notice} />
+        <ClaimForm code={claim.code} notice={claim.notice} secondary />
       </Section>
     </>
   );

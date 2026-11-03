@@ -21,7 +21,6 @@ import { currentUser } from "@/lib/session";
 import { checkSharingAction } from "./actions";
 import { AppHeader } from "./_components/AppHeader";
 import { Chip, IconBadge } from "./_components/Chip";
-import { CareForm } from "./_components/CareForm";
 import { HomeCalendar } from "./_components/HomeCalendar";
 import { CareCard, HomeTop, recorderStatus, TopBar } from "./_components/HomeCards";
 import { Landing } from "./_components/Landing";
@@ -29,13 +28,16 @@ import { Nav } from "./_components/Nav";
 import { BLOCK } from "./_components/PageSkeleton";
 import { EndQuestion, EndTodayButton, StartTodayButton } from "./_components/PeriodButtons";
 import { QuickCare, QuickLog } from "./_components/QuickHome";
-import { LINE_CARD, SheetLink } from "./_components/Sheet";
+import { LINE_CARD } from "./_components/Sheet";
 import { TodayRefresh } from "./_components/TodayRefresh";
 import { WeekStrip } from "./_components/WeekStrip";
 
 export const dynamic = "force-dynamic";
 
-const TITLE = "우리주기 — 서로의 편이 되는 생리 기록";
+/** "오늘 끝났어요" 버튼은 생리 3일째부터 띄운다. */
+const END_BUTTON_FROM_DAY = 3;
+
+const TITLE = "디어데이 — 서로의 편이 되는 생리 기록";
 const DESCRIPTION = "생리 주기를 기록하고, 필요한 배려를 연인과 주고받아요.";
 
 export const metadata: Metadata = {
@@ -44,14 +46,15 @@ export const metadata: Metadata = {
   openGraph: { title: TITLE, description: DESCRIPTION },
 };
 
-export default async function Home() {
+/** ?news=1이면 새 소식 시트가 열린 채로 시작한다(/news와 푸시 알림이 여기로 온다). */
+export default async function Home({ searchParams }: { searchParams: Promise<{ news?: string }> }) {
   const user = await currentUser();
   if (!user) return <><TodayRefresh today={todaySeoul()} /><Landing /></>;
   if (!consentDone(user)) redirect("/consent");
   return (
     <>
       <TodayRefresh today={todaySeoul()} />
-      <AppHeader user={user} />
+      <AppHeader user={user} openNews={(await searchParams).news !== undefined} />
       {user.role === "recorder" ? <RecorderHome user={user} /> : <PartnerHome user={user} />}
       <Nav role={user.role} active="home" />
     </>
@@ -113,17 +116,12 @@ async function CareSlot({ data, group }: { data: CareAndPartner; group: "body" |
       key={`${care?.presets.join()}|${care?.message}|${care?.shareWithPartner}`}
       presets={presets} current={care} canShare={canShare}
       status={status && <Chip icon={<HeartHandshake size={12} aria-hidden />} tone={status.sent ? "period" : "muted"}>{status.label}</Chip>}
-      more={(
-        <SheetLink label="나만 남기기·지우기" title="오늘 필요한 배려">
-          <CareForm presets={presets} current={care} canShare={canShare} />
-        </SheetLink>
-      )}
     />
   );
 }
 
 /** 오늘의 통증·기분 칩. */
-const BODY_CHIP = "inline-flex h-7 max-w-full items-center gap-1 rounded-full px-2.5 text-[14px] font-medium";
+const BODY_CHIP = "inline-flex h-9 max-w-full items-center gap-1 rounded-full px-3.5 text-[14px] font-medium"; // 칩 기준(ui.ts): 36px·14px·500
 
 /** 파트너 홈 맨 위 카드 바로 아래의 한 줄. 오늘 남긴 통증·기분이 없으면 그리지 않는다. */
 function TodayBody({ name, log }: { name: string; log: Pick<DayLog, "pain" | "moods"> | null }) {
@@ -131,7 +129,7 @@ function TodayBody({ name, log }: { name: string; log: Pick<DayLog, "pain" | "mo
   if (!pain && !mood) return null;
   return (
     <div className="card flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3.5 py-2.5">
-      <p className="mr-0.5 text-[15px] font-semibold tracking-tight">오늘 {name}님</p>
+      <p className="mr-0.5 text-[15px] font-normal tracking-tight">오늘 {name}님</p>
       {pain && <span className={`${BODY_CHIP} bg-period text-period-ink`}><Activity size={14} aria-hidden /><span className="truncate">{pain}</span></span>}
       {mood && <span className={`${BODY_CHIP} bg-fertile text-fertile-ink`}><Smile size={14} aria-hidden /><span className="truncate">{mood}</span></span>}
     </div>
@@ -162,9 +160,12 @@ async function RecorderHome({ user }: { user: User }) {
         <TipLine phase={phaseFrom(Boolean(current), prediction.fertileWindow, today)} today={today} />
       </div>
 
-      {(current?.open || !current) && (
-        <div data-floating className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] z-20 mx-auto max-w-md px-6 [&_.btn]:shadow-lg">
-          {current?.open ? <EndTodayButton id={current.id} /> : <StartTodayButton />}
+      {/* 떠 있는 버튼: 생리 중이 아니면 작은 "오늘 시작했어요", 진행 중이면 3일째부터 "오늘 끝났어요".
+          1~2일째에는 끝날 리 거의 없어서 띄우지 않는다(필요하면 달력에서 끝난 날을 고를 수 있다). */}
+      {/* 끝났는지 묻는 카드(EndQuestion)가 떠 있으면 같은 일을 하는 떠 있는 버튼은 숨긴다(진한 분홍 버튼은 한 화면에 하나). */}
+      {(current ? current.open && current.day >= END_BUTTON_FROM_DAY && !question : true) && (
+        <div data-floating className="pointer-events-none fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+74px)] z-20 mx-auto max-w-md px-6 [&_.btn]:shadow-lg [&_button]:pointer-events-auto">
+          {current ? <EndTodayButton id={current.id} compact /> : <StartTodayButton compact />}
         </div>
       )}
     </>

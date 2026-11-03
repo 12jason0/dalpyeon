@@ -34,7 +34,7 @@ export function JoinForm({ code, kakao, kakaoFailed }: { code: string; kakao: bo
       </label>
       <Consents />
       <ErrorText message={state?.error} />
-      <div className="pt-4"><Submit>시작하기</Submit></div>
+      <div className="pt-4"><Submit className="btn w-full">시작하기</Submit></div>
       <p className="text-center text-sm"><Link href="/login" className="link">이미 계정이 있어요</Link></p>
     </form>
   );
@@ -44,11 +44,11 @@ export function JoinForm({ code, kakao, kakaoFailed }: { code: string; kakao: bo
 export function JoinWithLink({ code }: { code: string }) {
   return (
     <>
-      <h1 className="mt-10 text-3xl font-semibold leading-snug tracking-tight">이 코드로 연결할까요?</h1>
+      <h1 className="mt-10 text-3xl font-medium leading-snug tracking-tight">이 코드로 연결할까요?</h1>
       <p className="mt-3 text-[15px] leading-relaxed text-muted">바로 연결되고 파트너 화면으로 바뀌어요. 내 기록은 지워지지 않아요.</p>
       <form action={joinWithLinkAction} className="mt-10 flex items-center gap-4">
         <input type="hidden" name="code" value={code} />
-        <Submit>연결하기</Submit>
+        <Submit className="btn w-full">연결하기</Submit>
         <Link href="/" className="link shrink-0 px-2 text-sm">취소</Link>
       </form>
     </>

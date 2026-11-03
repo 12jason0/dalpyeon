@@ -10,7 +10,7 @@ export function ConsentForm({ health }: { health: boolean }) {
     <form action={action} className="space-y-6">
       <Consents health={health} />
       <ErrorText message={state?.error} />
-      <Submit>동의하고 계속하기</Submit>
+      <Submit className="btn w-full">동의하고 계속하기</Submit>
     </form>
   );
 }

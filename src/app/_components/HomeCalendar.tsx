@@ -6,13 +6,13 @@ import { calendarWindow, dayLabels, HEADER_ID, HOME_TOP_ID, pickable, todayDirec
 import { dayRange, diffDays, formatDay, monthDay } from "@/lib/dates";
 import type { DayLog } from "@/lib/daylog";
 import { currentPeriod, type CalendarMark } from "@/lib/prediction";
-import { deletePeriodAction, endTodayAction } from "../actions";
+import { endTodayAction } from "../actions";
 import { CalendarMonth } from "./CalendarMonth";
-import { DayLogForm } from "./DayLogForm";
-import { EndTodayButton, StartTodayButton } from "./PeriodButtons";
-import { PeriodDatesForm } from "./PeriodForm";
+import { StartTodayButton } from "./PeriodButtons";
+import { RecordDayForm } from "./RecordDayForm";
 import { Sheet } from "./Sheet";
 import { ErrorText } from "./Submit";
+import { TEXT_BTN } from "./ui";
 
 type PeriodRow = { id: string; startDate: string; endDate: string | null; autoEnded: boolean };
 export type RecorderData = { periods: PeriodRow[]; logs: DayLog[] };
@@ -29,9 +29,12 @@ function DayInfo({ marks, day, today }: { marks: CalendarMark[]; day: string; to
   return <p className="text-[17px] text-muted">{day > today ? "예정된 일정이 없어요" : "표시된 기록이 없어요"}</p>;
 }
 
-/** 기록자의 날짜 시트. 빈 날은 시작을 남기고, 기록이 있는 날은 날짜·삭제·통증과 기분을 고친다. */
-function RecorderDay({ day, today, marks, data, onStarted, onDeleted }: {
-  day: string; today: string; marks: CalendarMark[]; data: RecorderData; onStarted: () => void; onDeleted: () => void;
+/**
+ * 기록자의 날짜 시트. 빈 날은 "이날 시작"(저장되면 시트를 닫고 끝난 날을 고르게 한다),
+ * 기록이 있는 날은 시작일·끝난 날·통증·기분을 한 번에 고치는 폼(RecordDayForm). 저장·삭제하면 시트를 닫는다.
+ */
+function RecorderDay({ day, today, marks, data, onStarted, onDone }: {
+  day: string; today: string; marks: CalendarMark[]; data: RecorderData; onStarted: () => void; onDone: () => void;
 }) {
   const inPeriod = currentPeriod(data.periods, day);
   const record = inPeriod && data.periods.find((p) => p.id === inPeriod.id);
@@ -39,28 +42,21 @@ function RecorderDay({ day, today, marks, data, onStarted, onDeleted }: {
     return (
       <>
         <Labels marks={marks} day={day} />
-        <div className="mt-4"><StartTodayButton day={day} onStarted={onStarted} /></div>
-        <p className="mt-4 text-center text-sm"><Link href="/report#direct" className="link">기간을 한 번에 입력하기</Link></p>
+        <div className="mt-4 text-center"><StartTodayButton day={day} onStarted={onStarted} compact /></div>
+        <p className="mt-1 text-center"><Link href="/report#direct" className={TEXT_BTN}>기간을 한 번에 입력하기</Link></p>
       </>
     );
   }
   return (
     <>
-      <p className="text-[17px]">
+      <p className="text-[15px] text-muted">
         {record.endDate ? `${dayRange(record.startDate, record.endDate)} · ${diffDays(record.endDate, record.startDate) + 1}일` : `${monthDay(record.startDate)}부터 진행 중`}
       </p>
-      <PeriodDatesForm key={`${record.startDate}|${record.endDate}`} period={record} today={today} />
-      {record.endDate !== day && <div className="mt-3"><EndTodayButton id={record.id} day={day} /></div>}
-      <DayLogForm key={day} day={day} initial={data.logs.find((l) => l.day === day) ?? null} />
-      <div className="mt-4 text-center text-sm">
-        <details>
-          <summary className="link cursor-pointer list-none leading-11">이 기록 삭제</summary>
-          <form action={async (form) => { await deletePeriodAction(form); onDeleted(); }}>
-            <input type="hidden" name="id" value={record.id} />
-            <input type="hidden" name="stay" value="on" />
-            <button type="submit" className="h-11 text-period-ink underline underline-offset-4">정말 지울게요</button>
-          </form>
-        </details>
+      <div className="mt-4">
+        <RecordDayForm
+          key={`${record.id}|${record.startDate}|${record.endDate}|${day}`}
+          day={day} today={today} period={record} log={data.logs.find((l) => l.day === day) ?? null} onDone={onDone}
+        />
       </div>
     </>
   );
@@ -125,10 +121,10 @@ function TodayChip({ today }: { today: string }) {
 /** 시작일을 저장한 뒤 끝난 날을 기다리는 안내. 메뉴 바로 위에 떠 있다. */
 function EndPrompt({ start, error, onCancel }: { start: string; error?: string; onCancel: () => void }) {
   return (
-    <div data-floating className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+5.25rem)] z-20 mx-auto max-w-md px-6">
+    <div data-floating className="fixed inset-x-0 bottom-[calc(env(safe-area-inset-bottom)+74px)] z-20 mx-auto max-w-md px-6">
       <div role="status" className="rounded-[18px] border-[0.5px] border-line bg-card px-3.5 py-2.5 shadow-lg">
         <p className="flex items-center justify-between gap-3 text-[15px]">
-          <span className="min-w-0"><b className="font-semibold">{monthDay(start)} 시작</b> · 끝난 날을 눌러 주세요</span>
+          <span className="min-w-0"><b className="font-medium text-accent">{monthDay(start)} 시작</b> · 끝난 날을 눌러 주세요</span>
           <button type="button" onClick={onCancel} className="link h-8 shrink-0 text-[13px]">아직이에요</button>
         </p>
         <ErrorText message={error} />
@@ -211,14 +207,15 @@ export function HomeCalendar({ today, marks, recorder, quick, open }: {
       {months.map((m) => (
         <div key={m} ref={m === month ? thisMonth : undefined} className="space-y-4">
           {m === month && quick}
-          <CalendarMonth month={m} marks={marks} today={today} onPick={pick} />
+          {/* 기록자 전체 달력은 칸·폭을 키운다(숫자 크기는 같다) */}
+          <CalendarMonth month={m} marks={marks} today={today} onPick={pick} size={recorder ? "large" : "normal"} />
         </div>
       ))}
       <Sheet open={picked !== null} title={picked ? formatDay(picked) : ""} onClose={close}>
         {picked && (recorder && pickable(picked, today)
           ? (
             <RecorderDay
-              day={picked} today={today} marks={marks} data={recorder} onDeleted={close}
+              day={picked} today={today} marks={marks} data={recorder} onDone={close}
               onStarted={() => { setStartedOn(picked); close(); }}
             />
           )

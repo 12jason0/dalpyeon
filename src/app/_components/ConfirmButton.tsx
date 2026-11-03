@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { ErrorText } from "./Submit";
+import { btn } from "./ui";
 
 type Confirm = {
   label: string;
@@ -55,14 +56,14 @@ export function ConfirmButton({ label, className, title, note, confirmLabel, dan
         className="m-auto w-[calc(100%-3rem)] max-w-sm rounded-[18px] bg-paper text-ink outline-none backdrop:bg-ink/30"
       >
         <div className="p-6">
-          <h2 className="text-[17px] font-semibold leading-snug tracking-tight">{title}</h2>
+          <h2 className="text-[17px] font-medium leading-snug tracking-tight">{title}</h2>
           {note && <p className="mt-2 text-[13px] leading-relaxed text-muted">{note}</p>}
           <ErrorText message={error} />
           <div className="mt-6 flex gap-2">
-            <button type="button" disabled={pending} onClick={close} className="h-11 flex-1 rounded-full border border-line text-[15px] text-muted disabled:opacity-40">취소</button>
+            <button type="button" disabled={pending} onClick={close} className={`${btn("line", true)} flex-1`}>취소</button>
             <button
               type="button" disabled={pending} onClick={confirm}
-              className={`h-11 flex-1 rounded-full text-[15px] font-semibold text-white disabled:opacity-40 ${danger ? "bg-danger" : "bg-accent"}`}
+              className={`${btn(danger ? "danger" : "primary", true)} flex-1`}
             >
               {pending ? "잠시만요…" : confirmLabel}
             </button>
