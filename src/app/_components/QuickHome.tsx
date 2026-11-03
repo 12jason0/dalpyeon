@@ -1,7 +1,8 @@
 "use client";
-import { useOptimistic, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { MOODS, PAINS, type DayLog, type Mood, type Pain } from "@/lib/daylog";
-import { clearCareAction, respondAction, saveCareAction, saveDayLogAction } from "../actions";
+import type { TodayNotes } from "@/lib/services/notes";
+import { clearCareAction, saveCareAction, saveDayLogAction, sendNoteAction } from "../actions";
 import { ConfirmButton } from "./ConfirmButton";
 import { ErrorText } from "./Submit";
 import { btn, chip } from "./ui";
@@ -79,8 +80,8 @@ type Care = { presets: string[]; message: string | null; shareWithPartner: boole
  * 연결돼 있을 때만(canShare) "나만 보기" 스위치와 "지우기"가 있다. 스위치를 켜면 파트너에게 보내지 않고 나만 저장한다.
  * 연결 전·잠시 멈추기 중에는 어차피 파트너에게 가지 않으므로 둘 다 숨긴다.
  */
-export function QuickCare({ presets, current, canShare, status, reply }: {
-  presets: Record<string, string>; current: Care | null; canShare: boolean; status: React.ReactNode; reply?: React.ReactNode;
+export function QuickCare({ presets, current, canShare, status, seenBy }: {
+  presets: Record<string, string>; current: Care | null; canShare: boolean; status: React.ReactNode; seenBy?: string | null;
 }) {
   const [picked, setPicked] = useState(current?.presets ?? []);
   const [privateOnly, setPrivateOnly] = useState(current ? !current.shareWithPartner : false);
@@ -123,10 +124,9 @@ export function QuickCare({ presets, current, canShare, status, reply }: {
   return (
     <section className="card">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[13px] font-medium text-muted">오늘 필요한 배려</h2>
+        <h2 className="text-[13px] font-medium text-muted">오늘 필요한 배려{seenBy && ` · ${seenBy}님이 봤어요`}</h2>
         {status}
       </div>
-      {reply}
       <div className="mt-2 flex flex-wrap gap-1.5">
         {shown.map(([key, label]) => {
           const on = picked.includes(key);
@@ -173,27 +173,75 @@ export function QuickCare({ presets, current, canShare, status, reply }: {
   );
 }
 
-/** 파트너의 답장. 누르면 바로 저장되고, 실패하면 화면이 원래대로 돌아간다. */
-export function CareReplies({ careId, current, responses, readOnly }: { careId: string; current: string | null; responses: Record<string, string>; readOnly?: boolean }) {
-  const [shown, show] = useOptimistic(current);
-  const [, start] = useTransition();
-  const reply = (key: string) => start(async () => {
-    show(key);
-    const form = new FormData();
-    form.set("careId", careId);
-    form.set("response", key);
-    await respondAction(form);
-  });
+/**
+ * 오늘의 쪽지. 예시를 누르면 바로 보내지 않고 입력칸에 채운다.
+ * 쪽지가 없으면 안내 한 줄과 예시 3개, 있으면 말풍선(상대 왼쪽 회색, 나 오른쪽 연분홍). 상대 쪽지를 받았으면 입력칸 위에 답장 예시 2개.
+ */
+export function NoteCard({ today, hint, examples, max }: { today: TodayNotes; hint: string; examples: string[]; max: number }) {
+  const [text, setText] = useState("");
+  const [error, setError] = useState<string>();
+  const [pending, start] = useTransition();
+  const { notes, left, received } = today;
+
+  const send = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(undefined);
+    start(async () => {
+      const form = new FormData();
+      form.set("body", text);
+      const result = await sendNoteAction(null, form).catch(() => ({ error: FAILED }));
+      if (result?.error) setError(result.error);
+      else setText("");
+    });
+  };
+  const example = (t: string, small = false) => (
+    <button
+      key={t} type="button" onClick={() => setText(t)}
+      className={small ? "h-8 rounded-full bg-period/30 px-3 text-[13px]" : "w-full rounded-xl bg-period/30 px-3 py-2 text-left text-[15px] leading-snug"}
+    >
+      {t}
+    </button>
+  );
+
   return (
-    <div className="mt-3 flex gap-2">
-      {Object.entries(responses).map(([key, label]) => (
-        <button
-          key={key} type="button" aria-pressed={shown === key} onClick={readOnly ? undefined : () => reply(key)}
-          className={`${chip(shown === key, false)} flex-1`}
-        >
-          {label}
-        </button>
-      ))}
-    </div>
+    <section className="card">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="text-[13px] font-medium text-muted">오늘의 쪽지</h2>
+        <p className="text-[12px] text-muted">남은 쪽지 {left}장</p>
+      </div>
+      {notes.length === 0 ? (
+        <>
+          <p className="mt-1.5 text-[15px] leading-snug">{hint}</p>
+          <div className="mt-2 space-y-1.5">{examples.map((t) => example(t))}</div>
+        </>
+      ) : (
+        <ul className="mt-2 space-y-2">
+          {notes.map((n) => (
+            <li key={n.id} className={`flex flex-col ${n.mine ? "items-end" : "items-start"}`}>
+              <p className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-3.5 py-2 text-[15px] leading-snug ${n.mine ? "rounded-br-md bg-period/60" : "rounded-bl-md bg-line"}`}>{n.body}</p>
+              <p className="mt-0.5 px-1 text-[12px] text-muted">{n.name} · {n.time}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      {left > 0 ? (
+        <>
+          {notes.length > 0 && received && <div className="mt-3 flex flex-wrap gap-1.5">{examples.slice(0, 2).map((t) => example(t, true))}</div>}
+          <form onSubmit={send} className="mt-2 flex items-end gap-2">
+            <label className="relative min-w-0 flex-1">
+              <input
+                aria-label="쪽지" value={text} maxLength={max} onChange={(e) => setText(e.target.value)}
+                className="field pr-12"
+              />
+              <span aria-hidden className="absolute bottom-3 right-0 text-[12px] text-muted">{text.length}/{max}</span>
+            </label>
+            <button type="submit" disabled={pending || !text.trim()} className={`${btn("primary", true)} shrink-0 px-4`}>보내기</button>
+          </form>
+          <ErrorText message={error} />
+        </>
+      ) : (
+        <p className="mt-3 text-[15px] text-muted">오늘 쪽지를 다 썼어요</p>
+      )}
+    </section>
   );
 }

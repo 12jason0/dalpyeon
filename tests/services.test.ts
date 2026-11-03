@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createLocalDb, type DB } from "@/lib/db";
 import {
-  blocks, careRequests, careResponses, comments, couples, dayLogs, invitations, periods, posts, pushSubscriptions, rateLimits, reports, sessions, users,
+  blocks, careRequests, careResponses, comments, couples, dayLogs, invitations, notes, periods, posts, pushSubscriptions, rateLimits, reports, sessions, users,
 } from "@/lib/db/schema";
 import { barOn, calendarWindow } from "@/lib/calendar";
 import { ARTICLES, findArticle } from "@/lib/content/articles";
@@ -18,7 +18,9 @@ import { withdraw } from "@/lib/services/account";
 import {
   changePassword, consentDone, createSession, deleteSession, hashPassword, limit, login, purgeExpired, recordConsents, sha256, signup, updateNickname, userFromToken, type User,
 } from "@/lib/services/auth";
-import { CARE_PRESETS, careChip, careGroup, careLabel, clearCare, getCare, orderPresets, recentPresets, recentReplies, replySentence, respondToCare, saveCare } from "@/lib/services/care";
+import { CARE_PRESETS, careChip, careGroup, careLabel, clearCare, getCare, orderPresets, recentPresets, recentReplies, replySentence, markCareSeen, respondToCare, saveCare } from "@/lib/services/care";
+import { noteDay, NOTES_PER_DAY, partnerExamples, recorderExamples, sendNote, todayNotes } from "@/lib/services/notes";
+import { understandingLine } from "@/lib/phase";
 import {
   activeCouple, claimInvite, claimWithLimit, clearSharingNotice, createInvite, disconnect, otherNickname, setPaused, tryClaim, updateSharing,
 } from "@/lib/services/couples";
@@ -33,7 +35,7 @@ import {
 } from "@/lib/services/periods";
 import { partnerView } from "@/lib/services/partner";
 import {
-  cronAuthorized, markNewsSeen, newsFor, newsItems, notifyCare, notifyConnected, notifyReply, reminderEnabled, removeSubscription, saveSubscription,
+  cronAuthorized, markNewsSeen, newsFor, newsItems, notifyCare, notifyConnected, notifyNote, reminderEnabled, removeSubscription, saveSubscription,
   sendPush, sendReminders, setReminder, type Sender,
 } from "@/lib/services/push";
 
@@ -93,7 +95,7 @@ describe("배려 칩", () => {
     expect(careChip(null, false)).toBeNull();
     expect(careChip({ shareWithPartner: false }, true)).toEqual({ label: "나만 봐요", sent: false });
     expect(careChip({ shareWithPartner: true }, false)).toEqual({ label: "나만 봐요", sent: false });
-    expect(careChip({ shareWithPartner: true }, true)).toEqual({ label: "답장 기다리는 중", sent: true });
+    expect(careChip({ shareWithPartner: true }, true)).toEqual({ label: "보냈어요", sent: true });
     expect(careChip({ shareWithPartner: true, response: "will_help" }, true)).toBeNull(); // 답장은 칩 대신 문장으로 보인다
   });
 
@@ -338,7 +340,7 @@ describe("커플 연결", () => {
     const old = await createInvite(db, me);
     await db.update(invitations).set({ status: "pending", claimantId: you.id });
     await expectFail(claimInvite(db, third, old.code), 404);
-    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0 });
+    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0, notes: 0 });
     expect(await activeCouple(db, you.id)).toBeNull();
     await connect(me, third); // 기록자는 새 코드로 다른 사람과 연결할 수 있다
     const [row] = await db.select().from(invitations).where(eq(invitations.claimantId, you.id));
@@ -1088,11 +1090,9 @@ describe("알림", () => {
     await db.update(users).set({ nickname: "지수" }).where(eq(users.id, me.id));
     await saveCare(db, me, { presets: ["rest"], message: "배가 너무 아파", share: true }, TODAY);
     await notifyCare(db, me, TODAY, sender);
-    const care = (await getCare(db, me, TODAY))!;
     await db.update(users).set({ nickname: "" }).where(eq(users.id, partner.id));
-    await respondToCare(db, partner, care.id, "seen", TODAY);
-    await notifyReply(db, partner, care.id, "seen", TODAY, sender);
-    expect(sent.map((m) => [m.title, m.body])).toEqual([["지수", "배려 요청을 보냈어요"], ["파트너", "봤어요"]]);
+    await notifyNote(db, partner, me.id, "핫팩 챙겨갈게", sender);
+    expect(sent.map((m) => [m.title, m.body])).toEqual([["지수", "배려 요청을 보냈어요"], ["파트너", "핫팩 챙겨갈게"]]);
     const text = JSON.stringify(sent);
     expect(text).not.toContain("배가 너무 아파");
     expect(text).not.toContain(careLabel("rest"));
@@ -1111,52 +1111,22 @@ describe("알림", () => {
     await disconnect(db, me);
     const { sent, sender } = outbox();
     await notifyCare(db, me, TODAY, sender);
-    await notifyReply(db, await reload(partner), "any", "seen", TODAY, sender);
     expect(sent).toEqual([]);
+    await expectFail(sendNote(db, await reload(partner), "안녕"), 404);
   });
 
-  it("답장은 바뀔 때마다 기록자에게 파트너 이름과 답장 그대로. 같은 답장을 다시 누르면 보내지 않는다", async () => {
+  it("쪽지 알림은 받는 사람에게 보낸 사람 이름과 쪽지 그대로. 보낸 사람마다 1분에 3번까지", async () => {
     const { me, partner } = await shared();
     const { sent, sender } = outbox();
-    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
-    const care = (await getCare(db, me, TODAY))!;
-    // respondAction과 같은 순서: 바뀌었을 때만 알린다
-    const reply = async (response: "seen" | "will_help" | "done") => {
-      const changed = await respondToCare(db, partner, care.id, response, TODAY);
-      if (changed) await notifyReply(db, partner, care.id, response, TODAY, sender);
-      return changed;
-    };
-    expect(await reply("seen")).toBe(true);
-    expect(await reply("seen")).toBe(false); // 같은 답장
-    expect(await reply("will_help")).toBe(true);
-    expect(await reply("done")).toBe(true);
+    for (const body of ["하나", "둘", "셋", "넷"]) await notifyNote(db, partner, me.id, body, sender);
     expect(sent).toMatchObject([
-      { endpoint: sub("me").endpoint, title: "너", body: "봤어요", url: "/news" },
-      { title: "너", body: "도와줄게요" },
-      { title: "너", body: "했어요" },
+      { endpoint: sub("me").endpoint, title: "너", body: "하나", url: "/" }, { body: "둘" }, { body: "셋" },
     ]);
-    expect((await getCare(db, me, TODAY))?.response).toBe("done");
-
-    await setPaused(db, me, true);
-    await notifyReply(db, partner, care.id, "seen", TODAY, sender); // 잠시 멈추면 보내지 않는다
-    expect(sent).toHaveLength(3);
-  });
-
-  it("같은 요청의 답장 알림은 1분 안에 3번까지만, 1분이 지나면 다시 보낸다", async () => {
-    const { me, partner } = await shared();
-    const { sent, sender } = outbox();
-    await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY);
-    const care = (await getCare(db, me, TODAY))!;
-    for (const response of ["seen", "will_help", "done", "seen", "will_help"] as const) {
-      if (await respondToCare(db, partner, care.id, response, TODAY)) await notifyReply(db, partner, care.id, response, TODAY, sender);
-    }
-    expect(sent.map((m) => m.body)).toEqual(["봤어요", "도와줄게요", "했어요"]);
-    expect((await getCare(db, me, TODAY))?.response).toBe("will_help"); // 답장 저장은 막지 않는다
-
+    await notifyNote(db, me, partner.id, "나도", sender); // 상대는 따로 센다
+    expect(sent.at(-1)).toMatchObject({ endpoint: sub("you").endpoint, title: "나", body: "나도" });
     await db.update(rateLimits).set({ resetAt: new Date(Date.now() - 1000) }); // 1분이 지남
-    await respondToCare(db, partner, care.id, "done", TODAY);
-    await notifyReply(db, partner, care.id, "done", TODAY, sender);
-    expect(sent.map((m) => m.body)).toEqual(["봤어요", "도와줄게요", "했어요", "했어요"]);
+    await notifyNote(db, partner, me.id, "다섯", sender);
+    expect(sent.at(-1)).toMatchObject({ body: "다섯" });
   });
 
   it("발송이 실패해도 저장된 내용은 그대로이고 오류가 밖으로 나오지 않는다", async () => {
@@ -1199,7 +1169,7 @@ describe("알림", () => {
 
   it("새 소식: 안 읽은 답장, 답 안 한 요청", async () => {
     const { me, you } = await pair();
-    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0 });
+    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0, notes: 0 });
 
     await connect(me, you);
     const partner = await reload(you);
@@ -1228,7 +1198,7 @@ describe("알림", () => {
     await saveCare(db, me, { presets: ["rest"], message: "배 아파", share: true }, TODAY);
     expect(await newsItems(db, partner, TODAY)).toEqual([{
       id: expect.stringMatching(/^care-/), title: "나님의 배려 요청", body: `${careLabel("rest")} · “배 아파”`,
-      detail: "아직 답장하지 않았어요", when: "오늘", href: "/",
+      detail: "", when: "오늘", href: "/",
     }]);
     expect(await newsItems(db, me, TODAY)).toEqual([]); // 아직 답장 없음
 
@@ -1236,7 +1206,7 @@ describe("알림", () => {
     const [reply] = await newsItems(db, me, TODAY);
     const { respondedAt } = (await getCare(db, me, TODAY))!;
     expect(reply).toMatchObject({ title: "오늘 배려 요청", body: "너님이 '도와줄게요'라고 답했어요", when: timeSeoul(respondedAt!), href: "/" });
-    expect((await newsItems(db, partner, TODAY))[0].detail).toBe("내 답장: 도와줄게요");
+    expect((await newsItems(db, partner, TODAY))[0].detail).toBe("");
 
     await setPaused(db, me, true);
     expect(await newsItems(db, partner, TODAY)).toEqual([]);
@@ -1997,5 +1967,93 @@ describe("알아두면 좋은 것", () => {
     for (const { body } of ARTICLES) expect(body.join(" ")).not.toMatch(/100%|진단|치료|처방|진통제/);
     expect(findArticle("pms")?.title).toBe("PMS란");
     expect(findArticle("없는글")).toBeUndefined();
+  });
+});
+
+describe("오늘의 쪽지", () => {
+  const at = (iso: string) => new Date(iso);
+
+  async function couple() {
+    const { me, you } = await pair();
+    await connect(me, you);
+    return { recorder: me, partner: await reload(you) };
+  }
+
+  it("하루는 서울 새벽 5시에 바뀐다", () => {
+    expect(noteDay(at("2026-10-30T19:59:00Z"))).toBe("2026-10-30"); // 서울 31일 04:59
+    expect(noteDay(at("2026-10-30T20:00:00Z"))).toBe("2026-10-31"); // 서울 31일 05:00
+    expect(noteDay(at("2026-10-30T15:30:00Z"))).toBe("2026-10-30"); // 서울 31일 00:30은 아직 30일
+  });
+
+  it("한 사람당 하루 3장, 5시가 지나면 빈 카드로 돌아가고 지난 쪽지는 남는다", async () => {
+    const { recorder, partner } = await couple();
+    const now = at("2026-10-30T05:00:00Z"); // 서울 14:00
+    expect(await todayNotes(db, partner, now)).toMatchObject({ notes: [], left: NOTES_PER_DAY, received: false, otherName: "나" });
+    for (const body of ["핫팩 챙겨갈게", "둘", "셋"]) await sendNote(db, partner, body, now);
+    await expectFail(sendNote(db, partner, "넷", now), 429);
+    await sendNote(db, recorder, "고마워", now);
+    const mine = await todayNotes(db, partner, now);
+    expect(mine).toMatchObject({ left: 0, received: true });
+    expect(mine!.notes.map((n) => [n.body, n.mine, n.name])).toEqual([
+      ["핫팩 챙겨갈게", true, "너"], ["둘", true, "너"], ["셋", true, "너"], ["고마워", false, "나"],
+    ]);
+    expect(mine!.notes[0].time).toMatch(/^오[전후] \d+:\d\d$/); // 서울 시각 문자열
+    expect(await todayNotes(db, recorder, now)).toMatchObject({ left: 2, received: true });
+
+    const tomorrow = at("2026-10-30T20:00:00Z"); // 서울 31일 05:00
+    expect(await todayNotes(db, partner, tomorrow)).toMatchObject({ notes: [], left: 3 });
+    await sendNote(db, partner, "새날", tomorrow);
+    expect((await db.select().from(notes)).length).toBe(5);
+  });
+
+  it("글자 수는 1~50자, 연결 없음·잠시 멈추기면 못 보내고 카드도 없다", async () => {
+    const { recorder, partner } = await couple();
+    await expectFail(sendNote(db, partner, "  "));
+    await expectFail(sendNote(db, partner, "가".repeat(51)));
+    await sendNote(db, partner, "가".repeat(50));
+    await setPaused(db, recorder, true);
+    expect(await todayNotes(db, partner)).toBeNull();
+    await expectFail(sendNote(db, recorder, "안녕"), 404);
+    await setPaused(db, recorder, false);
+    await disconnect(db, recorder);
+    expect(await todayNotes(db, recorder)).toBeNull();
+  });
+
+  it("받은 쪽지는 새 소식에 뜨고 안 읽은 수에 들어간다", async () => {
+    const { recorder, partner } = await couple();
+    await markNewsSeen(db, recorder);
+    await sendNote(db, partner, "초콜릿 사갈게");
+    expect(await newsFor(db, recorder, TODAY)).toMatchObject({ notes: 1 });
+    expect(await newsFor(db, partner, TODAY)).toMatchObject({ notes: 0 });
+    expect((await newsItems(db, recorder, TODAY))[0]).toMatchObject({ title: "너님의 쪽지", body: "초콜릿 사갈게", href: "/" });
+    await markNewsSeen(db, recorder);
+    expect(await newsFor(db, recorder, TODAY)).toMatchObject({ notes: 0 });
+  });
+
+  it("예시 문장은 상태에 따라 정해진 규칙으로", () => {
+    expect(partnerExamples([], null)).toEqual(["나도 오늘 좀 피곤했어", "오늘 하루 어땠어?", "보고 싶어"]);
+    expect(partnerExamples([], "none")[0]).toBe("나도 오늘 좀 피곤했어");
+    expect(partnerExamples(["sweet", "stay_home"], "moderate")).toEqual(["핫팩 챙겨갈게", "초콜릿 사갈게", "오늘은 집에서 영화 보자"]);
+    expect(partnerExamples(["heat_pack"], null)).toEqual(["핫팩 챙겨갈게", "나도 오늘 좀 피곤했어", "오늘 하루 어땠어?"]);
+    expect(recorderExamples(false).slice(0, 2)).toEqual(["오늘 하루 어땠어?", "보고 싶어"]);
+    expect(recorderExamples(true).slice(0, 2)).toEqual(["고마워", "오늘 같이 쉬자"]);
+  });
+
+  it("파트너 이해 한 줄", () => {
+    expect(understandingLine({ day: 2 }, null, null, TODAY)).toBe("몸이 제일 힘든 때예요");
+    expect(understandingLine({ day: 5 }, null, null, TODAY)).toBe("거의 끝나가요. 피로가 남아 있을 수 있어요");
+    expect(understandingLine(null, addDays(TODAY, 3), null, TODAY)).toBe("예민해지기 쉬운 때예요");
+    expect(understandingLine(null, null, null, TODAY)).toBe("평소처럼 편하게 지내는 때예요");
+  });
+
+  it("파트너가 홈을 열면 오늘 부탁에 봤어요가 남고, 이미 있던 답장은 그대로", async () => {
+    const { recorder, partner } = await couple();
+    await saveCare(db, recorder, { presets: ["rest"], message: "", share: true }, TODAY);
+    await markCareSeen(db, partner, TODAY);
+    expect((await getCare(db, recorder, TODAY))?.response).toBe("seen");
+    const care = (await getCare(db, recorder, TODAY))!;
+    await respondToCare(db, partner, care.id, "will_help", TODAY); // 예전에 남긴 답장
+    await markCareSeen(db, partner, TODAY);
+    expect((await getCare(db, recorder, TODAY))?.response).toBe("will_help");
   });
 });

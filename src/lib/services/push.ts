@@ -6,8 +6,9 @@ import { diffDays, formatDay, timeSeoul, todaySeoul } from "../dates";
 import { errorKind, fail } from "../errors";
 import { endQuestion, estimate } from "../prediction";
 import { limit, type User } from "./auth";
-import { careLabel, recentReplies, replySentence, RESPONSES, sharedCare, type ResponseKey } from "./care";
+import { careLabel, recentReplies, replySentence, sharedCare } from "./care";
 import { activeCouple, otherNickname } from "./couples";
+import { receivedNotes, receivedSince } from "./notes";
 import { listPeriods } from "./periods";
 
 export const REMINDER_DAYS = 3;
@@ -108,25 +109,21 @@ export function notifyCare(db: DB, owner: User, today = todaySeoul(), sender?: S
   });
 }
 
-export const REPLY_PUSH_MAX = 3;
-export const REPLY_PUSH_SECONDS = 60;
+export const NOTE_PUSH_MAX = 3;
+export const NOTE_PUSH_SECONDS = 60;
 
 /**
- * 답장이 생기거나 바뀔 때마다 기록자에게 알린다(같은 답장을 다시 누른 것은 respondToCare가 걸러 부르지 않는다).
- * 내용은 답장 그대로("봤어요" 등). 한 요청에 1분 안에는 3번까지만 보내고 그 이상은 조용히 건너뛴다.
+ * 상대에게 쪽지 알림. 제목은 보낸 사람 이름, 본문은 쪽지 그대로. 보낸 사람마다 1분에 3번까지만 보내고 넘으면 조용히 건너뛴다.
+ * 보낼 수 있는지(연결·잠시 멈추기)는 sendNote가 이미 확인했다.
  */
-export function notifyReply(db: DB, partner: User, careId: string, response: ResponseKey, today = todaySeoul(), sender?: Sender) {
+export function notifyNote(db: DB, from: User, to: string, body: string, sender?: Sender) {
   return quietly(async () => {
-    const couple = await activeCouple(db, partner.id);
-    if (couple?.partnerId !== partner.id) return;
-    const visible = await sharedCare(db, couple, today);
-    if (!visible.some((c) => c.id === careId)) return;
     try {
-      await limit(db, "reply-push", careId, REPLY_PUSH_MAX, REPLY_PUSH_SECONDS);
+      await limit(db, "note-push", from.id, NOTE_PUSH_MAX, NOTE_PUSH_SECONDS);
     } catch {
       return; // 1분 안에 3번을 넘김
     }
-    await sendPush(db, couple.recorderId, { title: await senderName(db, partner), body: RESPONSES[response], url: "/news" }, sender);
+    await sendPush(db, to, { title: await senderName(db, from), body, url: "/" }, sender);
   });
 }
 
@@ -178,7 +175,7 @@ export function cronAuthorized(header: string | null, secret: string | undefined
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-export type News = { replies: number; care: number };
+export type News = { replies: number; care: number; notes: number };
 
 /** 알림을 거부한 사람도 볼 수 있는 새 소식. */
 export async function newsFor(db: DB, user: User, today = todaySeoul()): Promise<News> {
@@ -186,25 +183,26 @@ export async function newsFor(db: DB, user: User, today = todaySeoul()): Promise
     db.select({ seen: users.newsSeenAt }).from(users).where(eq(users.id, user.id)), activeCouple(db, user.id),
   ]);
   const since = me?.seen ?? new Date(0);
+  if (!couple) return { replies: 0, care: 0, notes: 0 };
+  const notes = await receivedSince(db, user, couple, since);
   if (user.role === "recorder") {
-    if (!couple) return { replies: 0, care: 0 };
     const [{ total }] = await db.select({ total: count() }).from(careResponses)
       .where(and(eq(careResponses.coupleId, couple.id), gt(careResponses.updatedAt, since)));
-    return { replies: total, care: 0 };
+    return { replies: total, care: 0, notes };
   }
-  if (couple?.partnerId !== user.id) return { replies: 0, care: 0 };
+  if (couple.partnerId !== user.id) return { replies: 0, care: 0, notes: 0 };
   const unanswered = (await sharedCare(db, couple, today)).filter((c) => !c.response).map((c) => c.id);
-  if (!unanswered.length) return { replies: 0, care: 0 };
+  if (!unanswered.length) return { replies: 0, care: 0, notes };
   const [{ total }] = await db.select({ total: count() }).from(careRequests)
     .where(and(inArray(careRequests.id, unanswered), gt(careRequests.updatedAt, since)));
-  return { replies: 0, care: total };
+  return { replies: 0, care: total, notes };
 }
 
 /** 새 소식 시트의 한 줄. 누르면 href로 간다(배려 요청·답장은 홈의 배려 카드). */
 export type NewsItem = { id: string; title: string; body: string; detail: string; when: string; href: string };
 
 /**
- * 새 소식 시트의 목록. 기록자는 파트너 답장(최근 것부터), 파트너는 지금 보이는 배려 요청.
+ * 새 소식 시트의 목록. 맨 위에 받은 쪽지(최근 것부터), 그 아래 기록자는 파트너 답장, 파트너는 지금 보이는 배려 요청.
  * 공유 조건(연결·잠시 멈추기·요청별 공유)은 sharedCare가 다시 본다.
  */
 export async function newsItems(db: DB, user: User, today = todaySeoul()): Promise<NewsItem[]> {
@@ -213,17 +211,20 @@ export async function newsItems(db: DB, user: User, today = todaySeoul()): Promi
   const name = (await otherNickname(db, couple, user)) || "파트너";
   const when = (day: string) => (day === today ? "오늘" : formatDay(day));
   const what = (presets: string[], message: string | null) => [...presets.map(careLabel), ...(message ? [`“${message}”`] : [])].join(" · ");
+  const notes: NewsItem[] = (await receivedNotes(db, user, couple)).map((n) => ({
+    id: `note-${n.id}`, title: `${name}님의 쪽지`, body: n.body, detail: "", when: `${when(todaySeoul(n.createdAt))} ${timeSeoul(n.createdAt)}`, href: "/",
+  }));
   if (user.role === "recorder") {
-    return (await recentReplies(db, couple)).map((r) => ({
+    return [...notes, ...(await recentReplies(db, couple)).map((r) => ({
       id: `reply-${r.id}`, title: `${when(r.day)} 배려 요청`, body: replySentence(name, r.response), detail: what(r.presets, r.message),
       when: timeSeoul(r.respondedAt), href: "/",
-    }));
+    }))];
   }
   if (couple.partnerId !== user.id) return [];
-  return (await sharedCare(db, couple, today)).map((c) => ({
+  return [...notes, ...(await sharedCare(db, couple, today)).map((c) => ({
     id: `care-${c.id}`, title: `${name}님의 배려 요청`, body: what(c.presets, c.message),
-    detail: c.response ? `내 답장: ${RESPONSES[c.response]}` : "아직 답장하지 않았어요", when: when(c.day), href: "/",
-  }));
+    detail: "", when: when(c.day), href: "/",
+  }))];
 }
 
 export async function markNewsSeen(db: DB, user: User) {

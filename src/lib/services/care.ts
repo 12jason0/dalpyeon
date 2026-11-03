@@ -73,14 +73,14 @@ export function replySentence(name: string, response: ResponseKey) {
   return `${name}님이 '${RESPONSES[response]}'라고 답했어요`;
 }
 
-/** 기록자 홈 배려 카드의 칩 글자. 상대에게 간 것은 true다. 보낸 게 없거나 답장이 왔으면(문장으로 보여준다) 칩이 없다. */
+/** 기록자 홈 배려 카드의 칩 글자. 상대에게 간 것은 true다. 보낸 게 없거나 상대가 봤으면(제목 옆에 적는다) 칩이 없다. */
 export function careChip(care: { shareWithPartner: boolean; response?: ResponseKey | null } | null, canShare: boolean) {
   if (!care || care.response) return null;
-  return care.shareWithPartner && canShare ? { label: "답장 기다리는 중", sent: true } : { label: "나만 봐요", sent: false };
+  return care.shareWithPartner && canShare ? { label: "보냈어요", sent: true } : { label: "나만 봐요", sent: false };
 }
 
 export type CareView = {
-  id: string; day: string; presets: string[]; message: string | null; shareWithPartner: boolean;
+  id: string; day: string; presets: string[]; message: string | null; shareWithPartner: boolean; updatedAt: Date;
   response: ResponseKey | null; respondedAt: Date | null;
 };
 
@@ -105,7 +105,7 @@ export async function getCare(db: DB, user: User, day = todaySeoul()): Promise<C
   const [row] = await db.select().from(careRequests).where(and(eq(careRequests.ownerId, user.id), eq(careRequests.day, day)));
   if (!row) return null;
   const couple = await activeCouple(db, user.id);
-  return { id: row.id, day: row.day, presets: currentPresets(row.presets), message: row.message,
+  return { id: row.id, day: row.day, presets: currentPresets(row.presets), message: row.message, updatedAt: row.updatedAt,
     shareWithPartner: row.shareWithPartner, ...await responseFor(db, row.id, couple?.id) };
 }
 
@@ -144,7 +144,7 @@ export const sharedCare = cache(async (db: DB, couple: Couple, today = todaySeou
     .where(and(eq(careRequests.ownerId, couple.recorderId), eq(careRequests.shareWithPartner, true), gte(careRequests.day, from)))
     .orderBy(desc(careRequests.day));
   return Promise.all(rows.filter((r) => r.day <= today).map(async (r) => ({
-    id: r.id, day: r.day, presets: currentPresets(r.presets), message: r.message, shareWithPartner: true,
+    id: r.id, day: r.day, presets: currentPresets(r.presets), message: r.message, shareWithPartner: true, updatedAt: r.updatedAt,
     ...await responseFor(db, r.id, couple.id),
   })));
 });
@@ -169,3 +169,13 @@ export async function respondToCare(db: DB, user: User, careId: string, response
   return changed.length > 0; // 답장이 새로 생겼거나 바뀌었는지
 }
 
+
+/** 파트너가 홈을 열면 오늘 보이는 요청에 "봤어요"를 남긴다. 이미 답장이 있으면(예전 도와줄게요·했어요 포함) 그대로 둔다. */
+export async function markCareSeen(db: DB, user: User, today = todaySeoul()) {
+  requireRole(user, "partner");
+  const couple = await activeCouple(db, user.id);
+  if (!couple) return;
+  const unseen = (await sharedCare(db, couple, today)).filter((c) => c.day === today && !c.response);
+  if (!unseen.length) return;
+  await db.insert(careResponses).values(unseen.map((c) => ({ careId: c.id, coupleId: couple.id, response: "seen" as const }))).onConflictDoNothing();
+}

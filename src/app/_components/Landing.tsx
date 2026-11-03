@@ -124,7 +124,7 @@ export function Landing() {
       <section className="mt-16">
         <h2 className="text-2xl font-medium tracking-tight">연인은 코드 하나로 연결돼요</h2>
         <p className="mt-2 text-[15px] leading-relaxed text-muted">연결하면 오늘 필요한 배려가 이렇게 전해져요.</p>
-        <div inert className="pointer-events-none mt-5 select-none"><CareCard care={care} today={today} featured readOnly /></div>
+        <div inert className="pointer-events-none mt-5 select-none"><CareCard care={care} title="연인의 부탁 · 오후 2:10" /></div>
       </section>
 
       <section className="mt-16">

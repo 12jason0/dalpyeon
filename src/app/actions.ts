@@ -8,7 +8,8 @@ import { todaySeoul } from "@/lib/dates";
 import { AppError, errorKind } from "@/lib/errors";
 import { withdraw } from "@/lib/services/account";
 import { changePassword, limit, login, recordConsents, signup, updateNickname } from "@/lib/services/auth";
-import { clearCare, respondToCare, saveCare, type ResponseKey } from "@/lib/services/care";
+import { clearCare, saveCare } from "@/lib/services/care";
+import { sendNote } from "@/lib/services/notes";
 import {
   agreeToRules, blockAuthor, createComment, createPost, decideReport, deleteComment, deletePost, report, toggleLike, unblock, updateComment, updatePost,
   type Target,
@@ -19,7 +20,7 @@ import {
 import { saveDayLog } from "@/lib/services/daylogs";
 import { deletePeriod, listPeriods, savePeriod, setUsualCycle, snoozeEndQuestion } from "@/lib/services/periods";
 import {
-  markNewsSeen, newsItems, notifyCare, notifyReply, removeSubscription, saveSubscription, setReminder,
+  markNewsSeen, newsItems, notifyCare, notifyNote, removeSubscription, saveSubscription, setReminder,
   type NewsItem,
 } from "@/lib/services/push";
 import { claimInvite, clientIp, endSession, requireLogin, requireUser, sessionToken, landWithInvite, startSession, takeJoinCode } from "@/lib/session";
@@ -309,14 +310,14 @@ export async function clearCareAction() {
   refresh();
 }
 
-export async function respondAction(form: FormData) {
-  const user = await requireUser("partner");
-  const careId = String(form.get("careId"));
-  const response = form.get("response");
-  const changed = await respondToCare(await getDb(), user, careId, response).catch(ignoreAppError);
-  // 답장이 생기거나 바뀔 때마다 알린다. 같은 답장을 다시 누르면 changed가 false다.
-  if (changed) later((d) => notifyReply(d, user, careId, response as ResponseKey));
-  refresh();
+export async function sendNoteAction(_: FormState, form: FormData): Promise<FormState> {
+  return attempt(async () => {
+    const user = await requireUser();
+    const body = String(form.get("body") ?? "").trim();
+    const to = await sendNote(await getDb(), user, body);
+    later((d) => notifyNote(d, user, to, body));
+    refresh();
+  }, form, ["body"]);
 }
 
 // ── 커뮤니티 ──────────────────────────────────────

@@ -194,3 +194,22 @@ export const rateLimits = pgTable("rate_limits", {
   hits: integer("hits").notNull(),
   resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
 });
+
+/**
+ * 오늘의 쪽지. 하루(서울 새벽 5시 기준, day)에 한 사람이 3장까지. seq는 그날 몇 번째 장인지(1~3)이고,
+ * 동시에 보내도 4장째가 생기지 않게 (보낸 사람, 날, 장) 유일 인덱스로 막는다. 지난 쪽지는 지우지 않는다.
+ */
+export const notes = pgTable("notes", {
+  id: text("id").primaryKey(),
+  coupleId: text("couple_id").notNull().references(() => couples.id, { onDelete: "cascade" }),
+  senderId: text("sender_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  day: date("day", { mode: "string" }).notNull(),
+  seq: integer("seq").notNull(),
+  body: text("body").notNull(),
+  createdAt: created(),
+}, (t) => [
+  uniqueIndex("notes_daily").on(t.senderId, t.day, t.seq),
+  index("notes_couple_day").on(t.coupleId, t.day),
+  check("notes_seq", sql`seq between 1 and 3`),
+  check("notes_body", sql`char_length(body) between 1 and 50`),
+]);

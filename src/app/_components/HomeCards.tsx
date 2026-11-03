@@ -1,10 +1,8 @@
 import { HOME_TOP_ID } from "@/lib/calendar";
-import { formatDay } from "@/lib/dates";
 import { cycleLine, MOON_WAITING, moonPath, nextLine, type MoonShape } from "@/lib/moon";
 import type { Prediction } from "@/lib/prediction";
 import { errorLabel } from "@/lib/report";
-import { careLabel, RESPONSES, type CareView } from "@/lib/services/care";
-import { CareReplies } from "./QuickHome";
+import { careLabel, type CareView } from "@/lib/services/care";
 
 export function Logo() {
   return <p className="text-xl font-medium tracking-tight text-accent">디어데이</p>;
@@ -37,7 +35,7 @@ export function recorderStatus(prediction: Prediction, current: { day: number } 
 }
 
 /** 홈 맨 위의 카드. children은 달과 문구 아래의 칩이다. */
-export function TopBar({ moon, main, sub, children }: Status & { moon: MoonShape; children?: React.ReactNode }) {
+export function TopBar({ moon, main, sub, children, footer }: Status & { moon: MoonShape; children?: React.ReactNode; footer?: string }) {
   return (
     <div className="rounded-[18px] border-[0.5px] border-line bg-gradient-to-br from-period/40 to-fertile px-3.5 py-3 shadow-soft">
       <div className="flex items-center gap-3">
@@ -48,6 +46,7 @@ export function TopBar({ moon, main, sub, children }: Status & { moon: MoonShape
         </div>
       </div>
       {children && <div className="mt-2 flex flex-wrap gap-1.5">{children}</div>}
+      {footer && <p className="mt-2 text-[13px] leading-snug text-ink/80">{footer}</p>}
     </div>
   );
 }
@@ -71,18 +70,15 @@ export function PredictionNote({ error }: { error: { days: number } | null }) {
   );
 }
 
-/** 파트너가 보는 배려 요청 카드. readOnly면 미리보기용으로 동작 없이 그린다. */
-export function CareCard({ care, today, featured, readOnly }: { care: CareView; today: string; featured?: boolean; readOnly?: boolean }) {
+/** 파트너가 보는 부탁 카드. 제목은 "{이름}님의 부탁 · 오후 2:10", 항목마다 왼쪽에 연분홍 세로선. */
+export function CareCard({ care, title }: { care: Pick<CareView, "presets" | "message">; title: string }) {
+  const items = [...care.presets.map(careLabel), ...(care.message ? [`“${care.message}”`] : [])];
   return (
     <article className="card">
-      <p className="text-[13px] text-muted">{care.day === today ? "오늘" : formatDay(care.day)}</p>
-      <ul className="mt-1 space-y-1">
-        {care.presets.map((key) => (
-          <li key={key} className={`font-medium leading-snug ${featured ? "text-xl tracking-tight" : "text-[17px]"}`}>{careLabel(key)}</li>
-        ))}
+      <h2 className="text-[13px] font-medium text-muted">{title}</h2>
+      <ul className="mt-2 space-y-1.5">
+        {items.map((t) => <li key={t} className="border-l-[3px] border-period pl-2.5 text-[17px] leading-snug">{t}</li>)}
       </ul>
-      {care.message && <p className="mt-2 text-[15px] leading-relaxed">“{care.message}”</p>}
-      <CareReplies careId={care.id} current={care.response} responses={RESPONSES} readOnly={readOnly} />
     </article>
   );
 }

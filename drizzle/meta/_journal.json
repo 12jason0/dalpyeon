@@ -64,6 +64,13 @@
       "when": 1793706645019,
       "tag": "0008_community_board_likes",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793708836054,
+      "tag": "0009_daily_notes",
+      "breakpoints": true
     }
   ]
 }

@@ -6,7 +6,8 @@ import { ErrorText, Submit } from "./Submit";
 import { BTN, BTN_LINE, btn } from "./ui";
 
 /** 홈 아래에 떠 있는 작은 버튼. 가운데에 글자만큼의 폭으로 놓인다. */
-const COMPACT = `${BTN} shadow-lg`;
+// 홈의 진한 분홍 버튼은 쪽지 보내기 하나라서, 떠 있는 버튼은 흰 보조 버튼으로 둔다.
+const COMPACT = `${BTN_LINE} shadow-lg`;
 
 /** day를 주면 그 날짜로, 없으면 오늘로 시작한다. onStarted는 저장이 끝난 뒤 불린다. compact면 홈에 떠 있는 작은 버튼. */
 export function StartTodayButton({ day, onStarted, compact }: { day?: string; onStarted?: () => void; compact?: boolean }) {
@@ -40,7 +41,7 @@ export function EndQuestion({ question: { id, startDate, date, day }, today }: {
         <form action={end}>
           <input type="hidden" name="id" value={id} />
           <input type="hidden" name="day" value={date} />
-          <Submit className={`${btn("primary", true)} w-full`}>네</Submit>
+          <Submit className={`${btn("line", true)} w-full`}>네</Submit>
         </form>
         <form action={snooze}>
           <input type="hidden" name="id" value={id} />

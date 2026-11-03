@@ -8,13 +8,14 @@ import { tipFor } from "@/lib/content/phases";
 import { getDb, type DB } from "@/lib/db";
 import { timeSeoul, todaySeoul } from "@/lib/dates";
 import { bodyChips, type DayLog } from "@/lib/daylog";
-import { CRESCENT, cycleLine, MOON_WAITING, moonShape, nextLine } from "@/lib/moon";
-import { phaseFrom, type Phase } from "@/lib/phase";
+import { CRESCENT, cycleLine, MOON_WAITING, moonShape } from "@/lib/moon";
+import { phaseFrom, understandingLine, type Phase } from "@/lib/phase";
 import { calendarMarks, endQuestion, estimate } from "@/lib/prediction";
 import { consentDone, type User } from "@/lib/services/auth";
-import { careChip, careGroup, getCare, orderPresets, recentPresets, replySentence } from "@/lib/services/care";
+import { careChip, careGroup, getCare, markCareSeen, orderPresets, recentPresets } from "@/lib/services/care";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { listDayLogs } from "@/lib/services/daylogs";
+import { NOTE_MAX, partnerExamples, recorderExamples, todayNotes } from "@/lib/services/notes";
 import { partnerView } from "@/lib/services/partner";
 import { currentPeriod, listPeriods, usualCycle } from "@/lib/services/periods";
 import { currentUser } from "@/lib/session";
@@ -27,7 +28,7 @@ import { Landing } from "./_components/Landing";
 import { Nav } from "./_components/Nav";
 import { BLOCK } from "./_components/PageSkeleton";
 import { EndQuestion, EndTodayButton, StartTodayButton } from "./_components/PeriodButtons";
-import { QuickCare, QuickLog } from "./_components/QuickHome";
+import { NoteCard, QuickCare, QuickLog } from "./_components/QuickHome";
 import { LINE_CARD } from "./_components/Sheet";
 import { TodayRefresh } from "./_components/TodayRefresh";
 import { WeekStrip } from "./_components/WeekStrip";
@@ -116,31 +117,25 @@ async function CareSlot({ data, group }: { data: CareAndPartner; group: "body" |
       key={`${care?.presets.join()}|${care?.message}|${care?.shareWithPartner}`}
       presets={presets} current={care} canShare={canShare}
       status={status && <Chip icon={<HeartHandshake size={12} aria-hidden />} tone={status.sent ? "period" : "muted"}>{status.label}</Chip>}
-      reply={care?.response && care.respondedAt && (
-        <p className="mt-1 text-[15px] leading-snug">
-          {replySentence(partnerName || "파트너", care.response)}
-          <time dateTime={care.respondedAt.toISOString()} className="ml-1.5 text-[12px] text-muted">{timeSeoul(care.respondedAt)}</time>
-        </p>
-      )}
+      seenBy={care?.response && canShare ? partnerName || "파트너" : null}
+    />
+  );
+}
+
+/** 기록자 홈의 오늘의 쪽지. 연결 전·잠시 멈추기 중에는 그리지 않는다. */
+async function RecorderNotes({ user }: { user: User }) {
+  const notes = await todayNotes(await getDb(), user);
+  if (!notes) return null;
+  return (
+    <NoteCard
+      today={notes} max={NOTE_MAX} examples={recorderExamples(notes.received)}
+      hint={`${notes.otherName || "파트너"}님께 오늘 하고 싶은 말을 남겨보세요`}
     />
   );
 }
 
 /** 오늘의 통증·기분 칩. */
 const BODY_CHIP = "inline-flex h-9 max-w-full items-center gap-1 rounded-full px-3.5 text-[14px] font-medium"; // 칩 기준(ui.ts): 36px·14px·500
-
-/** 파트너 홈 맨 위 카드 바로 아래의 한 줄. 오늘 남긴 통증·기분이 없으면 그리지 않는다. */
-function TodayBody({ name, log }: { name: string; log: Pick<DayLog, "pain" | "moods"> | null }) {
-  const { pain, mood } = log ? bodyChips(log) : { pain: null, mood: null };
-  if (!pain && !mood) return null;
-  return (
-    <div className="card flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3.5 py-2.5">
-      <p className="mr-0.5 text-[15px] font-normal tracking-tight">오늘 {name}님</p>
-      {pain && <span className={`${BODY_CHIP} bg-period text-period-ink`}><Activity size={14} aria-hidden /><span className="truncate">{pain}</span></span>}
-      {mood && <span className={`${BODY_CHIP} bg-fertile text-fertile-ink`}><Smile size={14} aria-hidden /><span className="truncate">{mood}</span></span>}
-    </div>
-  );
-}
 
 async function RecorderHome({ user }: { user: User }) {
   const db = await getDb();
@@ -163,6 +158,7 @@ async function RecorderHome({ user }: { user: User }) {
         <Suspense><ConnectLine data={data} /></Suspense>
         <Suspense><SharingNotice data={data} /></Suspense>
         <Suspense fallback={<div className={`${BLOCK} h-40`} />}><CareSlot data={data} group={careGroup(Boolean(current), prediction.period?.startDate, today)} /></Suspense>
+        <Suspense><RecorderNotes user={user} /></Suspense>
         <TipLine phase={phaseFrom(Boolean(current), prediction.fertileWindow, today)} today={today} />
       </div>
 
@@ -201,28 +197,35 @@ async function PartnerHome({ user }: { user: User }) {
     );
   }
 
-  const line = cycleLine(view.current, view.nextPeriod?.startDate ?? null, view.fertileWindow, today) ?? MOON_WAITING;
-  // 아직 답하지 않은 요청을 먼저, 없으면 가장 최근 요청을 보여준다.
-  const first = view.care.find((c) => !c.response) ?? view.care[0];
-  const others = view.care.filter((c) => c !== first);
+  // 파트너가 홈을 열면 오늘 부탁에 "봤어요"를 남긴다(이미 답장이 있으면 그대로).
+  const [notes] = await Promise.all([todayNotes(db, user), markCareSeen(db, user, today)]);
+  const status = view.current ? `생리 ${view.current.day}일째` : cycleLine(null, view.nextPeriod?.startDate ?? null, view.fertileWindow, today) ?? MOON_WAITING;
+  const { pain, mood } = view.todayBody ? bodyChips(view.todayBody) : { pain: null, mood: null };
+  const care = view.care.find((c) => c.day === today);
 
   return (
     <>
       <HomeTop>
-        <TopBar moon={view.moon} main={line} sub={nextLine(view.nextPeriod, today)} />
-        <TodayBody name={name} log={view.todayBody} />
+        <TopBar moon={view.moon} main={`${name}님 · ${status}`} footer={understandingLine(view.current, view.nextPeriod?.startDate ?? null, view.fertileWindow, today)}>
+          {(pain || mood) && (
+            <>
+              {pain && <span className={`${BODY_CHIP} bg-period text-period-ink`}><Activity size={14} aria-hidden /><span className="truncate">{pain}</span></span>}
+              {mood && <span className={`${BODY_CHIP} bg-fertile text-fertile-ink`}><Smile size={14} aria-hidden /><span className="truncate">{mood}</span></span>}
+            </>
+          )}
+        </TopBar>
       </HomeTop>
       <div className="pb-4">
         <HomeCalendar
           today={today} marks={view.calendar}
-          quick={first && (
+          quick={(care || notes) && (
             <div className="space-y-2">
-              <CareCard care={first} today={today} featured={first.day === today} />
-              {others.length > 0 && (
-                <details className="px-1 text-[13px]">
-                  <summary className="link cursor-pointer list-none leading-9">지난 요청 {others.length}개</summary>
-                  <div className="space-y-2">{others.map((c) => <CareCard key={c.id} care={c} today={today} />)}</div>
-                </details>
+              {care && <CareCard care={care} title={`${name}님의 부탁 · ${timeSeoul(care.updatedAt)}`} />}
+              {notes && (
+                <NoteCard
+                  today={notes} max={NOTE_MAX} examples={partnerExamples(care?.presets ?? [], view.todayBody?.pain ?? null)}
+                  hint={`${name}님 상태를 보고 한마디 남겨보세요`}
+                />
               )}
             </div>
           )}
