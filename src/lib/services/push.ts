@@ -12,7 +12,8 @@ import { listPeriods } from "./periods";
 
 export const REMINDER_DAYS = 3;
 
-export type PushMessage = { body: string; url: string };
+/** title을 비우면 앱 이름. 상대가 보낸 알림은 상대 이름을 쓴다. 건강 정보·요청 내용은 잠금 화면에 보이므로 넣지 않는다. */
+export type PushMessage = { title?: string; body: string; url: string };
 export type PushTarget = { endpoint: string; keys: { p256dh: string; auth: string } };
 export type Sender = (target: PushTarget, payload: string) => Promise<void>;
 
@@ -59,7 +60,7 @@ const webPushSender: Sender = async (target, payload) => {
 /** 한 사람의 모든 기기로 보낸다. 사라진 구독(404·410)은 지우고, 다른 실패는 기록만 남긴다. */
 export async function sendPush(db: DB, userId: string, message: PushMessage, sender: Sender = webPushSender) {
   const subs = await db.select().from(pushSubscriptions).where(eq(pushSubscriptions.userId, userId));
-  const payload = JSON.stringify({ title: "우리주기", ...message });
+  const payload = JSON.stringify({ ...message, title: message.title || "우리주기" });
   await Promise.all(subs.map(async (sub) => {
     try {
       await sender({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
@@ -80,11 +81,17 @@ async function quietly(work: () => Promise<void>) {
   }
 }
 
+/** 알림 제목에 쓸 보낸 사람 이름. 마이에서 바꾼 이름을 쓰려고 DB에서 다시 읽는다. 비어 있으면 "파트너". */
+async function senderName(db: DB, sender: User) {
+  const [row] = await db.select({ nickname: users.nickname }).from(users).where(eq(users.id, sender.id));
+  return row?.nickname?.trim() || "파트너";
+}
+
 /** 코드로 연결된 직후. 모르는 사람이면 바로 끊을 수 있게 기록자에게 알린다. */
 export function notifyConnected(db: DB, partner: User, sender?: Sender) {
   return quietly(async () => {
     const couple = await activeCouple(db, partner.id);
-    if (couple?.partnerId === partner.id) await sendPush(db, couple.recorderId, { body: "파트너가 연결됐어요", url: "/connect" }, sender);
+    if (couple?.partnerId === partner.id) await sendPush(db, couple.recorderId, { title: await senderName(db, partner), body: "연결됐어요", url: "/connect" }, sender);
   });
 }
 
@@ -94,7 +101,7 @@ export function notifyCare(db: DB, owner: User, today = todaySeoul(), sender?: S
     const couple = await activeCouple(db, owner.id);
     if (couple?.recorderId !== owner.id) return;
     const visible = await sharedCare(db, couple, today);
-    if (visible.some((c) => c.day === today)) await sendPush(db, couple.partnerId, { body: "새 배려 요청이 왔어요 💗", url: "/" }, sender);
+    if (visible.some((c) => c.day === today)) await sendPush(db, couple.partnerId, { title: await senderName(db, owner), body: "배려 요청을 보냈어요", url: "/" }, sender);
   });
 }
 
@@ -103,7 +110,7 @@ export function notifyReply(db: DB, partner: User, careId: string, today = today
     const couple = await activeCouple(db, partner.id);
     if (couple?.partnerId !== partner.id) return;
     const visible = await sharedCare(db, couple, today);
-    if (visible.some((c) => c.id === careId)) await sendPush(db, couple.recorderId, { body: `${partner.nickname}님이 답장했어요`, url: "/" }, sender);
+    if (visible.some((c) => c.id === careId)) await sendPush(db, couple.recorderId, { title: await senderName(db, partner), body: "답장했어요", url: "/" }, sender);
   });
 }
 

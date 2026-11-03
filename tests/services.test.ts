@@ -953,7 +953,7 @@ describe("알림", () => {
 
   /** 실제로 보내지 않고 누구에게 무엇이 갔는지만 모은다. */
   function outbox() {
-    const sent: { endpoint: string; body: string; url: string }[] = [];
+    const sent: { endpoint: string; title: string; body: string; url: string }[] = [];
     const sender: Sender = async (target, payload) => {
       sent.push({ endpoint: target.endpoint, ...JSON.parse(payload) });
     };
@@ -1012,7 +1012,7 @@ describe("알림", () => {
     expect(sent).toEqual([]);
     await connect(me, you);
     await notifyConnected(db, await reload(you), sender);
-    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "우리주기", body: "파트너가 연결됐어요", url: "/connect" }]);
+    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "너", body: "연결됐어요", url: "/connect" }]);
 
     await disconnect(db, me);
     await removeSubscription(db, me, sub("me").endpoint); // 알림을 끈 기록자
@@ -1029,10 +1029,26 @@ describe("알림", () => {
     expect(sent).toEqual([]);
     expect(await saveCare(db, me, { presets: ["rest"], message: "", share: true }, TODAY)).toBe(true);
     await notifyCare(db, me, TODAY, sender);
-    expect(sent).toMatchObject([{ endpoint: sub("you").endpoint, body: "새 배려 요청이 왔어요 💗" }]);
+    expect(sent).toMatchObject([{ endpoint: sub("you").endpoint, title: "나", body: "배려 요청을 보냈어요", url: "/" }]);
     expect(await saveCare(db, me, { presets: ["company"], message: "", share: true }, TODAY)).toBe(false); // 수정은 다시 안 보냄
     expect(JSON.stringify(sent)).not.toContain("조용히");
     expect(partner.role).toBe("partner");
+  });
+
+  it("알림 제목은 보낸 사람이 지금 쓰는 이름, 비어 있으면 '파트너'. 요청 내용은 알림에 넣지 않는다", async () => {
+    const { me, partner } = await shared();
+    const { sent, sender } = outbox();
+    await db.update(users).set({ nickname: "지수" }).where(eq(users.id, me.id));
+    await saveCare(db, me, { presets: ["rest"], message: "배가 너무 아파", share: true }, TODAY);
+    await notifyCare(db, me, TODAY, sender);
+    const care = (await getCare(db, me, TODAY))!;
+    await db.update(users).set({ nickname: "" }).where(eq(users.id, partner.id));
+    await respondToCare(db, partner, care.id, "seen", TODAY);
+    await notifyReply(db, partner, care.id, TODAY, sender);
+    expect(sent.map((m) => [m.title, m.body])).toEqual([["지수", "배려 요청을 보냈어요"], ["파트너", "답장했어요"]]);
+    const text = JSON.stringify(sent);
+    expect(text).not.toContain("배가 너무 아파");
+    expect(text).not.toContain(careLabel("rest"));
   });
 
   it("권한이 없으면 보내지 않는다: 일시정지·연결 없음", async () => {
@@ -1060,7 +1076,7 @@ describe("알림", () => {
     expect(await respondToCare(db, partner, care.id, "seen", TODAY)).toBe(true);
     expect(await respondToCare(db, partner, care.id, "done", TODAY)).toBe(false);
     await notifyReply(db, partner, care.id, TODAY, sender);
-    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, body: "너님이 답장했어요" }]);
+    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "너", body: "답장했어요", url: "/" }]);
     await setPaused(db, me, true);
     await notifyReply(db, partner, care.id, TODAY, sender);
     expect(sent).toHaveLength(1);
@@ -1084,7 +1100,7 @@ describe("알림", () => {
     const { sent, sender } = outbox();
     expect(await sendReminders(db, "2026-10-26", sender)).toBe(0); // 4일 전
     expect(await sendReminders(db, "2026-10-27", sender)).toBe(1);
-    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, body: "오늘 확인할 소식이 있어요" }]);
+    expect(sent).toMatchObject([{ endpoint: sub("me").endpoint, title: "우리주기", body: "오늘 확인할 소식이 있어요" }]);
     expect(JSON.stringify(sent)).not.toContain("생리"); // 예정일 알림은 잠금 화면에 건강 정보를 쓰지 않는다
     expect(await sendReminders(db, "2026-10-27", sender)).toBe(0); // 크론이 두 번 돌아도 한 번
     expect(sent).toHaveLength(1);
