@@ -28,10 +28,12 @@ export const metadata: Metadata = {
   // 카톡·SNS 공유 미리보기 (이미지는 /og). 페이지마다 바꾸려면 lib/seo 의 pageMeta
   openGraph: { type: "website", locale: "ko_KR", siteName: SITE_NAME, title: HOME_TITLE, description: HOME_DESCRIPTION, images: [{ url: "/og", width: 1200, height: 630, alt: SITE_NAME }] },
   twitter: { card: "summary_large_image", images: ["/og"] },
-  // 네이버 서치어드바이저·구글 서치콘솔 소유 확인 — Vercel 환경변수 (비우면 태그 안 나감)
+  // 네이버 서치어드바이저·구글 서치콘솔·빙 웹마스터 소유 확인 — Vercel 환경변수 (비우면 태그 안 나감)
   verification: {
     google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
-    other: process.env.NAVER_SITE_VERIFICATION ? { "naver-site-verification": process.env.NAVER_SITE_VERIFICATION } : undefined,
+    other: Object.fromEntries(
+      [["naver-site-verification", process.env.NAVER_SITE_VERIFICATION], ["msvalidate.01", process.env.BING_SITE_VERIFICATION]].filter(([, v]) => v) as [string, string][],
+    ),
   },
   // 아이콘은 npm run icons가 public/brand/icon-source.png에서 만든다. 파비콘은 작아서 D 두 개만 크게.
   icons: {
