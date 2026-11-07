@@ -13,7 +13,7 @@ import { Nav } from "../_components/Nav";
 import { TodayRefresh } from "../_components/TodayRefresh";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "달력 — 디어데이" };
+export const metadata = { title: "달력" };
 
 /** 기록자의 전체 달력. 파트너는 홈의 달력을 본다. ?day=YYYY-MM-DD면 그 날짜 시트를 열어 둔 채로 시작한다(홈 띠 달력). */
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ day?: string }> }) {

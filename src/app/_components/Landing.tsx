@@ -5,6 +5,7 @@ import { monthGrid, todaySeoul } from "@/lib/dates";
 import { moonShape } from "@/lib/moon";
 import { calendarMarks, DISCLAIMER, ESTIMATE_NOTE, estimate } from "@/lib/prediction";
 import { CARE_PRESETS } from "@/lib/services/care";
+import { FAQ, homeJsonLd, JsonLd } from "@/lib/seo";
 import { CalendarMonth } from "./CalendarMonth";
 import { CareCard, Logo, recorderStatus, TopBar } from "./HomeCards";
 import { LINE_CARD } from "./Sheet";
@@ -91,6 +92,7 @@ export function Landing() {
   const { care } = exampleHome(today);
   return (
     <>
+      <JsonLd data={homeJsonLd()} />
       <header className="flex items-center justify-between">
         <Logo />
         <Link href="/login" className="text-[15px] text-muted">로그인</Link>
@@ -137,6 +139,18 @@ export function Landing() {
           </li>
         </ul>
         <p className="mt-3 text-[13px] leading-relaxed text-muted">멈추고 싶은 날에는 &ldquo;잠시 쉬는 중&rdquo;만 보여요. 가임기·배란일은 {ESTIMATE_NOTE}</p>
+      </section>
+
+      <section className="mt-16">
+        <h2 className="text-2xl font-medium tracking-tight">자주 묻는 질문</h2>
+        <div className="mt-5 space-y-3">
+          {FAQ.map(({ q, a }) => (
+            <details key={q} className="card">
+              <summary className="cursor-pointer text-[17px] font-medium">{q}</summary>
+              <p className="mt-2 text-[15px] leading-relaxed text-muted">{a}</p>
+            </details>
+          ))}
+        </div>
       </section>
 
       <div className="mt-16"><StartLinks /></div>

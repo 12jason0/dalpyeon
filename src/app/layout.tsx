@@ -4,6 +4,7 @@ import SPLASH_SIZES from "@/lib/content/splash-sizes.json";
 import { MarkOpened } from "./_components/OpenLoading";
 import { ServiceWorker } from "./_components/ServiceWorker";
 import "./globals.css";
+import { HOME_DESCRIPTION, HOME_TITLE, KEYWORDS, SITE_NAME, SITE_URL } from "@/lib/seo";
 
 /**
  * 앱 기본 글꼴: 학교안심 둥근미소 Regular. 파일 형식을 바꾸지 않고 받은 OTF 그대로 쓴다(TTF보다 4배 작다).
@@ -19,8 +20,19 @@ const base = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "디어데이",
-  description: "말하기 어려운 날에도, 서로의 편.",
+  metadataBase: new URL(SITE_URL),
+  title: { default: HOME_TITLE, template: `%s — ${SITE_NAME}` },
+  description: HOME_DESCRIPTION,
+  keywords: KEYWORDS,
+  applicationName: SITE_NAME,
+  // 카톡·SNS 공유 미리보기 (이미지는 /og). 페이지마다 바꾸려면 lib/seo 의 pageMeta
+  openGraph: { type: "website", locale: "ko_KR", siteName: SITE_NAME, title: HOME_TITLE, description: HOME_DESCRIPTION, images: [{ url: "/og", width: 1200, height: 630, alt: SITE_NAME }] },
+  twitter: { card: "summary_large_image", images: ["/og"] },
+  // 네이버 서치어드바이저·구글 서치콘솔 소유 확인 — Vercel 환경변수 (비우면 태그 안 나감)
+  verification: {
+    google: process.env.GOOGLE_SITE_VERIFICATION || undefined,
+    other: process.env.NAVER_SITE_VERIFICATION ? { "naver-site-verification": process.env.NAVER_SITE_VERIFICATION } : undefined,
+  },
   // 아이콘은 npm run icons가 public/brand/icon-source.png에서 만든다. 파비콘은 작아서 D 두 개만 크게.
   icons: {
     icon: [

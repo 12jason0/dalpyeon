@@ -6,6 +6,9 @@ import { AuthForm } from "../_components/AuthForm";
 import { JoinForm, JoinWithLink } from "../_components/JoinForms";
 import { KakaoButton } from "../_components/KakaoButton";
 import { Logo } from "../_components/HomeCards";
+import { pageMeta } from "@/lib/seo";
+
+export const metadata = pageMeta("받은 코드로 시작하기", "여자친구에게 받은 8자리 코드로 디어데이에 연결해요. 여자친구 생리 예정일과 오늘 필요한 배려를 함께 볼 수 있어요.", "/join");
 
 export const dynamic = "force-dynamic";
 

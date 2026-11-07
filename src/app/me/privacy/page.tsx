@@ -2,6 +2,9 @@ import { consentDone } from "@/lib/services/auth";
 import { currentUser } from "@/lib/session";
 import { BackLink } from "../../_components/BackLink";
 import { Nav } from "../../_components/Nav";
+import { pageMeta } from "@/lib/seo";
+
+export const metadata = pageMeta("개인정보 처리방침", "디어데이가 저장하는 정보와 목적, 보관 기간과 파기, 건강 정보 처리 방법을 알려드려요.", "/me/privacy");
 
 export const dynamic = "force-dynamic";
 

@@ -19,6 +19,7 @@ import { NOTE_MAX, partnerExamples, recorderExamples, todayNotes } from "@/lib/s
 import { partnerView } from "@/lib/services/partner";
 import { currentPeriod, listPeriods } from "@/lib/services/periods";
 import { currentUser } from "@/lib/session";
+import { HOME_DESCRIPTION, HOME_TITLE, pageMeta } from "@/lib/seo";
 import { checkSharingAction } from "./actions";
 import { AppHeader } from "./_components/AppHeader";
 import { Chip, IconBadge } from "./_components/Chip";
@@ -38,14 +39,7 @@ export const dynamic = "force-dynamic";
 /** "오늘 끝났어요" 버튼은 생리 3일째부터 띄운다. */
 const END_BUTTON_FROM_DAY = 3;
 
-const TITLE = "디어데이 — 서로의 편이 되는 생리 기록";
-const DESCRIPTION = "생리 주기를 기록하고, 필요한 배려를 연인과 주고받아요.";
-
-export const metadata: Metadata = {
-  title: TITLE,
-  description: DESCRIPTION,
-  openGraph: { title: TITLE, description: DESCRIPTION },
-};
+export const metadata: Metadata = { ...pageMeta(HOME_TITLE, HOME_DESCRIPTION, "/"), title: { absolute: HOME_TITLE } };
 
 /** ?news=1이면 새 소식 시트가 열린 채로 시작한다(/news와 푸시 알림이 여기로 온다). */
 export default async function Home({ searchParams }: { searchParams: Promise<{ news?: string }> }) {
