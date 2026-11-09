@@ -20,8 +20,8 @@ import {
 import { saveDayLog } from "@/lib/services/daylogs";
 import { deletePeriod, listPeriods, savePeriod, setUsualCycle, snoozeEndQuestion } from "@/lib/services/periods";
 import {
-  markNewsSeen, newsItems, notifyCare, notifyNote, removeSubscription, saveSubscription, setReminder,
-  type NewsItem,
+  ALERT_KINDS, markNewsSeen, newsItems, notifyCare, notifyNote, notifyPeriodEnd, notifyPeriodStart, removeSubscription, saveSubscription,
+  setAlertSettings, setReminder, type NewsItem,
 } from "@/lib/services/push";
 import { claimInvite, clientIp, endSession, requireLogin, requireUser, sessionToken, landWithInvite, startSession, takeJoinCode } from "@/lib/session";
 
@@ -180,7 +180,10 @@ const dayOf = (form: FormData) => String(form.get("day") || todaySeoul());
 export async function startTodayAction(_: FormState, form: FormData): Promise<FormState> {
   return attempt(async () => {
     const user = await requireUser("recorder");
-    await savePeriod(await getDb(), user.id, { startDate: dayOf(form) });
+    const today = todaySeoul();
+    const saved = await savePeriod(await getDb(), user.id, { startDate: dayOf(form) }, today);
+    // 파트너 알림은 오늘 시작한 기록만. 달력에서 지난 날짜를 고른 기록은 보내지 않는다.
+    later((d) => notifyPeriodStart(d, user.id, saved.startDate, today));
     refresh();
   });
 }
@@ -195,7 +198,10 @@ export async function endTodayAction(_: FormState, form: FormData): Promise<Form
   return attempt(async () => {
     const user = await requireUser("recorder");
     const db = await getDb();
-    await savePeriod(db, user.id, { ...await myPeriod(db, user.id, form), endDate: dayOf(form) });
+    const period = await myPeriod(db, user.id, form);
+    const saved = await savePeriod(db, user.id, { ...period, endDate: dayOf(form) });
+    // 진행 중이던 기록을 끝냈을 때만 파트너에게 알린다
+    if (!period.endDate && saved.endDate) later((d) => notifyPeriodEnd(d, user.id, saved.startDate));
     refresh();
   });
 }
@@ -426,6 +432,12 @@ export async function unsubscribeAction(endpoint: string) {
 
 export async function setReminderAction(form: FormData) {
   await setReminder(await getDb(), await requireUser("recorder"), form.get("reminder") === "on");
+  refresh();
+}
+
+/** 파트너 마이의 "받을 알림" 토글 4개. 하나를 바꾸면 폼 전체를 보낸다. */
+export async function setAlertSettingsAction(form: FormData) {
+  await setAlertSettings(await getDb(), await requireUser("partner"), Object.fromEntries(ALERT_KINDS.map((k) => [k, form.get(k) === "on"])));
   refresh();
 }
 

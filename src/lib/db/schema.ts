@@ -33,6 +33,11 @@ export const users = pgTable("users", {
   /** 마지막으로 알림을 보낸 예정일. 크론이 두 번 돌아도 한 번만 보낸다. */
   reminderSentFor: date("reminder_sent_for", { mode: "string" }),
   newsSeenAt: timestamp("news_seen_at", { withTimezone: true }),
+  /** 파트너가 받을 주기 알림. 시작·예정일 하루 전은 켜짐, 끝·가임기(배란일 포함)는 꺼짐이 기본. */
+  alertStart: boolean("alert_start").notNull().default(true),
+  alertUpcoming: boolean("alert_upcoming").notNull().default(true),
+  alertEnd: boolean("alert_end").notNull().default(false),
+  alertFertile: boolean("alert_fertile").notNull().default(false),
   /** 기록자가 직접 적는 평소 주기. 기록이 적을 때 예측에 섞는다. */
   usualCycleDays: integer("usual_cycle_days"),
   createdAt: created(),
@@ -212,4 +217,22 @@ export const notes = pgTable("notes", {
   index("notes_couple_day").on(t.coupleId, t.day),
   check("notes_seq", sql`seq between 1 and 3`),
   check("notes_body", sql`char_length(body) between 1 and 50`),
+]);
+
+/** 파트너가 받는 주기 알림. 시작·예정일 하루 전·끝·가임기(배란일 포함). */
+export type PartnerAlertKind = "start" | "upcoming" | "end" | "fertile";
+
+/**
+ * 파트너에게 보낸 주기 알림. (연결, 종류, 날) 유일 인덱스로 같은 알림을 하루에 두 번 보내지 않는다.
+ * 새 소식 시트에도 이 행을 그대로 보여준다. 연결을 지우면 함께 지워진다.
+ */
+export const partnerAlerts = pgTable("partner_alerts", {
+  id: text("id").primaryKey(),
+  coupleId: text("couple_id").notNull().references(() => couples.id, { onDelete: "cascade" }),
+  kind: text("kind").$type<PartnerAlertKind>().notNull(),
+  day: date("day", { mode: "string" }).notNull(),
+  createdAt: created(),
+}, (t) => [
+  uniqueIndex("partner_alerts_daily").on(t.coupleId, t.kind, t.day),
+  check("partner_alerts_kind", sql`kind in ('start', 'upcoming', 'end', 'fertile')`),
 ]);

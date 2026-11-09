@@ -71,14 +71,16 @@ export async function snoozeEndQuestion(db: DB, ownerId: string, id: string, tod
   if (!updated.length) fail("기록을 찾을 수 없어요", 404);
 }
 
-/** 크론: 시작 후 10일이 지나도 종료일이 없는 기록을 끝낸다. 끝낸 개수를 돌려준다. */
-export async function autoEndPeriods(db: DB, today = todaySeoul()) {
+/** 크론: 시작 후 10일이 지나도 종료일이 없는 기록을 끝낸다. 이번에 실제로 끝낸 기록을 돌려준다(파트너 알림용). */
+export async function autoEndPeriods(db: DB, today = todaySeoul()): Promise<Period[]> {
   const overdue = await db.select().from(periods).where(and(isNull(periods.endDate), lte(periods.startDate, addDays(today, -10))));
+  const ended: Period[] = [];
   for (const p of overdue) {
     const endDate = autoEndDate(await listPeriods(db, p.ownerId), p.startDate, today);
-    await db.update(periods).set({ endDate, autoEnded: true, updatedAt: new Date() }).where(and(eq(periods.id, p.id), isNull(periods.endDate)));
+    ended.push(...await db.update(periods).set({ endDate, autoEnded: true, updatedAt: new Date() })
+      .where(and(eq(periods.id, p.id), isNull(periods.endDate))).returning());
   }
-  return overdue.length;
+  return ended;
 }
 
 export async function usualCycle(db: DB, ownerId: string): Promise<number | null> {

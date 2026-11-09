@@ -71,6 +71,13 @@
       "when": 1793708836054,
       "tag": "0009_daily_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794204405324,
+      "tag": "0010_partner_alerts",
+      "breakpoints": true
     }
   ]
 }

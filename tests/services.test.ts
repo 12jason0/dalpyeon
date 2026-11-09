@@ -36,7 +36,8 @@ import {
 } from "@/lib/services/periods";
 import { partnerView } from "@/lib/services/partner";
 import {
-  cronAuthorized, markNewsSeen, newsFor, newsItems, notifyCare, notifyConnected, notifyNote, reminderEnabled, removeSubscription, saveSubscription,
+  alertSettings, cronAuthorized, markNewsSeen, newsFor, newsItems, notifyCare, notifyConnected, notifyNote, notifyPeriodEnd, notifyPeriodStart,
+  PARTNER_ALERTS, reminderEnabled, removeSubscription, saveSubscription, sendPartnerAlerts, setAlertSettings,
   sendPush, sendReminders, setReminder, type Sender,
 } from "@/lib/services/push";
 
@@ -349,7 +350,7 @@ describe("커플 연결", () => {
     const old = await createInvite(db, me);
     await db.update(invitations).set({ status: "pending", claimantId: you.id });
     await expectFail(claimInvite(db, third, old.code), 404);
-    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0, notes: 0 });
+    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0, notes: 0, alerts: 0 });
     expect(await activeCouple(db, you.id)).toBeNull();
     await connect(me, third); // 기록자는 새 코드로 다른 사람과 연결할 수 있다
     const [row] = await db.select().from(invitations).where(eq(invitations.claimantId, you.id));
@@ -1178,7 +1179,7 @@ describe("알림", () => {
 
   it("새 소식: 안 읽은 답장, 답 안 한 요청", async () => {
     const { me, you } = await pair();
-    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0, notes: 0 });
+    expect(await newsFor(db, me, TODAY)).toEqual({ replies: 0, care: 0, notes: 0, alerts: 0 });
 
     await connect(me, you);
     const partner = await reload(you);
@@ -1559,12 +1560,12 @@ describe("끝나지 않은 생리", () => {
   it("10일이 지나면 크론이 끝내고, 파트너에게는 일반 종료처럼 보이며, 수정하면 표시가 풀린다", async () => {
     const { me, you, record } = await recorded();
     await connect(me, you);
-    expect(await autoEndPeriods(db, "2026-10-29")).toBe(0); // 10일째까지는 그대로
+    expect(await autoEndPeriods(db, "2026-10-29")).toHaveLength(0); // 10일째까지는 그대로
     expect((await listPeriods(db, me.id))[0].endDate).toBeNull();
 
     const asOf = "2026-10-30";
-    expect(await autoEndPeriods(db, asOf)).toBe(1);
-    expect(await autoEndPeriods(db, asOf)).toBe(0); // 두 번 돌아도 한 번
+    expect(await autoEndPeriods(db, asOf)).toHaveLength(1);
+    expect(await autoEndPeriods(db, asOf)).toHaveLength(0); // 두 번 돌아도 한 번
     const [ended] = await listPeriods(db, me.id);
     expect(ended).toMatchObject({ startDate: START, endDate: "2026-10-24", autoEnded: true });
 
@@ -2064,5 +2065,137 @@ describe("오늘의 쪽지", () => {
     await respondToCare(db, partner, care.id, "will_help", TODAY); // 예전에 남긴 답장
     await markCareSeen(db, partner, TODAY);
     expect((await getCare(db, recorder, TODAY))?.response).toBe("will_help");
+  });
+});
+
+describe("파트너 주기 알림", () => {
+  const FCM = "https://fcm.googleapis.com/fcm/send/";
+  const sub = (name: string) => ({ endpoint: FCM + name, p256dh: "key", auth: "auth" });
+
+  function outbox() {
+    const sent: { endpoint: string; title: string; body: string; url: string }[] = [];
+    const sender: Sender = async (target, payload) => {
+      sent.push({ endpoint: target.endpoint, ...JSON.parse(payload) });
+    };
+    return { sent, sender };
+  }
+
+  async function shared() {
+    const { me, you } = await pair();
+    await connect(me, you);
+    await saveSubscription(db, me, sub("me"));
+    await saveSubscription(db, you, sub("you"));
+    return { me, partner: await reload(you) };
+  }
+
+  const ALL_ON = { start: true, upcoming: true, end: true, fertile: true };
+
+  it("기본값은 시작·예정일 하루 전만 켜짐이고, 파트너만 바꿀 수 있다", async () => {
+    const { me, partner } = await shared();
+    expect(await alertSettings(db, partner.id)).toEqual({ start: true, upcoming: true, end: false, fertile: false });
+    await expectFail(setAlertSettings(db, me, ALL_ON), 403);
+    await setAlertSettings(db, partner, { start: false, upcoming: true, end: true, fertile: "on" });
+    expect(await alertSettings(db, partner.id)).toEqual({ start: false, upcoming: true, end: true, fertile: false });
+  });
+
+  it("시작: 오늘 시작한 기록만, 제목은 기록자 이름·본문은 정해진 문구, 같은 날 두 번 보내지 않는다", async () => {
+    const { me, partner } = await shared();
+    const { sent, sender } = outbox();
+    await notifyPeriodStart(db, me.id, "2026-10-29", TODAY, sender); // 지난 날짜로 넣은 기록
+    expect(sent).toEqual([]);
+    await notifyPeriodStart(db, me.id, TODAY, TODAY, sender);
+    await notifyPeriodStart(db, me.id, TODAY, TODAY, sender); // 지웠다가 다시 눌러도 한 번
+    expect(sent).toEqual([{ endpoint: sub("you").endpoint, title: "나", body: "오늘부터 조금 더 챙겨주세요", url: "/" }]);
+    await notifyPeriodStart(db, partner.id, TODAY, TODAY, sender); // 파트너가 부를 일은 없지만 기록자 자리만 보낸다
+    expect(sent).toHaveLength(1);
+
+    // 새 소식에도 같은 문구로 남는다
+    expect(await newsFor(db, partner, TODAY)).toMatchObject({ alerts: 1 });
+    expect(await newsFor(db, me, TODAY)).toMatchObject({ alerts: 0 });
+    expect(await newsItems(db, partner, TODAY)).toMatchObject([{ id: expect.stringMatching(/^alert-/), title: "나", body: "오늘부터 조금 더 챙겨주세요", href: "/" }]);
+    expect((await newsItems(db, partner, TODAY))[0].when).toMatch(/^오늘 /);
+    expect(await newsItems(db, me, TODAY)).toEqual([]);
+    await markNewsSeen(db, partner);
+    expect(await newsFor(db, partner, TODAY)).toMatchObject({ alerts: 0 });
+
+    await notifyPeriodStart(db, me.id, "2026-10-31", "2026-10-31", sender); // 다음 날은 다시 보낸다
+    expect(sent).toHaveLength(2);
+  });
+
+  it("끝: 기본은 꺼짐. 켜면 누를 때와 자동 종료될 때 보낸다. 공유 시작일 전 기록은 보내지 않는다", async () => {
+    const { me, partner } = await shared();
+    const { sent, sender } = outbox();
+    await notifyPeriodEnd(db, me.id, TODAY, TODAY, sender);
+    expect(sent).toEqual([]);
+    await setAlertSettings(db, partner, { ...ALL_ON, end: true });
+    await notifyPeriodEnd(db, me.id, TODAY, TODAY, sender);
+    expect(sent).toMatchObject([{ title: "나", body: "이번 주기가 끝났어요", url: "/" }]);
+
+    // 크론의 자동 종료
+    await savePeriod(db, me.id, { startDate: "2026-10-15" }, "2026-10-20");
+    const ended = await autoEndPeriods(db, "2026-11-02");
+    expect(ended).toMatchObject([{ ownerId: me.id, startDate: "2026-10-15" }]);
+    await notifyPeriodEnd(db, me.id, ended[0].startDate, "2026-11-02", sender); // 공유 시작일(10-30) 전 기록
+    expect(sent).toHaveLength(1);
+    await updateSharing(db, me, { shareFrom: "2026-10-01" }, TODAY);
+    await notifyPeriodEnd(db, me.id, ended[0].startDate, "2026-11-02", sender);
+    expect(sent).toHaveLength(2);
+  });
+
+  it("크론: 예측 시작일이 내일이면 예정일 하루 전, 가임기 첫날·배란일이면 가임기 알림(기본은 꺼짐). 하루 한 번", async () => {
+    const { me, partner } = await shared();
+    await fourPeriods(me); // 다음 예정일 10-30 → 배란 추정일 10-16, 가임기 10-11부터
+    const { sent, sender } = outbox();
+    expect(await sendPartnerAlerts(db, "2026-10-11", sender)).toBe(0); // 가임기 알림은 기본 꺼짐
+    expect(await sendPartnerAlerts(db, "2026-10-28", sender)).toBe(0);
+    expect(await sendPartnerAlerts(db, "2026-10-29", sender)).toBe(1);
+    expect(await sendPartnerAlerts(db, "2026-10-29", sender)).toBe(0); // 크론이 두 번 돌아도 한 번
+    expect(sent).toEqual([{ endpoint: sub("you").endpoint, title: "나", body: "내일쯤 컨디션이 바뀔 수 있어요", url: "/" }]);
+
+    await setAlertSettings(db, partner, { ...ALL_ON, upcoming: false });
+    for (const day of ["2026-10-10", "2026-10-11", "2026-10-12", "2026-10-16", "2026-10-17"]) await sendPartnerAlerts(db, day, sender);
+    expect(sent.slice(1).map((m) => m.body)).toEqual(["달력에 새 표시가 생겼어요", "달력에 새 표시가 생겼어요"]);
+    expect(await sendPartnerAlerts(db, "2026-10-29", sender)).toBe(0); // 끈 알림
+    expect(sent).toHaveLength(3);
+  });
+
+  it("잠시 멈추기를 켜면 어떤 알림도 보내지 않고, 새 소식에서도 숨긴다", async () => {
+    const { me, partner } = await shared();
+    await fourPeriods(me);
+    await setAlertSettings(db, partner, ALL_ON);
+    const { sent, sender } = outbox();
+    await notifyPeriodStart(db, me.id, TODAY, TODAY, sender);
+    expect(await newsItems(db, partner, TODAY)).toHaveLength(1);
+
+    await setPaused(db, me, true);
+    expect(await newsItems(db, partner, TODAY)).toEqual([]);
+    expect(await newsFor(db, partner, TODAY)).toMatchObject({ alerts: 0 });
+    await notifyPeriodStart(db, me.id, "2026-10-31", "2026-10-31", sender);
+    await notifyPeriodEnd(db, me.id, TODAY, TODAY, sender);
+    for (const day of ["2026-10-16", "2026-10-29"]) expect(await sendPartnerAlerts(db, day, sender)).toBe(0);
+    expect(sent).toHaveLength(1);
+  });
+
+  it("잠금 화면 문구에 건강 단어가 없고, 쪽지의 1분 3번 제한과 따로 센다", async () => {
+    const { me, partner } = await shared();
+    await setAlertSettings(db, partner, ALL_ON);
+    const { sent, sender } = outbox();
+    for (const body of ["하나", "둘", "셋", "넷"]) await notifyNote(db, me, partner.id, body, sender);
+    expect(sent).toHaveLength(3);
+    await notifyPeriodStart(db, me.id, TODAY, TODAY, sender);
+    await notifyPeriodEnd(db, me.id, TODAY, TODAY, sender);
+    expect(sent.slice(3).map((m) => m.body)).toEqual([PARTNER_ALERTS.start.body, PARTNER_ALERTS.end.body]);
+    const text = JSON.stringify(Object.values(PARTNER_ALERTS).map((a) => a.body));
+    for (const word of ["생리", "배란", "가임", "임신", "월경", "피"]) expect(text).not.toContain(word);
+  });
+
+  it("알림을 안 켠 파트너도 새 소식에서 볼 수 있다", async () => {
+    const { me, you } = await pair();
+    await connect(me, you);
+    const partner = await reload(you);
+    const { sent, sender } = outbox();
+    await notifyPeriodStart(db, me.id, TODAY, TODAY, sender);
+    expect(sent).toEqual([]);
+    expect(await newsItems(db, partner, TODAY)).toMatchObject([{ body: "오늘부터 조금 더 챙겨주세요" }]);
   });
 });

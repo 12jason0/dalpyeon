@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useTransition } from "react";
-import { logoutAction, setReminderAction, subscribeAction, unsubscribeAction, withdrawAction } from "../actions";
+import { logoutAction, setAlertSettingsAction, setReminderAction, subscribeAction, unsubscribeAction, withdrawAction } from "../actions";
 import { ConfirmButton } from "./ConfirmButton";
 
 type Status = "loading" | "unsupported" | "ios-browser" | "denied" | "off" | "on";
@@ -18,7 +18,12 @@ async function currentSubscription() {
   return (await registration?.pushManager.getSubscription()) ?? null;
 }
 
-export function NotificationSettings({ publicKey, showReminder, reminder }: { publicKey: string | null; showReminder: boolean; reminder: boolean }) {
+/** 파트너가 받을 주기 알림 토글 하나. */
+export type AlertOption = { kind: string; label: string; on: boolean };
+
+export function NotificationSettings({ publicKey, showReminder, reminder, alerts }: {
+  publicKey: string | null; showReminder: boolean; reminder: boolean; alerts?: AlertOption[] | null;
+}) {
   const [status, setStatus] = useState<Status>("loading");
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
@@ -87,6 +92,20 @@ export function NotificationSettings({ publicKey, showReminder, reminder }: { pu
             id="reminder" name="reminder" type="checkbox" role="switch" className="switch" defaultChecked={reminder}
             onChange={(e) => e.currentTarget.form?.requestSubmit()}
           />
+        </form>
+      )}
+      {alerts && (
+        <form action={setAlertSettingsAction} className="mt-2 border-t border-line pt-3">
+          <p className="text-[13px] text-muted">받을 알림</p>
+          {alerts.map((a) => (
+            <div key={a.kind} className="flex items-center justify-between gap-4 py-1.5">
+              <label htmlFor={`alert-${a.kind}`} className="text-[15px]">{a.label}</label>
+              <input
+                id={`alert-${a.kind}`} name={a.kind} type="checkbox" role="switch" className="switch" defaultChecked={a.on}
+                onChange={(e) => e.currentTarget.form?.requestSubmit()}
+              />
+            </div>
+          ))}
         </form>
       )}
     </section>

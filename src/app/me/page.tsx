@@ -4,7 +4,7 @@ import { getDb } from "@/lib/db";
 import { communityAccess, myPosts } from "@/lib/services/community";
 import { activeCouple, otherNickname } from "@/lib/services/couples";
 import { requireUser } from "@/lib/session";
-import { reminderEnabled } from "@/lib/services/push";
+import { ALERT_KINDS, alertSettings, PARTNER_ALERTS, reminderEnabled } from "@/lib/services/push";
 import { AppHeader } from "../_components/AppHeader";
 import { IconBadge } from "../_components/Chip";
 import { NameEdit } from "../_components/NameEdit";
@@ -27,9 +27,9 @@ function SettingRow({ href, label }: { href: string; label: string }) {
 export default async function MePage() {
   const user = await requireUser();
   const db = await getDb();
-  const [access, partnerName, posts, reminder] = await Promise.all([
+  const [access, partnerName, posts, reminder, alerts] = await Promise.all([
     communityAccess(db, user), activeCouple(db, user.id).then((c) => (c ? otherNickname(db, c, user) : null)),
-    myPosts(db, user), reminderEnabled(db, user.id),
+    myPosts(db, user), reminderEnabled(db, user.id), user.role === "partner" ? alertSettings(db, user.id) : null,
   ]);
   return (
     <>
@@ -53,7 +53,9 @@ export default async function MePage() {
         )}
       </section>
 
-      <NotificationSettings publicKey={process.env.VAPID_PUBLIC_KEY ?? null} showReminder={user.role === "recorder"} reminder={reminder} />
+      <NotificationSettings publicKey={process.env.VAPID_PUBLIC_KEY ?? null} showReminder={user.role === "recorder"} reminder={reminder}
+        alerts={alerts && ALERT_KINDS.map((kind) => ({ kind, label: PARTNER_ALERTS[kind].label, on: alerts[kind] }))}
+      />
 
       <ul className="card mt-3">
         {access.admin && <SettingRow href="/admin/reports" label="운영자 신고 관리" />}

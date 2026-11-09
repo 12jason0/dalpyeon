@@ -1,15 +1,15 @@
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { and, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
 import type { DB } from "../db";
-import { couples, periods, pushSubscriptions, users } from "../db/schema";
-import { diffDays, formatDay, timeSeoul, todaySeoul } from "../dates";
+import { couples, partnerAlerts, periods, pushSubscriptions, users, type PartnerAlertKind } from "../db/schema";
+import { addDays, diffDays, formatDay, timeSeoul, todaySeoul } from "../dates";
 import { errorKind, fail } from "../errors";
 import { endQuestion, estimate } from "../prediction";
 import { limit, type User } from "./auth";
 import { careLabel, recentReplies, replySentence, sharedCare } from "./care";
-import { activeCouple, otherNickname } from "./couples";
+import { activeCouple, otherNickname, requireRole, type Couple } from "./couples";
 import { receivedNotes } from "./notes";
-import { listPeriods } from "./periods";
+import { listPeriods, predictionFor } from "./periods";
 
 export const REMINDER_DAYS = 3;
 
@@ -86,7 +86,7 @@ async function quietly(work: () => Promise<void>) {
 }
 
 /** 알림 제목에 쓸 보낸 사람 이름. 마이에서 바꾼 이름을 쓰려고 DB에서 다시 읽는다. 비어 있으면 "파트너". */
-async function senderName(db: DB, sender: User) {
+async function senderName(db: DB, sender: Pick<User, "id">) {
   const [row] = await db.select({ nickname: users.nickname }).from(users).where(eq(users.id, sender.id));
   return row?.nickname?.trim() || "파트너";
 }
@@ -125,6 +125,95 @@ export function notifyNote(db: DB, from: User, to: string, body: string, sender?
     }
     await sendPush(db, to, { title: await senderName(db, from), body, url: "/" }, sender);
   });
+}
+
+// ── 파트너가 받는 주기 알림 ─────────────────────────
+// 시작·끝은 기록자가 누를 때(끝은 크론의 자동 종료 때도), 예정일 하루 전·가임기 첫날·배란일은 매일 9시 크론이 보낸다.
+// 쪽지의 1분 3번 제한과는 따로: 같은 알림은 (연결, 종류, 날)마다 한 번이다.
+
+/** 마이의 토글 이름과 알림 본문. 잠금 화면에 보이므로 본문에 건강 단어를 쓰지 않는다. */
+export const PARTNER_ALERTS: Record<PartnerAlertKind, { label: string; body: string }> = {
+  start: { label: "시작", body: "오늘부터 조금 더 챙겨주세요" },
+  upcoming: { label: "예정일 하루 전", body: "내일쯤 컨디션이 바뀔 수 있어요" },
+  end: { label: "끝", body: "이번 주기가 끝났어요" },
+  fertile: { label: "가임기·배란일", body: "달력에 새 표시가 생겼어요" },
+};
+export const ALERT_KINDS = Object.keys(PARTNER_ALERTS) as PartnerAlertKind[];
+export type AlertSettings = Record<PartnerAlertKind, boolean>;
+
+const ALERT_COLUMNS = { start: users.alertStart, upcoming: users.alertUpcoming, end: users.alertEnd, fertile: users.alertFertile } as const;
+
+export async function alertSettings(db: DB, userId: string): Promise<AlertSettings> {
+  const [row] = await db.select(ALERT_COLUMNS).from(users).where(eq(users.id, userId));
+  return row ?? { start: true, upcoming: true, end: false, fertile: false };
+}
+
+/** 파트너 마이의 "받을 알림". 값이 true가 아니면 꺼짐으로 저장한다. */
+export async function setAlertSettings(db: DB, user: User, input: Partial<Record<PartnerAlertKind, unknown>>) {
+  requireRole(user, "partner");
+  const on = (kind: PartnerAlertKind) => input[kind] === true;
+  await db.update(users).set({ alertStart: on("start"), alertUpcoming: on("upcoming"), alertEnd: on("end"), alertFertile: on("fertile") })
+    .where(eq(users.id, user.id));
+}
+
+/**
+ * 파트너에게 주기 알림 하나. 잠시 멈췄거나 파트너가 끈 알림이면 아무것도 하지 않는다.
+ * 보내기 전에 기록을 먼저 남긴다: 새 소식 시트에 같은 문구로 보이고(푸시를 안 켠 파트너도), 같은 날 같은 알림은 한 번만 간다.
+ */
+async function alertPartner(db: DB, couple: Couple, kind: PartnerAlertKind, today: string, sender?: Sender) {
+  if (couple.status !== "active" || couple.paused) return false;
+  const [partner] = await db.select({ on: ALERT_COLUMNS[kind] }).from(users).where(eq(users.id, couple.partnerId));
+  if (!partner?.on) return false;
+  const claimed = await db.insert(partnerAlerts).values({ id: randomUUID(), coupleId: couple.id, kind, day: today })
+    .onConflictDoNothing().returning({ id: partnerAlerts.id });
+  if (!claimed.length) return false;
+  await sendPush(db, couple.partnerId, { title: await senderName(db, { id: couple.recorderId }), body: PARTNER_ALERTS[kind].body, url: "/" }, sender);
+  return true;
+}
+
+/** 이 사람이 기록자인 연결. 그 기록이 파트너에게 보이지 않으면(공유 시작일 이전) null. */
+async function recorderCouple(db: DB, ownerId: string, startDate: string) {
+  const couple = await activeCouple(db, ownerId);
+  return couple?.recorderId === ownerId && startDate >= couple.shareFrom ? couple : null;
+}
+
+/** "오늘 시작했어요". 지난 날짜로 넣은 기록은 알리지 않는다. */
+export function notifyPeriodStart(db: DB, ownerId: string, startDate: string, today = todaySeoul(), sender?: Sender) {
+  return quietly(async () => {
+    if (startDate !== today) return;
+    const couple = await recorderCouple(db, ownerId, startDate);
+    if (couple) await alertPartner(db, couple, "start", today, sender);
+  });
+}
+
+/** "끝났어요"를 누르거나 크론이 자동으로 끝냈을 때. */
+export function notifyPeriodEnd(db: DB, ownerId: string, startDate: string, today = todaySeoul(), sender?: Sender) {
+  return quietly(async () => {
+    const couple = await recorderCouple(db, ownerId, startDate);
+    if (couple) await alertPartner(db, couple, "end", today, sender);
+  });
+}
+
+/** 매일 9시 크론: 예측 시작일이 내일이면 예정일 하루 전, 오늘이 가임기 첫날이거나 배란일이면 가임기 알림. 보낸 개수를 돌려준다. */
+export async function sendPartnerAlerts(db: DB, today = todaySeoul(), sender?: Sender) {
+  const rows = await db.select({ couple: couples }).from(couples).innerJoin(users, eq(users.id, couples.partnerId))
+    .where(and(eq(couples.status, "active"), eq(couples.paused, false), or(eq(users.alertUpcoming, true), eq(users.alertFertile, true))));
+  let sent = 0;
+  for (const { couple } of rows) {
+    await quietly(async () => {
+      const prediction = await predictionFor(db, couple.recorderId, today);
+      const due: PartnerAlertKind[] = [];
+      if (prediction.period?.startDate === addDays(today, 1)) due.push("upcoming");
+      if (prediction.fertileWindow?.startDate === today || prediction.ovulation?.estimatedDate === today) due.push("fertile");
+      for (const kind of due) if (await alertPartner(db, couple, kind, today, sender)) sent++;
+    });
+  }
+  return sent;
+}
+
+/** 새 소식 시트용: 이 연결에서 파트너에게 간 주기 알림, 최근 것부터. */
+function recentAlerts(db: DB, couple: Couple) {
+  return db.select().from(partnerAlerts).where(eq(partnerAlerts.coupleId, couple.id)).orderBy(desc(partnerAlerts.createdAt)).limit(20);
 }
 
 export async function reminderEnabled(db: DB, userId: string) {
@@ -175,7 +264,7 @@ export function cronAuthorized(header: string | null, secret: string | undefined
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-export type News = { replies: number; care: number; notes: number };
+export type News = { replies: number; care: number; notes: number; alerts: number };
 
 /**
  * 알림을 거부한 사람도 볼 수 있는 새 소식(헤더의 빨간 점). 페이지 데이터와 겹치는 조회는 다시 하지 않는다:
@@ -187,7 +276,7 @@ export async function newsFor(db: DB, user: User & { newsSeenAt?: Date | null },
     "newsSeenAt" in user ? user.newsSeenAt : db.select({ seen: users.newsSeenAt }).from(users).where(eq(users.id, user.id)).then(([r]) => r?.seen ?? null),
     activeCouple(db, user.id),
   ]);
-  const none = { replies: 0, care: 0, notes: 0 };
+  const none = { replies: 0, care: 0, notes: 0, alerts: 0 };
   if (!couple) return none;
   const isPartner = couple.partnerId === user.id;
   if (user.role === "partner" && !isPartner) return none;
@@ -196,22 +285,24 @@ export async function newsFor(db: DB, user: User & { newsSeenAt?: Date | null },
     db.select({
       replies: sql<number>`(select count(*) from care_responses where couple_id = ${couple.id} and updated_at > ${since}::timestamptz)`.mapWith(Number),
       notes: sql<number>`(select count(*) from notes where couple_id = ${couple.id} and sender_id <> ${user.id} and created_at > ${since}::timestamptz)`.mapWith(Number),
+      alerts: sql<number>`(select count(*) from partner_alerts where couple_id = ${couple.id} and created_at > ${since}::timestamptz)`.mapWith(Number),
     }).from(couples).where(eq(couples.id, couple.id)),
     isPartner ? sharedCare(db, couple, today) : [],
   ]);
   const notes = counts?.notes ?? 0;
-  if (!isPartner) return { replies: counts?.replies ?? 0, care: 0, notes };
+  if (!isPartner) return { replies: counts?.replies ?? 0, care: 0, notes, alerts: 0 };
   // 파트너: 아직 답하지 않았고 마지막으로 본 뒤에 바뀐 요청
   const care = visible.filter((c) => !c.response && c.updatedAt > new Date(since)).length;
-  return { replies: 0, care, notes };
+  // 주기 알림은 잠시 멈추면 소식에서도 숨긴다
+  return { replies: 0, care, notes, alerts: couple.paused ? 0 : counts?.alerts ?? 0 };
 }
 
 /** 새 소식 시트의 한 줄. 누르면 href로 간다(배려 요청·답장은 홈의 배려 카드). */
 export type NewsItem = { id: string; title: string; body: string; detail: string; when: string; href: string };
 
 /**
- * 새 소식 시트의 목록. 맨 위에 받은 쪽지(최근 것부터), 그 아래 기록자는 파트너 답장, 파트너는 지금 보이는 배려 요청.
- * 공유 조건(연결·잠시 멈추기·요청별 공유)은 sharedCare가 다시 본다.
+ * 새 소식 시트의 목록. 맨 위에 받은 쪽지(파트너는 주기 알림과 섞어 최근 것부터), 그 아래 기록자는 파트너 답장, 파트너는 지금 보이는 배려 요청.
+ * 공유 조건(연결·잠시 멈추기·요청별 공유)은 sharedCare가 다시 본다. 주기 알림도 잠시 멈추면 숨긴다.
  */
 export async function newsItems(db: DB, user: User, today = todaySeoul()): Promise<NewsItem[]> {
   const couple = await activeCouple(db, user.id);
@@ -219,9 +310,11 @@ export async function newsItems(db: DB, user: User, today = todaySeoul()): Promi
   const name = (await otherNickname(db, couple, user)) || "파트너";
   const when = (day: string) => (day === today ? "오늘" : formatDay(day));
   const what = (presets: string[], message: string | null) => [...presets.map(careLabel), ...(message ? [`“${message}”`] : [])].join(" · ");
-  const notes: NewsItem[] = (await receivedNotes(db, user, couple)).map((n) => ({
-    id: `note-${n.id}`, title: `${name}님의 쪽지`, body: n.body, detail: "", when: `${when(todaySeoul(n.createdAt))} ${timeSeoul(n.createdAt)}`, href: "/",
+  const received = (await receivedNotes(db, user, couple)).map((n) => ({
+    at: n.createdAt,
+    item: { id: `note-${n.id}`, title: `${name}님의 쪽지`, body: n.body, detail: "", when: `${when(todaySeoul(n.createdAt))} ${timeSeoul(n.createdAt)}`, href: "/" },
   }));
+  const notes: NewsItem[] = received.map((n) => n.item);
   if (user.role === "recorder") {
     return [...notes, ...(await recentReplies(db, couple)).map((r) => ({
       id: `reply-${r.id}`, title: `${when(r.day)} 배려 요청`, body: replySentence(name, r.response), detail: what(r.presets, r.message),
@@ -229,7 +322,13 @@ export async function newsItems(db: DB, user: User, today = todaySeoul()): Promi
     }))];
   }
   if (couple.partnerId !== user.id) return [];
-  return [...notes, ...(await sharedCare(db, couple, today)).map((c) => ({
+  // 주기 알림: 제목은 기록자 이름, 본문은 푸시와 같은 문구
+  const alerts = (couple.paused ? [] : await recentAlerts(db, couple)).map((a) => ({
+    at: a.createdAt,
+    item: { id: `alert-${a.id}`, title: name, body: PARTNER_ALERTS[a.kind].body, detail: "", when: `${when(a.day)} ${timeSeoul(a.createdAt)}`, href: "/" },
+  }));
+  const timeline = [...received, ...alerts].sort((a, b) => b.at.getTime() - a.at.getTime()).map((x) => x.item);
+  return [...timeline, ...(await sharedCare(db, couple, today)).map((c) => ({
     id: `care-${c.id}`, title: `${name}님의 배려 요청`, body: what(c.presets, c.message),
     detail: "", when: when(c.day), href: "/",
   }))];

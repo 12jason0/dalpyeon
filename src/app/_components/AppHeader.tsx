@@ -6,7 +6,7 @@ import { Header } from "./Nav";
 
 async function UnreadDot({ user }: { user: User }) {
   const news = await newsFor(await getDb(), user);
-  if (news.replies + news.care + news.notes === 0) return null;
+  if (news.replies + news.care + news.notes + news.alerts === 0) return null;
   return (
     <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-accent">
       <span className="sr-only">안 읽은 소식 있음</span>
